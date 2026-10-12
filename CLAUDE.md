@@ -4,12 +4,24 @@ Personal pipeline: fetch remote job postings → normalize → dedupe → pre-fi
 Claude → daily digest. `PLAN.md` is the build brief (phases, data model, scoring design).
 `config/` is the source of truth for *what* to look for; don't change its intent without asking.
 
+## Working agreements
+
+- **One branch per phase** (`phase-N-<name>`), each started from the previous phase's
+  branch. Never delete phase branches; the user reviews them later.
+- **Log every decision in `DECISIONS.md`:** decisions Claude made alone, the user's
+  decisions, config fixes, bugs found and fixed, and items left for review, under the
+  current phase's section with an ID (`P2-D3`). Update it before each phase's commit.
+- **Test fixtures are always synthetic.** Never commit recorded responses or real posting
+  text. Edit `tests/fixtures/make_http_fixtures.py` and regenerate; record live payloads only
+  into the gitignored `data/recordings/` to study shapes.
+
 ## Commands
 
 ```sh
 uv sync                                         # install deps into .venv
 uv run --env-file .env alembic upgrade head     # create/upgrade the DB
-uv run --env-file .env job-scout sources check  # validate config, list enabled sources
+uv run --env-file .env job-scout sources check  # validate config, show source health
+uv run --env-file .env job-scout fetch --tier 1  # fetch and store (--force ignores min interval)
 uv run pytest                                   # offline tests (live ones excluded)
 uv run pytest -m live                           # opt-in: real network / real Claude backend
 uv run ruff check . && uv run ruff format .
@@ -29,6 +41,14 @@ uv run --env-file .env alembic revision --autogenerate -m "what changed"
 - `src/job_scout/db/`: SQLAlchemy 2.0 typed ORM models (`models.py`), engine with SQLite
   pragmas (`__init__.py`), `UTCDateTime` type (`types.py`).
 - `src/job_scout/migrations/`: Alembic (`script_location = job_scout:migrations`).
+- `src/job_scout/fetch/`: the only package that touches the network.
+  - `http.py`: `HttpClient`, the single gateway for requests. It handles the User-Agent,
+    robots.txt, per-host spacing (max of 1s, Crawl-delay and the source's interval), request
+    budgets, and the fixture `Recorder`.
+  - `base.py`: generic `RssFetcher` and `JsonFetcher`, plus `FetchContext`.
+  - `sources.py`: per-source mappers and the `FETCHERS` registry. `hn.py`: HN Who is hiring.
+  - `normalize.py`: pure helpers (HTML to text, salary parsing, company/title normalization).
+  - `store.py`: dedupe and insert. `runner.py`: per-source orchestration and health.
 - `tests/`: pytest; `conftest.py` clears `JOB_SCOUT_*` env vars and gives a writable copy of
   `config/` (`config_dir` fixture).
 
@@ -49,7 +69,20 @@ uv run --env-file .env alembic revision --autogenerate -m "what changed"
   `tests/test_db.py::test_migration_matches_models` fails otherwise.
 - Without `relationship()`s, the ORM doesn't order inserts across tables: flush parents
   (e.g. `Source`) before adding children that reference them in the same session.
-- **Fail per source, not per run.** One broken source must not stop the others.
+- **Fail per source, not per run.** One broken source must not stop the others; a single
+  unmappable item is logged and skipped, not fatal to its source.
+- **Adding an API/RSS source:** add it to `sources.yaml`, write a mapper in `fetch/sources.py`,
+  register it in `FETCHERS`. Study the live shape with
+  `job-scout fetch --source ID --force --record data/recordings` (hidden flag; trims each
+  payload to 5 items), then add synthetic responses with the same structure to
+  `tests/fixtures/make_http_fixtures.py` and run it. Tests replay them with
+  `fixture_transport()` from `tests/conftest.py`, and any unrecorded URL fails the test.
+- **Source limits are config, not code:** `max_requests_per_day` (rolling 24h, counted from
+  `source_runs`, never bypassed by `--force`), `min_request_interval_seconds`, and `auth_env`
+  (the source is skipped, not failed, while that variable is unset).
+- **Dedupe:** the same (source, source_job_id) is never stored twice (`last_seen_at` is bumped).
+  A new posting whose `dedupe.key` matches an earlier job is stored with `duplicate_of` set to
+  the first copy. Postings missing a key field (e.g. no company) never merge.
 - **Secrets:** `CLAUDE_CODE_OAUTH_TOKEN` (cli backend) and `ANTHROPIC_API_KEY` (api backend)
   come from the environment, never from files in git. The API key must never reach the
   `claude` subprocess.

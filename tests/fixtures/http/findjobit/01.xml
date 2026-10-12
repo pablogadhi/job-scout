@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:media="http://search.yahoo.com/mrss/">
+<channel>
+<title>Findjobit</title>
+<link>https://example.invalid/</link>
+<description>Synthetic fixture feed</description>
+<item>
+  <title>Quetzal Labs busca un Senior Backend Engineer</title>
+  <link>https://findjobit.com/jobs/f00000000000000000000001</link>
+  <guid>https://findjobit.com/jobs/f00000000000000000000001</guid>
+  <description>&lt;p&gt;Python y Django.&lt;/p&gt;</description>
+  <category>Ingeniero Backend</category>
+  <region>Guatemala,México,Colombia</region>
+  <type>Tiempo Completo</type>
+  <pubDate>Fri, 09 Oct 2026 18:23:18 GMT</pubDate>
+</item>
+<item>
+  <title>Brightpath busca una Diseñadora UX</title>
+  <link>https://findjobit.com/jobs/f00000000000000000000002</link>
+  <guid>https://findjobit.com/jobs/f00000000000000000000002</guid>
+  <description>&lt;p&gt;Diseño de producto.&lt;/p&gt;</description>
+  <category>Diseñador UX/UI</category>
+  <region>Argentina</region>
+  <type>Tiempo Completo</type>
+  <pubDate>Fri, 09 Oct 2026 18:23:18 GMT</pubDate>
+</item>
+</channel>
+</rss>

@@ -1,0 +1,17 @@
+{
+  "https://weworkremotely.com/categories/remote-back-end-programming-jobs.rss": {
+    "file": "01.xml",
+    "status": 200,
+    "content_type": "application/rss+xml; charset=utf-8"
+  },
+  "https://weworkremotely.com/categories/remote-full-stack-programming-jobs.rss": {
+    "file": "02.xml",
+    "status": 200,
+    "content_type": "application/rss+xml; charset=utf-8"
+  },
+  "https://weworkremotely.com/categories/remote-devops-sysadmin-jobs.rss": {
+    "file": "03.xml",
+    "status": 200,
+    "content_type": "application/rss+xml; charset=utf-8"
+  }
+}

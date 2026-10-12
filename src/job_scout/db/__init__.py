@@ -5,6 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from alembic.config import Config
+from alembic.runtime.migration import MigrationContext
+from alembic.script import ScriptDirectory
 from sqlalchemy import Engine, create_engine, event
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session, sessionmaker
@@ -33,3 +36,21 @@ def make_engine(url: str, **kwargs: Any) -> Engine:
 
 def make_session_factory(engine: Engine) -> sessionmaker[Session]:
     return sessionmaker(engine, expire_on_commit=False)
+
+
+class SchemaOutdated(Exception):
+    pass
+
+
+def check_schema(engine: Engine) -> None:
+    """Raise SchemaOutdated unless the database is at the latest Alembic revision."""
+    config = Config()
+    config.set_main_option("script_location", "job_scout:migrations")
+    head = ScriptDirectory.from_config(config).get_current_head()
+    with engine.connect() as conn:
+        current = MigrationContext.configure(conn).get_current_revision()
+    if current != head:
+        raise SchemaOutdated(
+            f"database is at revision {current or 'none'}, code expects {head}: "
+            "run `alembic upgrade head`"
+        )

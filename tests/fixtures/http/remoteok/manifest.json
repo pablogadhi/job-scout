@@ -1,0 +1,7 @@
+{
+  "https://remoteok.com/api": {
+    "file": "01.json",
+    "status": 200,
+    "content_type": "application/json; charset=utf-8"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "https://hn.algolia.com/api/v1/search_by_date?tags=story,author_whoishiring&hitsPerPage=3": {
+    "file": "01.json",
+    "status": 200,
+    "content_type": "application/json; charset=utf-8"
+  },
+  "https://hn.algolia.com/api/v1/items/49000001": {
+    "file": "02.json",
+    "status": 200,
+    "content_type": "application/json; charset=utf-8"
+  }
+}

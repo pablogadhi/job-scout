@@ -1,0 +1,66 @@
+[
+ {
+  "last_updated": 1791800000,
+  "legal": "API Terms of Service: synthetic fixture."
+ },
+ {
+  "slug": "remote-senior-django-developer-quetzal-labs-900001",
+  "id": "900001",
+  "company_logo": "",
+  "logo": "",
+  "url": "https://remoteOK.com/remote-jobs/remote-senior-django-developer-quetzal-labs-900001",
+  "apply_url": "https://remoteOK.com/remote-jobs/remote-senior-django-developer-quetzal-labs-900001",
+  "epoch": 1791700000,
+  "date": "2026-10-11T08:00:00+00:00",
+  "company": "Quetzal Labs",
+  "position": "Senior Django Developer",
+  "tags": [
+   "python",
+   "django",
+   "backend"
+  ],
+  "description": "<p>ð About Quetzal Labs</p><p>We build payment APIs.</p>",
+  "location": "Worldwide",
+  "salary_min": 130000,
+  "salary_max": 160000
+ },
+ {
+  "slug": "remote-marketing-manager-brightpath-900002",
+  "id": "900002",
+  "company_logo": "",
+  "logo": "",
+  "url": "https://remoteOK.com/remote-jobs/remote-marketing-manager-brightpath-900002",
+  "apply_url": "https://remoteOK.com/remote-jobs/remote-marketing-manager-brightpath-900002",
+  "epoch": 1791600000,
+  "date": "2026-10-10T04:00:00+00:00",
+  "company": "Brightpath",
+  "position": "Marketing Manager",
+  "tags": [
+   "marketing"
+  ],
+  "description": "<p>Lead our campaigns.</p>",
+  "location": "United States",
+  "salary_min": 0,
+  "salary_max": 0
+ },
+ {
+  "slug": "remote-senior-backend-engineer-harbor-co-900003",
+  "id": "900003",
+  "company_logo": "",
+  "logo": "",
+  "url": "https://remoteOK.com/remote-jobs/remote-senior-backend-engineer-harbor-co-900003",
+  "apply_url": "https://remoteOK.com/remote-jobs/remote-senior-backend-engineer-harbor-co-900003",
+  "epoch": 1791500000,
+  "date": "2026-10-09T00:00:00+00:00",
+  "company": "Harbor & Co",
+  "position": "Senior Backend Engineer",
+  "tags": [
+   "python",
+   "postgres"
+  ],
+  "description": "<p>Backend for a logistics platform.</p>",
+  "location": "Latin America",
+  "salary_min": 0,
+  "salary_max": 0
+ }
+]

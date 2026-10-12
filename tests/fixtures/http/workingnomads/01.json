@@ -1,0 +1,22 @@
+[
+ {
+  "url": "https://www.workingnomads.com/job/go/5000001/",
+  "title": "Senior Backend Developer (Python)",
+  "description": "<p>Join a distributed team.</p><p>Salary: $90k - $110k</p>",
+  "company_name": "Proxima Talent",
+  "category_name": "Development",
+  "tags": "python,django,postgresql",
+  "location": "Time zone: UTC-6 (+/- 3 hours)",
+  "pub_date": "2026-10-08T16:54:14-04:00"
+ },
+ {
+  "url": "https://www.workingnomads.com/job/go/5000002/",
+  "title": "Customer Support Agent",
+  "description": "<p>Answer tickets.</p>",
+  "company_name": "Brightpath",
+  "category_name": "Customer Success",
+  "tags": "support",
+  "location": "United States",
+  "pub_date": "2026-10-08T10:00:00-04:00"
+ }
+]

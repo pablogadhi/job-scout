@@ -1,0 +1,7 @@
+{
+  "https://www.workingnomads.com/api/exposed_jobs/": {
+    "file": "01.json",
+    "status": 200,
+    "content_type": "application/json; charset=utf-8"
+  }
+}

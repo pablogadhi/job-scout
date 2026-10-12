@@ -9,7 +9,7 @@
 #          the endpoint comes from docs or a linked page and should be tested when building the fetcher.
 
 defaults:
-  user_agent: "job-scout/0.1 (personal job search)"   # add a contact email of your choice
+  user_agent: "job-scout/0.1 (personal job search)"   # no contact email, by decision (DECISIONS.md)
   respect_robots_txt: true
   min_interval_hours: 6        # never poll any source more often than this
   timeout_seconds: 30
@@ -75,11 +75,14 @@ sources:
     url: https://remotive.com
     method: api
     tier: 1
-    checked: unverified     # API docs confirmed; robots.txt blocks the fetcher used for checking
+    checked: 2026-10-12     # robots.txt allows job-scout's UA; slugs validated against /categories
     endpoints:
-      - https://remotive.com/api/remote-jobs?category=software-dev
-      - https://remotive.com/api/remote-jobs?category=devops
+      # The free API ignores the category filter: every category URL returns the same 15
+      # delayed jobs across all categories (checked 2026-10-12), so one request is enough.
+      - https://remotive.com/api/remote-jobs?category=software-development
     format: json
+    max_requests_per_day: 4         # enforced; the first successful fetch also spends one on /categories
+    min_request_interval_seconds: 31  # more than 2 per minute gets blocked
     notes: >
       Get valid category slugs from https://remotive.com/api/remote-jobs/categories on first run.
       Max 4 calls per day; more than 2 per minute gets blocked. Jobs appear with a 24h delay.
@@ -126,7 +129,7 @@ sources:
       - https://remotefirstjobs.com/rss/jobs/devops.rss
       - https://remotefirstjobs.com/rss/jobs/python.rss
     format: rss
-    alt_api: https://remotefirstjobs.com/api/search-jobs?category=software-development&page=0
+    alt_api: https://remotefirstjobs.com/api/search-jobs?category=software-development&page=0  # robots.txt disallows /api (2026-10-12): don't use
     notes: >
       jobscollider.com now redirects here. Feed pattern: /rss/jobs/<slug>.rss.
       The free JSON API returns salary_min/max and up to 3 countries per job, but has a 24h delay
@@ -195,10 +198,14 @@ sources:
     url: https://findjobit.com
     method: rss
     tier: 1
-    checked: unverified     # feed link found on the site; contents not yet inspected
-    endpoints: ["https://findjobit.com/rss-feed"]
+    checked: 2026-10-12
+    # /rss-feed is an HTML page listing feeds (all jobs, per country, per role). The Guatemala
+    # feed holds only postings open to Guatemala (26 when checked), so location is pre-checked.
+    endpoints: ["https://findjobit.com/jobs/country/guatemala/feed"]
     format: rss
-    notes: LATAM-focused IT board, mostly in Spanish. Good source for LATAM-eligible roles.
+    notes: >
+      LATAM-focused IT board, mostly in Spanish. Good source for LATAM-eligible roles.
+      Titles look like "<Company> busca un <Title>"; the region field lists eligible countries.
 
   - id: findwork
     name: Findwork
@@ -207,9 +214,10 @@ sources:
     method: api
     tier: 1
     checked: unverified
-    endpoints: ["https://findwork.dev/api/jobs/"]
+    endpoints: ["https://findwork.dev/api/jobs/?remote=true&sort_by=date"]
     format: json
-    auth: API key from a free account, sent in the Authorization header (check docs for the exact scheme)
+    auth: 'API key from a free account, sent as "Authorization: Token <key>" (unverified until a key exists)'
+    auth_env: FINDWORK_API_KEY      # source is skipped while this is unset
     notes: Aggregates several boards and adds company data. Will overlap with other sources.
 
 # ---------------------------------------------------------------------------------------------

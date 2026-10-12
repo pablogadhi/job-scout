@@ -1,31 +1,13 @@
-from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta, timezone
-from pathlib import Path
 
 import pytest
-from alembic import command
 from alembic.autogenerate import compare_metadata
-from alembic.config import Config
 from alembic.migration import MigrationContext
 from sqlalchemy import Engine, inspect, text
 from sqlalchemy.exc import StatementError
+from sqlalchemy.orm import Session, sessionmaker
 
-from job_scout.db import make_engine, make_session_factory
 from job_scout.db.models import Base, Job, Score, ScoreStatus, Source
-
-ROOT = Path(__file__).resolve().parent.parent
-
-
-@pytest.fixture
-def engine(tmp_path: Path) -> Iterator[Engine]:
-    url = f"sqlite:///{tmp_path / 'nested' / 'test.db'}"
-    cfg = Config(ROOT / "alembic.ini")
-    cfg.set_main_option("sqlalchemy.url", url)
-    cfg.attributes["configure_logger"] = False
-    command.upgrade(cfg, "head")
-    engine = make_engine(url)
-    yield engine
-    engine.dispose()
 
 
 def test_migration_creates_all_tables(engine: Engine) -> None:
@@ -61,8 +43,7 @@ def _job(**kwargs: object) -> Job:
     return Job(**{**defaults, **kwargs})
 
 
-def test_roundtrip_and_utc(engine: Engine) -> None:
-    session_factory = make_session_factory(engine)
+def test_roundtrip_and_utc(session_factory: sessionmaker[Session]) -> None:
     posted = datetime(2026, 10, 1, 9, 0, tzinfo=timezone(timedelta(hours=-6)))
     with session_factory.begin() as session:
         session.add(Source(id="remoteok"))
@@ -79,16 +60,14 @@ def test_roundtrip_and_utc(engine: Engine) -> None:
         assert session.query(Score).one().status is ScoreStatus.PENDING
 
 
-def test_naive_datetime_rejected(engine: Engine) -> None:
-    session_factory = make_session_factory(engine)
+def test_naive_datetime_rejected(session_factory: sessionmaker[Session]) -> None:
     with session_factory() as session:
         session.add(Source(id="remoteok", last_run_at=datetime(2026, 10, 1)))
         with pytest.raises(StatementError, match="naive datetime"):
             session.commit()
 
 
-def test_foreign_keys_enforced(engine: Engine) -> None:
-    session_factory = make_session_factory(engine)
+def test_foreign_keys_enforced(session_factory: sessionmaker[Session]) -> None:
     with session_factory() as session:
         session.add(_job(source_id="no-such-source"))
         with pytest.raises(Exception, match="FOREIGN KEY"):

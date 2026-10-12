@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+<channel>
+<title>Remote Backend Jobs - Real Work From Anywhere</title>
+<link>https://example.invalid/</link>
+<description>Synthetic fixture feed</description>
+<item>
+  <title><![CDATA[Python Software Engineer (remote work) at Lattice Forge]]></title>
+  <description><![CDATA[<p>Work from anywhere.</p>]]></description>
+  <link>https://www.realworkfromanywhere.com/jobs/python-software-engineer-remote-work-lattice-forge-1001</link>
+  <guid>https://www.realworkfromanywhere.com/jobs/python-software-engineer-remote-work-lattice-forge-1001</guid>
+  <pubDate>Fri, 09 Oct 2026 00:00:00 GMT</pubDate>
+  <category><![CDATA[Backend]]></category>
+  <author><![CDATA[Lattice Forge]]></author>
+</item>
+<item>
+  <title><![CDATA[Senior Backend Engineer at Harbor & Co]]></title>
+  <description><![CDATA[<p>Backend for a logistics platform.</p>]]></description>
+  <link>https://www.realworkfromanywhere.com/jobs/senior-backend-engineer-harbor-co-1002</link>
+  <guid>https://www.realworkfromanywhere.com/jobs/senior-backend-engineer-harbor-co-1002</guid>
+  <pubDate>Fri, 09 Oct 2026 00:00:00 GMT</pubDate>
+  <category><![CDATA[Backend]]></category>
+  <author><![CDATA[Harbor & Co]]></author>
+</item>
+</channel>
+</rss>

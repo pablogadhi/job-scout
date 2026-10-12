@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:media="http://search.yahoo.com/mrss">
+<channel>
+<title>We Work Remotely: DevOps and Sysadmin Jobs</title>
+<link>https://example.invalid/</link>
+<description>Synthetic fixture feed</description>
+<item>
+  <media:content url="https://example.invalid/logo.png" type="image/png"/>
+  <title>Orbit Analytics: Site Reliability Engineer</title>
+  <region>Latin America Only</region>
+  <country>🇧🇷 Brazil, 🇬🇹 Guatemala</country>
+  <skills>Terraform, AWS</skills>
+  <category>Back-End Programming</category>
+  <type>Full-Time</type>
+  <description>&lt;p&gt;On-call rotation, async culture.&lt;/p&gt;</description>
+  <pubDate>Wed, 07 Oct 2026 08:00:00 +0000</pubDate>
+  <guid>https://weworkremotely.com/remote-jobs/orbit-analytics-site-reliability-engineer</guid>
+  <link>https://weworkremotely.com/remote-jobs/orbit-analytics-site-reliability-engineer</link>
+</item>
+</channel>
+</rss>

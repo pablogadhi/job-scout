@@ -1,0 +1,25 @@
+{
+ "hits": [
+  {
+   "objectID": "49000002",
+   "title": "Ask HN: Who wants to be hired? (October 2026)",
+   "created_at": "2026-10-01T15:00:00Z",
+   "author": "whoishiring"
+  },
+  {
+   "objectID": "49000001",
+   "title": "Ask HN: Who is hiring? (October 2026)",
+   "created_at": "2026-10-01T15:00:00Z",
+   "author": "whoishiring"
+  },
+  {
+   "objectID": "48000001",
+   "title": "Ask HN: Who is hiring? (September 2026)",
+   "created_at": "2026-09-01T15:00:00Z",
+   "author": "whoishiring"
+  }
+ ],
+ "hitsPerPage": 3,
+ "nbHits": 3,
+ "page": 0
+}

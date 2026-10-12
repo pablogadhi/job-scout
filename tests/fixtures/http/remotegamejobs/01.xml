@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+<channel>
+<title>Remote Game Jobs</title>
+<link>https://example.invalid/</link>
+<description>Synthetic fixture feed</description>
+<item>
+  <title>Pixel Harbor Studios is hiring Senior Backend Engineer - Online Services (Remote Job)</title>
+  <link>https://remotegamejobs.com/jobs/pixel-harbor-studios-senior-backend-engineer-online-services-remote-job</link>
+  <pubDate>Fri, 09 Oct 2026 17:44:38 +0000</pubDate>
+  <guid>https://remotegamejobs.com/jobs/pixel-harbor-studios-senior-backend-engineer-online-services-remote-job</guid>
+  <description>Matchmaking and live ops. Must reside within UTC-4 to UTC-8.</description>
+</item>
+<item>
+  <title>Pixel Harbor Studios is hiring Environment Artist (Remote Job)</title>
+  <link>https://remotegamejobs.com/jobs/pixel-harbor-studios-environment-artist-remote-job</link>
+  <pubDate>Fri, 09 Oct 2026 17:44:38 +0000</pubDate>
+  <guid>https://remotegamejobs.com/jobs/pixel-harbor-studios-environment-artist-remote-job</guid>
+  <description>Job Description</description>
+</item>
+</channel>
+</rss>

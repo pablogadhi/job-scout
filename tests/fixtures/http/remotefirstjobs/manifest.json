@@ -1,0 +1,17 @@
+{
+  "https://remotefirstjobs.com/rss/jobs/software-development.rss": {
+    "file": "01.xml",
+    "status": 200,
+    "content_type": "application/rss+xml; charset=utf-8"
+  },
+  "https://remotefirstjobs.com/rss/jobs/devops.rss": {
+    "file": "02.xml",
+    "status": 200,
+    "content_type": "application/rss+xml; charset=utf-8"
+  },
+  "https://remotefirstjobs.com/rss/jobs/python.rss": {
+    "file": "03.xml",
+    "status": 200,
+    "content_type": "application/rss+xml; charset=utf-8"
+  }
+}

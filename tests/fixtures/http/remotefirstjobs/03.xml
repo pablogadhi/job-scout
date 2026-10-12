@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+<channel>
+<title>Remote Python Jobs RSS</title>
+<link>https://example.invalid/</link>
+<description>Synthetic fixture feed</description>
+<item>
+  <title>Senior Python Developer at Quetzal Labs</title>
+  <link>https://remotefirstjobs.com/companies/quetzal-labs/jobs/senior-python-developer-800003</link>
+  <description>&lt;p&gt;Django and PostgreSQL.&lt;/p&gt;</description>
+  <guid isPermaLink="true">senior-python-developer-800003</guid>
+  <pubDate>Mon, 12 Oct 2026 11:36:23 +0000</pubDate>
+</item>
+</channel>
+</rss>

@@ -7,7 +7,9 @@ Flags override env vars, which override settings.yaml.
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Any, NoReturn
 
@@ -15,9 +17,16 @@ import typer
 from rich.console import Console
 from rich.markup import escape
 from rich.table import Table
+from sqlalchemy import select
+from sqlalchemy.exc import OperationalError
+from sqlalchemy.orm import Session, sessionmaker
 
-from job_scout.config import DEFAULT_CONFIG_DIR, AppConfig, ConfigError, load_config
-from job_scout.db.models import Backend, ScoringMode
+from job_scout.config import DEFAULT_CONFIG_DIR, AppConfig, ConfigError, SourceConfig, load_config
+from job_scout.db import SchemaOutdated, check_schema, make_engine, make_session_factory
+from job_scout.db.models import Backend, ScoringMode, Source, SourceRun, SourceRunKind
+from job_scout.db.types import utcnow
+from job_scout.fetch.http import HttpClient, Recorder
+from job_scout.fetch.runner import NOT_YET, SourceOutcome, run_fetch
 from job_scout.log import setup_logging
 
 log = logging.getLogger(__name__)
@@ -48,6 +57,16 @@ def _load(ctx: typer.Context, overrides: dict[str, Any] | None = None) -> AppCon
     setup_logging(config.settings.log_level)
     log.debug("config loaded from %s (profile %s)", state.config_dir, config.profile.sha256[:12])
     return config
+
+
+def _db(config: AppConfig) -> sessionmaker[Session]:
+    engine = make_engine(config.settings.db_url)
+    try:
+        check_schema(engine)
+    except (SchemaOutdated, OperationalError) as exc:
+        err_console.print(f"[red]database error:[/red] {escape(str(exc))}", soft_wrap=True)
+        raise typer.Exit(2) from exc
+    return make_session_factory(engine)
 
 
 def _not_implemented(phase: int) -> NoReturn:
@@ -89,15 +108,93 @@ MaxInputTokensOpt = Annotated[int | None, typer.Option("--max-input-tokens", min
 DryRunOpt = Annotated[bool, typer.Option("--dry-run", help="Plan only; no calls, no writes.")]
 
 
+SourceOpt = Annotated[
+    list[str] | None,
+    typer.Option("--source", help="Only this source id (repeatable; works for disabled ones)."),
+]
+TierOpt = Annotated[int | None, typer.Option("--tier", min=1, max=3)]
+
+
+def _print_outcomes(outcomes: list[SourceOutcome], title: str) -> None:
+    table = Table(title=title, title_justify="left")
+    table.add_column("source", no_wrap=True)
+    table.add_column("status")
+    for column in ("fetched", "new", "dup", "seen", "req"):
+        table.add_column(column, justify="right")
+    table.add_column("note")
+    colors = {"ok": "green", "failed": "red", "skipped": "yellow"}
+    for o in outcomes:
+        table.add_row(
+            o.source_id,
+            f"[{colors[o.status]}]{o.status}[/]",
+            *(
+                str(n) if o.status != "skipped" else ""
+                for n in (o.fetched, o.new, o.duplicate, o.seen, o.requests)
+            ),
+            escape(o.reason or (f"{o.skipped_items} items unmappable" if o.skipped_items else "")),
+        )
+    console.print(table)
+
+
+def _fetch(
+    config: AppConfig,
+    *,
+    source_ids: list[str],
+    tier: int | None,
+    force: bool = False,
+    probe: bool = False,
+    record: Path | None = None,
+) -> list[SourceOutcome]:
+    known = {s.id for s in config.sources.sources}
+    if unknown := [sid for sid in source_ids if sid not in known]:
+        err_console.print(f"[red]unknown source id:[/red] {', '.join(unknown)}")
+        raise typer.Exit(2)
+    session_factory = _db(config)
+    recorder = Recorder(record) if record else None
+    with HttpClient(config.sources.defaults, recorder=recorder) as http:
+        return run_fetch(
+            config,
+            session_factory,
+            http,
+            source_ids=source_ids,
+            tier=tier,
+            force=force,
+            probe=probe,
+            env=os.environ,
+        )
+
+
 @app.command()
 def fetch(
     ctx: typer.Context,
-    source: Annotated[str | None, typer.Option("--source", help="Only this source id.")] = None,
-    tier: Annotated[int | None, typer.Option("--tier", min=1, max=3)] = None,
+    source: SourceOpt = None,
+    tier: TierOpt = None,
+    force: Annotated[
+        bool, typer.Option("--force", help="Ignore min_interval_hours (never request budgets).")
+    ] = False,
+    record: Annotated[
+        Path | None,
+        typer.Option(
+            "--record",
+            help="Save trimmed live responses under DIR (e.g. data/recordings) to study shapes.",
+            hidden=True,
+        ),
+    ] = None,
 ) -> None:
-    """Fetch postings from enabled sources."""
-    _load(ctx)
-    _not_implemented(1)
+    """Fetch postings from enabled sources and store new ones."""
+    config = _load(ctx)
+    tests_dir = (Path.cwd() / "tests").resolve()
+    if record and record.resolve().is_relative_to(tests_dir):
+        err_console.print(
+            "[red]--record must not write under tests/:[/red] fixtures are synthetic "
+            "(tests/fixtures/make_http_fixtures.py). Record to data/recordings instead."
+        )
+        raise typer.Exit(2)
+    outcomes = _fetch(config, source_ids=source or [], tier=tier, force=force, record=record)
+    _print_outcomes(outcomes, "Fetch results")
+    attempted = [o for o in outcomes if o.status != "skipped"]
+    if attempted and all(o.status == "failed" for o in attempted):
+        raise typer.Exit(1)
 
 
 @app.command()
@@ -175,37 +272,83 @@ def explain(ctx: typer.Context, job_id: int) -> None:
     _not_implemented(2)
 
 
+def _age(when: datetime | None, now: datetime) -> str:
+    if when is None:
+        return "never"
+    hours = (now - when).total_seconds() / 3600
+    return f"{hours:.1f}h ago" if hours < 48 else f"{hours / 24:.0f}d ago"
+
+
+def _health(source: SourceConfig, state: Source | None, last_run: SourceRun | None) -> str:
+    if source.method in NOT_YET:
+        return f"[dim]{NOT_YET[source.method]}[/dim]"
+    if source.auth_env and not os.environ.get(source.auth_env):
+        return f"[yellow]needs {source.auth_env}[/yellow]"
+    if state is None or state.last_run_at is None:
+        return "[dim]never run[/dim]"
+    if state.consecutive_failures:
+        error = escape((last_run.error or "")[:80]) if last_run else ""
+        return f"[red]failing x{state.consecutive_failures}[/red] {error}"
+    if state.consecutive_zero_runs >= 3:
+        return f"[yellow]0 items x{state.consecutive_zero_runs}[/yellow]"
+    return "[green]ok[/green]"
+
+
 @sources_app.command("check")
 def sources_check(
     ctx: typer.Context,
-    tier: Annotated[int | None, typer.Option("--tier", min=1, max=3)] = None,
+    tier: TierOpt = None,
+    probe: Annotated[
+        bool,
+        typer.Option(
+            "--probe", help="Also fetch every endpoint now (stores nothing; spends request budget)."
+        ),
+    ] = False,
 ) -> None:
-    """Validate config and list enabled sources. (Endpoint checks arrive in Phase 1.)"""
+    """Validate config and show each enabled source's health."""
     config = _load(ctx)
     settings = config.settings
     enabled = config.sources.enabled(tier)
-
     console.print(
         f"config: [bold]{config.config_dir}[/bold]  "
         f"profile: {config.profile.sha256[:12]}  "
         f"backend: {settings.scoring.backend}  model: {settings.scoring.model}"
     )
+
+    session_factory = _db(config)
+    now = utcnow()
+    with session_factory() as session:
+        states = {s.id: s for s in session.scalars(select(Source))}
+        last_runs = {
+            run.source_id: run
+            for run in session.scalars(
+                select(SourceRun)
+                .where(SourceRun.kind == SourceRunKind.FETCH)
+                .order_by(SourceRun.started_at)
+            )
+        }
+
     table = Table(title=f"Enabled sources ({len(enabled)})", title_justify="left")
     table.add_column("id", no_wrap=True)
-    table.add_column("name")
     table.add_column("tier", justify="right")
     table.add_column("method")
     table.add_column("checked", no_wrap=True)
-    table.add_column("endpoints", justify="right")
+    table.add_column("last success", no_wrap=True)
+    table.add_column("items", justify="right")
+    table.add_column("new", justify="right")
+    table.add_column("health")
     for source in enabled:
+        state, last_run = states.get(source.id), last_runs.get(source.id)
         checked = str(source.checked)
         table.add_row(
             source.id,
-            source.name,
             str(source.tier),
             source.method,
             f"[yellow]{checked}[/yellow]" if checked == "unverified" else checked,
-            str(len(source.endpoints)),
+            _age(state.last_success_at if state else None, now),
+            str(state.last_item_count) if state and state.last_item_count is not None else "",
+            str(last_run.items_new) if last_run and last_run.status == "ok" else "",
+            _health(source, state, last_run),
         )
     console.print(table)
 
@@ -216,6 +359,9 @@ def sources_check(
         f"watchlist: {', '.join(w.company for w in config.sources.watchlist) or 'none'}  "
         f"ATS platforms: {', '.join(config.sources.ats_platforms)}"
     )
+    if probe:
+        outcomes = _fetch(config, source_ids=[s.id for s in enabled], tier=None, probe=True)
+        _print_outcomes(outcomes, "Probe results (nothing stored)")
 
 
 @ats_app.command("detect")

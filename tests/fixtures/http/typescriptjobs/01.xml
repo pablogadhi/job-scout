@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+<channel>
+<title>TypeScript Jobs</title>
+<link>https://example.invalid/</link>
+<description>Synthetic fixture feed</description>
+<item>
+  <title>Senior TypeScript Engineer at Cobalt Systems</title>
+  <link>https://typescriptjobs.net/jobs/senior-typescript-engineer-at-cobalt-systems</link>
+  <guid isPermaLink="true">https://typescriptjobs.net/jobs/senior-typescript-engineer-at-cobalt-systems</guid>
+  <pubDate>Mon, 12 Oct 2026 17:21:00 GMT</pubDate>
+  <description>Next.js and Node.</description>
+</item>
+<item>
+  <title>Mid-Level Product Engineer at Lattice Forge Inc.</title>
+  <link>https://typescriptjobs.net/jobs/mid-level-product-engineer-at-lattice-forge-inc</link>
+  <guid isPermaLink="true">https://typescriptjobs.net/jobs/mid-level-product-engineer-at-lattice-forge-inc</guid>
+  <pubDate>Mon, 12 Oct 2026 17:21:00 GMT</pubDate>
+  <description>Product work.</description>
+</item>
+</channel>
+</rss>

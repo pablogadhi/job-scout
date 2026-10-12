@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+<channel>
+<title>PyJobs</title>
+<link>https://example.invalid/</link>
+<description>Synthetic fixture feed</description>
+<item>
+  <title><![CDATA[Senior Python Engineer]]></title>
+  <link>https://www.pyjobs.com/job/senior-python-engineer-Qz12Ab34</link>
+  <description><![CDATA[Senior Python Engineer at Quetzal Labs. Geo remote · Full-time · USD 140,000–170,000 per year.]]></description>
+  <pubDate>Mon, 12 Oct 2026 16:15:20 +0000</pubDate>
+</item>
+<item>
+  <title><![CDATA[Data Engineer Intern]]></title>
+  <link>https://www.pyjobs.com/job/data-engineer-intern-Bp56Cd78</link>
+  <description><![CDATA[Data Engineer Intern at Brightpath GmbH. Office · Berlin · Internship · EUR 1,500–1,500 per month.]]></description>
+  <pubDate>Mon, 12 Oct 2026 16:15:20 +0000</pubDate>
+</item>
+<item>
+  <title><![CDATA[Backend Engineer (R&amp;D)]]></title>
+  <link>https://www.pyjobs.com/job/backend-engineer-rd-Ob90Ef12</link>
+  <description><![CDATA[Backend Engineer (R&amp;D) at Orbit Analytics. Hybrid · Madrid · Full-time.]]></description>
+  <pubDate>Mon, 12 Oct 2026 16:15:20 +0000</pubDate>
+</item>
+</channel>
+</rss>

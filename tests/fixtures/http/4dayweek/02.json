@@ -1,0 +1,122 @@
+{
+ "data": [
+  {
+   "category": "engineering",
+   "role": "Software Engineer",
+   "level": "senior",
+   "contract_type": "permanent",
+   "schedule_type": "4_day_week",
+   "hours_per_week_min": 32,
+   "hours_per_week_max": 32,
+   "work_arrangement": "remote",
+   "locations": [
+    {
+     "country": "Mexico",
+     "continent": "North America",
+     "work_arrangement": "remote"
+    }
+   ],
+   "timezones": [
+    "UTC-6"
+   ],
+   "skills": [
+    {
+     "name": "Communication",
+     "slug": "communication"
+    }
+   ],
+   "stack": [
+    {
+     "name": "Python",
+     "slug": "python"
+    }
+   ],
+   "tools": [
+    {
+     "name": "Kubernetes",
+     "slug": "kubernetes"
+    }
+   ],
+   "salary_min": null,
+   "salary_max": null,
+   "salary_currency": null,
+   "salary_period": null,
+   "id": "4dw-0003",
+   "slug": "senior-platform-engineer-at-northwind-cloud-0003",
+   "title": "Senior Platform Engineer",
+   "description": "Run our Kubernetes platform with FluxCD and Terraform. 32-hour week at full pay.",
+   "url": "https://4dayweek.io/job/senior-platform-engineer-at-northwind-cloud-0003",
+   "posted_at": "2026-10-10T16:05:00Z",
+   "company": {
+    "id": "co-northwind",
+    "slug": "northwind-cloud",
+    "name": "Northwind Cloud",
+    "url": "https://4dayweek.io/company/northwind-cloud",
+    "website": "https://northwind.example",
+    "country": "Germany",
+    "employees": 120,
+    "schedule_type": "4_day_week",
+    "hours_full_time": 32,
+    "remote_level": "remote",
+    "hires_worldwide": false
+   }
+  },
+  {
+   "category": "engineering",
+   "role": "Software Engineer",
+   "level": "senior",
+   "contract_type": "permanent",
+   "schedule_type": "4_day_week",
+   "hours_per_week_min": 32,
+   "hours_per_week_max": 32,
+   "work_arrangement": "remote",
+   "locations": [],
+   "timezones": [],
+   "skills": [
+    {
+     "name": "Communication",
+     "slug": "communication"
+    }
+   ],
+   "stack": [
+    {
+     "name": "Python",
+     "slug": "python"
+    }
+   ],
+   "tools": [
+    {
+     "name": "Kubernetes",
+     "slug": "kubernetes"
+    }
+   ],
+   "salary_min": 900000,
+   "salary_max": 1100000,
+   "salary_currency": "USD",
+   "salary_period": "month",
+   "id": "4dw-0004",
+   "slug": "staff-software-engineer-at-lumen-ledger-0004",
+   "title": "Staff Software Engineer",
+   "description": "Async-first fintech team. Monthly contractor rate.",
+   "url": "https://4dayweek.io/job/staff-software-engineer-at-lumen-ledger-0004",
+   "posted_at": "2026-10-08T09:30:00Z",
+   "company": {
+    "id": "co-lumen",
+    "slug": "lumen-ledger",
+    "name": "Lumen Ledger",
+    "url": "https://4dayweek.io/company/northwind-cloud",
+    "website": "https://northwind.example",
+    "country": "Germany",
+    "employees": 120,
+    "schedule_type": "4_day_week",
+    "hours_full_time": 32,
+    "remote_level": "remote",
+    "hires_worldwide": true
+   }
+  }
+ ],
+ "page": 2,
+ "limit": 100,
+ "total": 4,
+ "has_more": false
+}

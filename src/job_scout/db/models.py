@@ -70,6 +70,16 @@ class SalaryPeriod(enum.StrEnum):
     YEAR = "year"
 
 
+class SourceRunStatus(enum.StrEnum):
+    OK = "ok"
+    FAILED = "failed"
+
+
+class SourceRunKind(enum.StrEnum):
+    FETCH = "fetch"  # postings stored, source health updated
+    PROBE = "probe"  # `sources check --probe`: nothing stored, requests still count
+
+
 class AtsStatus(enum.StrEnum):
     OK = "ok"
     UNKNOWN_ATS = "unknown_ats"
@@ -105,6 +115,8 @@ class Base(DeclarativeBase):
         CallStatus: _enum(CallStatus),
         StopReason: _enum(StopReason),
         SalaryPeriod: _enum(SalaryPeriod),
+        SourceRunStatus: _enum(SourceRunStatus),
+        SourceRunKind: _enum(SourceRunKind),
         AtsStatus: _enum(AtsStatus),
         AtsSeed: _enum(AtsSeed),
     }
@@ -121,6 +133,25 @@ class Source(Base):
     last_item_count: Mapped[int | None]
     consecutive_failures: Mapped[int] = mapped_column(default=0, server_default="0")
     consecutive_zero_runs: Mapped[int] = mapped_column(default=0, server_default="0")
+
+
+class SourceRun(Base):
+    """One attempt at a source. Feeds request budgets (e.g. Remotive's 4/day) and health."""
+
+    __tablename__ = "source_runs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    source_id: Mapped[str] = mapped_column(ForeignKey("sources.id"), index=True)
+    kind: Mapped[SourceRunKind] = mapped_column(default=SourceRunKind.FETCH)
+    status: Mapped[SourceRunStatus]
+    started_at: Mapped[datetime] = mapped_column(default=utcnow, index=True)
+    finished_at: Mapped[datetime | None]
+    requests_made: Mapped[int] = mapped_column(default=0, server_default="0")
+    items_fetched: Mapped[int] = mapped_column(default=0, server_default="0")
+    items_new: Mapped[int] = mapped_column(default=0, server_default="0")
+    items_duplicate: Mapped[int] = mapped_column(default=0, server_default="0")
+    items_skipped: Mapped[int] = mapped_column(default=0, server_default="0")
+    error: Mapped[str | None] = mapped_column(Text)
 
 
 class Job(Base):

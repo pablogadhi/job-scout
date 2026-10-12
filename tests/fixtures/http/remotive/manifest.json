@@ -1,0 +1,12 @@
+{
+  "https://remotive.com/api/remote-jobs/categories": {
+    "file": "01.json",
+    "status": 200,
+    "content_type": "application/json; charset=utf-8"
+  },
+  "https://remotive.com/api/remote-jobs?category=software-development": {
+    "file": "02.json",
+    "status": 200,
+    "content_type": "application/json; charset=utf-8"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "https://4dayweek.io/api/v2/jobs?category=engineering&work_arrangement=remote&limit=100&sort=date&page=1": {
+    "file": "01.json",
+    "status": 200,
+    "content_type": "application/json; charset=utf-8"
+  },
+  "https://4dayweek.io/api/v2/jobs?category=engineering&work_arrangement=remote&limit=100&sort=date&page=2": {
+    "file": "02.json",
+    "status": 200,
+    "content_type": "application/json; charset=utf-8"
+  }
+}

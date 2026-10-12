@@ -1,0 +1,22 @@
+{
+  "https://www.realworkfromanywhere.com/remote-backend-jobs/rss.xml": {
+    "file": "01.xml",
+    "status": 200,
+    "content_type": "application/rss+xml; charset=utf-8"
+  },
+  "https://www.realworkfromanywhere.com/remote-fullstack-jobs/rss.xml": {
+    "file": "02.xml",
+    "status": 200,
+    "content_type": "application/rss+xml; charset=utf-8"
+  },
+  "https://www.realworkfromanywhere.com/remote-software-developer-jobs/rss.xml": {
+    "file": "03.xml",
+    "status": 200,
+    "content_type": "application/rss+xml; charset=utf-8"
+  },
+  "https://www.realworkfromanywhere.com/remote-devops-and-sysadmin-jobs/rss.xml": {
+    "file": "04.xml",
+    "status": 200,
+    "content_type": "application/rss+xml; charset=utf-8"
+  }
+}
