@@ -153,6 +153,7 @@ sources:
       Comments are free text ("Company | Role | REMOTE (US only) | $150k"), so skip the regex
       pre-filter except for an obvious "REMOTE" check and let Claude parse the rest.
       New comments keep arriving all month; dedupe by comment id.
+    prefilter: remote_mention_only
 
   - id: pyjobs
     name: PyJobs

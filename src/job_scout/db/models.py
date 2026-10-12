@@ -184,11 +184,17 @@ class Job(Base):
 
 
 class PrefilterResult(Base):
+    """Verdict for a canonical job's whole duplicate group (copies have no row)."""
+
     __tablename__ = "prefilter_results"
 
     job_id: Mapped[int] = mapped_column(ForeignKey("jobs.id", ondelete="CASCADE"), primary_key=True)
-    passed: Mapped[bool] = mapped_column(Boolean)
+    passed: Mapped[bool] = mapped_column(Boolean, index=True)
     reason: Mapped[str | None] = mapped_column(Text)
+    evaluated_at: Mapped[datetime] = mapped_column(default=utcnow)
+    # Prefilter.fingerprint at evaluation time: a mismatch means re-evaluate.
+    fingerprint: Mapped[str] = mapped_column(String(64))
+    group_size: Mapped[int] = mapped_column(default=1, server_default="1")
 
 
 class Run(Base):

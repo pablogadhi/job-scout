@@ -75,6 +75,10 @@ def _map_fourdayweek(item: dict[str, Any]) -> Posting:
         tags.append(f"hours/week: {hours[0]}-{hours[1]}")
     if item.get("level"):
         tags.append(f"level: {item['level']}")
+    if company.get("remote_level"):
+        # The company's policy, not this job's: kept out of remote_raw so a remote job at a
+        # hybrid company isn't filtered as hybrid.
+        tags.append(f"company remote level: {company['remote_level']}")
     salary = None
     if item.get("salary_min") or item.get("salary_max"):
         cents = [v / 100 if v else None for v in (item.get("salary_min"), item.get("salary_max"))]
@@ -90,14 +94,7 @@ def _map_fourdayweek(item: dict[str, Any]) -> Posting:
         title=item["title"],
         company=company.get("name"),
         location_raw=_fourdayweek_location(item),
-        remote_raw=", ".join(
-            f"{label}: {value}"
-            for label, value in (
-                ("job", item.get("work_arrangement")),
-                ("company", company.get("remote_level")),
-            )
-            if value
-        ),
+        remote_raw=item.get("work_arrangement"),
         description_text=item.get("description"),  # plain text per the API spec
         tags=tags,
         posted_at=iso_to_utc(item.get("posted_at")),
@@ -294,6 +291,8 @@ def _map_pyjobs(entry: FeedEntry) -> Posting:
     summary = html_to_text(entry.get("summary")) or ""
     company, parts = _pyjobs_details(summary, title)
     workplace = parts[0] if parts else None
+    if workplace == "Office":
+        workplace = "on-site (Office)"  # say it in words the remote pre-filter matches
     salary = next((s for p in parts if (s := parse_salary(p))), None)
     job_types = [p for p in parts[1:] if _JOB_TYPES.match(p)]
     location = [p for p in parts[1:] if not _JOB_TYPES.match(p) and not parse_salary(p)]

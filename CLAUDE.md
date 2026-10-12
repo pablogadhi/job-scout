@@ -22,6 +22,8 @@ uv sync                                         # install deps into .venv
 uv run --env-file .env alembic upgrade head     # create/upgrade the DB
 uv run --env-file .env job-scout sources check  # validate config, show source health
 uv run --env-file .env job-scout fetch --tier 1  # fetch and store (--force ignores min interval)
+uv run --env-file .env job-scout filter          # pre-filter new/stale groups, pass rate per source
+uv run --env-file .env job-scout explain ID      # a job, its duplicate group, verdict, scores
 uv run pytest                                   # offline tests (live ones excluded)
 uv run pytest -m live                           # opt-in: real network / real Claude backend
 uv run ruff check . && uv run ruff format .
@@ -49,6 +51,10 @@ uv run --env-file .env alembic revision --autogenerate -m "what changed"
   - `sources.py`: per-source mappers and the `FETCHERS` registry. `hn.py`: HN Who is hiring.
   - `normalize.py`: pure helpers (HTML to text, salary parsing, company/title normalization).
   - `store.py`: dedupe and insert. `runner.py`: per-source orchestration and health.
+- `src/job_scout/groups.py`: duplicate groups (canonical job + linked copies) and their
+  combined locations. Anything that judges a job (pre-filter, scoring) works on groups.
+- `src/job_scout/prefilter.py`: pure filters.yaml rules (`Prefilter`), no I/O.
+  `prefilter_run.py`: applies them to stored groups, report and samples.
 - `tests/`: pytest; `conftest.py` clears `JOB_SCOUT_*` env vars and gives a writable copy of
   `config/` (`config_dir` fixture).
 
@@ -67,6 +73,13 @@ uv run --env-file .env alembic revision --autogenerate -m "what changed"
   are rejected on write. Enums are stored as VARCHAR (no native enum, no CHECK), so adding a
   value needs no migration. Every model change needs an Alembic revision;
   `tests/test_db.py::test_migration_matches_models` fails otherwise.
+- **Pre-filter verdicts belong to groups:** one `prefilter_results` row per canonical job; a
+  group passes if any copy passes. A verdict is stale (re-evaluated by `filter`) when the
+  rules change (`Prefilter.fingerprint`: filters.yaml, per-source `prefilter` modes,
+  `PREFILTER_VERSION`) or a copy was linked after it was evaluated. Bump
+  `PREFILTER_VERSION` whenever rule logic changes.
+- **Regex filters never read descriptions** (false drops like "hybrid cloud"); descriptions
+  are Claude's job. `remote_raw` holds only the job's own arrangement, never the company's.
 - Without `relationship()`s, the ORM doesn't order inserts across tables: flush parents
   (e.g. `Source`) before adding children that reference them in the same session.
 - **Fail per source, not per run.** One broken source must not stop the others; a single

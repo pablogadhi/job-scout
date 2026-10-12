@@ -66,6 +66,10 @@ def test_4dayweek(app_config: AppConfig, make_http: Callable[..., HttpClient]) -
         "year",
     )
     assert {"schedule: 4_day_week", "hours/week: 32-32", "Kubernetes"} <= set(p.tags)
+    assert p.remote_raw == "remote"
+    tidewater = postings[1]  # remote job listing, hybrid company: policy goes to tags only
+    assert tidewater.remote_raw == "remote"
+    assert "company remote level: hybrid" in tidewater.tags
     assert p.location_raw == "Germany (remote); timezones: CET"
     assert postings[1].location_raw == "Austin, Texas, United States (hybrid)"
     assert postings[3].location_raw == "company hires worldwide"
@@ -176,7 +180,7 @@ def test_pyjobs(app_config: AppConfig, make_http: Callable[..., HttpClient]) -> 
     assert (intern.company, intern.location_raw, intern.remote_raw, intern.tags) == (
         "Brightpath GmbH",
         "Berlin",
-        "Office",
+        "on-site (Office)",
         ["Internship"],
     )
     assert (intern.salary_max, intern.salary_currency, intern.salary_period) == (

@@ -113,11 +113,15 @@ Live run on 2026-10-12: 12 sources stored 2,734 postings; a second run added 0 d
 - **P1-D17 Schema check:** commands that use the DB exit 2 with "run `alembic upgrade head`"
   if the DB isn't at the latest revision.
 - **P1-D18 HTML to text** via selectolax's lexbor backend (the modest backend is deprecated).
+- **P1-D19 Company parentheticals are dropped when normalizing** ("Lumen Ledger (Remote,
+  LATAM)" and "Cobalt Systems (raised $20M)" become "lumen ledger", "cobalt systems"), so HN
+  headers match the same company on other boards.
 
 ### P1 Your decisions
 
 - **P1-U1 Combined locations of linked copies.** A job and all its `duplicate_of` copies
-  are judged together. Implemented in Phase 2 (see P2 section), reused by scoring in Phase 3.
+  are judged together. Implemented in Phase 2; how it works is explained in
+  "How combined locations work" under Phase 2. Scoring reuses it in Phase 3.
 - **P1-U2 Fixtures are always synthetic.** The recorded live responses were never committed;
   `tests/fixtures/make_http_fixtures.py` generates invented data that mirrors each source's
   payload structure and quirks. `fetch --record` refuses to write under `tests/` and is for
@@ -168,3 +172,106 @@ Live run on 2026-10-12: 12 sources stored 2,734 postings; a second run added 0 d
   makes sure all their locations are considered.
 - **P1-R3 Low-yield sources:** Remotive's free API serves only 15 delayed jobs across all
   categories. Kept, at 1 request per run.
+
+---
+
+## Phase 2: Pre-filter (branch `phase-2-prefilter`)
+
+**Acceptance:** passed on the local data (fetched 2026-10-12): `job-scout filter` judged
+2,511 job groups (3,023 postings, 512 linked duplicates), 1,120 passed (45%), with a pass
+rate per source and the top drop rules. Spot check of 20 passed and 20 dropped (seed 7)
+done by Claude, not by you: no verdict was wrong against the rules as written. Misses
+caused by the rules themselves are listed under P2-R1. Please re-check (P2-R5).
+
+### How combined locations work
+
+1. **Linking (Phase 1).** When a posting is stored, its dedupe key
+   (`company_normalized|title_normalized`) is looked up. If an earlier job has the same key,
+   the new posting is stored with `duplicate_of` pointing at that first job (the
+   *canonical* job). Example: 4dayweek lists one job once per country; Northwind Cloud's
+   "Senior Platform Engineer" for Germany arrives first, the Mexico listing becomes its copy.
+2. **Groups (`groups.py`).** A group is the canonical job plus all its copies, from any
+   source. `Group.combined_locations()` returns each distinct location statement labelled
+   with its source, e.g. `4dayweek: Germany (remote)`, `4dayweek: Mexico (remote)`.
+3. **Pre-filter.** Each copy is checked on its own; the group passes if any copy passes,
+   and the reason says which copy (`… (via copy #2073 on 4dayweek) [3 copies]`). So an
+   EMEA-only first listing can no longer hide a Latin America listing of the same job.
+   One verdict row is stored, on the canonical job.
+4. **Late copies.** If a new copy is linked after the group was judged (the LATAM listing
+   appears a week later), the next `job-scout filter` re-judges the group automatically.
+5. **Scoring (Phase 3, planned).** The prompt for a group carries the canonical posting
+   plus a "Locations across all listings of this job" list built from
+   `combined_locations()`, so Claude judges eligibility on all of them. One score per group,
+   stored on the canonical job. When a group gains a copy with a new location after it was
+   scored, it will be re-queued for scoring (to be built in Phase 3).
+6. **Seeing it.** `job-scout explain ID` (any member of the group) lists every copy with its
+   location and prints the combined list exactly as Claude will get it.
+
+### P2 Decisions (Claude)
+
+- **P2-D1 Verdicts belong to groups;** a group passes if any copy passes (see above).
+- **P2-D2 Regex rules never read descriptions.** The `filters.yaml` header says patterns
+  match "title, location and description", but measured on the local data, matching
+  descriptions would drop 186 more of the 980 passing non-HN groups, and about half of the
+  sampled ones were wrong: "hybrid working mode, plus up to 3 months work from anywhere",
+  "benefits only applicable to U.S.-based candidates", "in-office snacks", "teams in US and
+  EMEA". The right ones ("3 days a week in office required", "must be within EMEA",
+  "security clearance required") are what Claude catches from the full text. This follows
+  the file's own rule of thumb: drop only clear non-fits. Side effect: patterns that only
+  occur in descriptions (`us work authorization`, `must reside in…`) rarely fire.
+- **P2-D3 Fields per rule:** title rules read the title; remote rules read title, location
+  and the source's remote/workplace field; location rules read title and location.
+- **P2-D4 Rule order** title include, title exclude, remote, location, salary; the first
+  failing rule is the reason, quoting the pattern and the matched text. Passing verdicts
+  also carry notes (location allowed / unclear, salary meets floor / unlisted / not
+  comparable).
+- **P2-D5 Salary floor only in `filters.salary.currency` (USD).** Other currencies and
+  unknown periods pass to Claude. Day and week rates are derived from `hours_per_year`
+  (÷8, ÷40), since filters.yaml only defines hourly and monthly.
+- **P2-D6 HN rule as config:** new per-source field `prefilter: remote_mention_only` (set on
+  `hn_whoishiring`): passes if "remote" appears anywhere in the comment.
+- **P2-D7 Staleness:** each verdict stores a fingerprint of filters.yaml, the per-source
+  modes and `PREFILTER_VERSION`; a mismatch, or a copy linked after evaluation, re-queues the group.
+  `filter --rerun` re-judges everything.
+- **P2-D8 `job-scout filter` is its own command** (not in PLAN.md §9); `fetch` doesn't
+  filter. Phase 4's `run` chains fetch, filter, score, digest.
+- **P2-D9 `filter --sample N [--seed S]`** lists random passed and dropped jobs for spot
+  checks with `explain`.
+- **P2-D10 `explain`** shows the job, its group with locations, the combined locations,
+  the verdict (flagged if stale), and scores (ready for Phase 3).
+- **P2-D11 Migration `1d16fbe34935` clears old verdicts** before adding the NOT NULL
+  columns; they would be stale anyway and `filter` recomputes them.
+- **P2-D12 Local dev data re-mapped** from the stored raw payloads after P2-B1/B2 (no
+  re-fetch); only affects your local `data/job-scout.db`.
+- **P2-D13 Alembic post-write hook** now also runs `ruff check --fix`, so autogenerated
+  migrations pass lint.
+
+### P2 Bugs found and fixed
+
+- **P2-B1 4dayweek `remote_raw` included the company's policy** ("job: remote, company:
+  hybrid"): 866 remote jobs at hybrid companies would have been dropped as hybrid. Now
+  `remote_raw` is the job's own arrangement; the company's goes to a tag.
+- **P2-B2 PyJobs "Office"** didn't say on-site, so the remote rule missed it; now
+  "on-site (Office)".
+- **P2-B3 Migration would fail on a populated DB** (NOT NULL columns without defaults);
+  caught in review before running (see P2-D11).
+- **P2-B4 `explain` salary formatting** would crash when only one end of the range is
+  known; caught in review.
+
+### P2 For you to review
+
+- **P2-R1 Title include gaps** (filters.yaml is read-only, so not changed). Dropped but
+  possibly relevant: "Staff Engineer", "Principal Engineer", "Senior Engineer (.NET)",
+  "Forward Deployed Engineer" (often backend/DevOps), "Senior Integration Engineer"
+  (integrations are in your profile). About 20 of 1,148 title drops. Possible additions:
+  `'\b(staff|principal|senior|lead) engineer\b'` and
+  `'\b(integration|forward deployed|deployment) engineer\b'`. The rest of the title drops
+  are ML/AI, frontend, management, sales and data science, as intended.
+- **P2-R2 Non-USD salaries are never filtered in code** (about 350 4dayweek jobs in CAD,
+  EUR, GBP, PLN…). Option: approximate `fx_to_usd` rates in filters.yaml.
+- **P2-R3 Description-only signals** (hybrid, US-only, clearance) are left to Claude
+  (P2-D2). If you prefer the stricter behaviour, it's a one-line change per rule.
+- **P2-R4 HN passes anything that mentions remote**, including non-engineering roles
+  (e.g. a product manager post), as PLAN.md specifies; Claude scores those low.
+- **P2-R5 Re-check the spot check:** `job-scout filter --sample 20`, then
+  `job-scout explain ID` on a few.
