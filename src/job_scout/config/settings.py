@@ -11,7 +11,7 @@ CLI flags arrive as a nested dict of overrides passed to `load_settings`.
 from __future__ import annotations
 
 import os
-from datetime import time
+from datetime import date, time
 from pathlib import Path
 from typing import Any, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -93,17 +93,33 @@ class CliOptions(StrictModel):
     binary: str = "claude"
     workdir: Path = Path("/var/lib/job-scout/claude-cwd")
     timeout_seconds: PositiveInt = 600
+    token_created: date | None = None
+
+
+class ModelPrices(StrictModel):
+    """USD per million tokens."""
+
+    input: PositiveFloat
+    output: PositiveFloat
+    cache_write: PositiveFloat
+    cache_read: PositiveFloat
 
 
 class ApiOptions(StrictModel):
     prompt_caching: bool = True
     max_spend_usd_per_run: PositiveFloat = 5.0
     max_retries: NonNegativeInt = 3
+    batch_poll_seconds: PositiveInt = 60
+    batch_max_wait_minutes: PositiveInt = 120
+    batch_discount: float = Field(0.5, gt=0, le=1)
+    prices: dict[str, ModelPrices] = {
+        "claude-haiku-4-5": ModelPrices(input=1.0, output=5.0, cache_write=1.25, cache_read=0.1)
+    }
 
 
 class Scoring(StrictModel):
     backend: Backend = "cli"
-    model: str = "claude-haiku-5-5"
+    model: str = "claude-haiku-4-5"
     description_max_chars: PositiveInt = 6000
     modes: Modes = Modes()
     order: Literal["newest_first", "oldest_first"] = "newest_first"

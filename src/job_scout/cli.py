@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Any, NoReturn
+from zoneinfo import ZoneInfo
 
 import typer
 from rich.console import Console
@@ -46,6 +47,18 @@ from job_scout.prefilter_run import (
     sample,
     source_report,
 )
+from job_scout.scoring.backends import PlanOnlyScorer, make_scorer
+from job_scout.scoring.calibrate import (
+    Configuration,
+    estimate_calls,
+    run_calibration,
+    sample_job_ids,
+    save,
+)
+from job_scout.scoring.planner import Limits
+from job_scout.scoring.queue import requeue_for_rescore
+from job_scout.scoring.runner import RunOptions, RunReport, ScoringRunner
+from job_scout.scoring.status import scoring_status
 
 log = logging.getLogger(__name__)
 console = Console()
@@ -215,6 +228,108 @@ def fetch(
         raise typer.Exit(1)
 
 
+def _limits(
+    config: AppConfig,
+    mode: ScoringMode,
+    postings_per_call: int | None,
+    max_calls: int | None,
+    max_input_tokens: int | None,
+) -> tuple[Limits, bool]:
+    scoring = config.settings.scoring
+    try:
+        limits = scoring.limits(
+            mode.value,
+            postings_per_call=postings_per_call,
+            max_calls=max_calls,
+            max_input_tokens_per_call=max_input_tokens,
+        )
+    except ValueError as exc:
+        err_console.print(f"[red]{escape(str(exc))}[/red]")
+        raise typer.Exit(2) from exc
+    return Limits.from_settings(limits), bool(getattr(limits, "use_batches_api", False))
+
+
+def _run_scoring(
+    config: AppConfig,
+    session_factory: sessionmaker[Session],
+    *,
+    mode: ScoringMode,
+    command: str,
+    postings_per_call: int | None,
+    max_calls: int | None,
+    max_input_tokens: int | None,
+    dry_run: bool,
+) -> RunReport:
+    scoring = config.settings.scoring
+    limits, use_batches = _limits(config, mode, postings_per_call, max_calls, max_input_tokens)
+    try:
+        # A dry run only plans, so it needs no credentials.
+        scorer = (
+            PlanOnlyScorer(Backend(scoring.backend), scoring.model)
+            if dry_run
+            else make_scorer(scoring, scoring.backend, os.environ)
+        )
+    except RuntimeError as exc:
+        err_console.print(f"[red]{escape(str(exc))}[/red]")
+        raise typer.Exit(2) from exc
+    runner = ScoringRunner(config, session_factory, scorer)
+    report = runner.run(
+        RunOptions(
+            mode=mode,
+            limits=limits,
+            command=command,
+            dry_run=dry_run,
+            use_batches_api=use_batches,
+        )
+    )
+    batching = "Batches API" if use_batches else f"up to {limits.postings_per_call}/call"
+    console.print(
+        f"backend {scoring.backend} ({scoring.model}), mode {mode.value}, {batching}, "
+        f"max {limits.max_calls} calls"
+    )
+    new, requeued = report.enqueued
+    if new or requeued:
+        console.print(f"queued {new} new job groups, re-queued {requeued} that gained a listing")
+    if dry_run:
+        sizes = report.planned_calls
+        cost = (
+            f"; est. ${report.estimated_cost_usd:.2f}"
+            if report.estimated_cost_usd is not None
+            else ""
+        )
+        console.print(
+            f"[bold]dry run[/bold]: {len(sizes)} calls planned "
+            f"({_sizes_summary(sizes)} postings, {sum(sizes)} total){cost}; "
+            f"{report.pending_left} pending"
+        )
+        return report
+    stop = report.stop_reason.value if report.stop_reason else "?"
+    color = "green" if stop == "done" else "yellow"
+    console.print(
+        f"run #{report.run_id}: {report.calls_made} calls, {report.scored} scored, "
+        f"{report.failed} failed, {report.pending_left} still pending, "
+        f"est. ${report.cost_usd:.4f}"
+        f"{' (API-equivalent, not billed on Pro)' if scoring.backend == 'cli' else ''}; "
+        f"stop reason: [{color}]{stop}[/{color}]"
+    )
+    if report.batch_id:
+        console.print(f"batch {report.batch_id}")
+    return report
+
+
+def _sizes_summary(sizes: list[int]) -> str:
+    """[20, 20, 20, 5] -> '3x20 + 1x5'."""
+    if not sizes:
+        return "none"
+    runs: list[list[int]] = []
+    for size in sizes:
+        if runs and runs[-1][1] == size:
+            runs[-1][0] += 1
+        else:
+            runs.append([1, size])
+    return " + ".join(f"{count}x{size}" for count, size in runs)
+
+
 @app.command()
 def score(
     ctx: typer.Context,
@@ -226,9 +341,18 @@ def score(
     max_input_tokens: MaxInputTokensOpt = None,
     dry_run: DryRunOpt = False,
 ) -> None:
-    """Score pending postings with Claude."""
-    _load(ctx, _scoring_overrides(backend, model))
-    _not_implemented(3)
+    """Score pending job groups with Claude."""
+    config = _load(ctx, _scoring_overrides(backend, model))
+    _run_scoring(
+        config,
+        _db(config),
+        mode=mode,
+        command="score",
+        postings_per_call=postings_per_call,
+        max_calls=max_calls,
+        max_input_tokens=max_input_tokens,
+        dry_run=dry_run,
+    )
 
 
 @app.command()
@@ -263,24 +387,138 @@ def backlog(
 @app.command()
 def rescore(
     ctx: typer.Context,
-    top: Annotated[int | None, typer.Option("--top", min=1)] = None,
-    since: Annotated[str | None, typer.Option("--since", help="YYYY-MM-DD")] = None,
+    top: Annotated[int | None, typer.Option("--top", min=1, help="Top N by best score.")] = None,
+    since: Annotated[
+        datetime | None, typer.Option("--since", formats=["%Y-%m-%d"], help="First seen on/after.")
+    ] = None,
+    mode: Annotated[ScoringMode, typer.Option("--mode")] = ScoringMode.DAILY,
     backend: BackendOpt = None,
     model: ModelOpt = None,
     postings_per_call: PostingsPerCallOpt = None,
     max_calls: MaxCallsOpt = None,
     max_input_tokens: MaxInputTokensOpt = None,
+    dry_run: DryRunOpt = False,
 ) -> None:
-    """Re-score recent or top jobs under the current profile."""
-    _load(ctx, _scoring_overrides(backend, model))
-    _not_implemented(3)
+    """Re-score top or recent jobs under the current profile (after editing profile.md)."""
+    if top is None and since is None:
+        err_console.print("[red]give --top N and/or --since YYYY-MM-DD[/red]")
+        raise typer.Exit(2)
+    config = _load(ctx, _scoring_overrides(backend, model))
+    session_factory = _db(config)
+    with session_factory.begin() as session:
+        since_utc = (
+            since.replace(tzinfo=ZoneInfo(config.settings.schedule.timezone)) if since else None
+        )
+        queued = requeue_for_rescore(session, config.profile.sha256, top=top, since=since_utc)
+    console.print(f"queued {queued} jobs for re-scoring under profile {config.profile.sha256[:12]}")
+    _run_scoring(
+        config,
+        session_factory,
+        mode=mode,
+        command="rescore",
+        postings_per_call=postings_per_call,
+        max_calls=max_calls,
+        max_input_tokens=max_input_tokens,
+        dry_run=dry_run,
+    )
 
 
 @app.command()
 def status(ctx: typer.Context) -> None:
     """Pending count, last run's stop reason, calls and spend today, token expiry."""
-    _load(ctx)
-    _not_implemented(3)
+    config = _load(ctx)
+    settings = config.settings
+    with _db(config)() as session:
+        st = scoring_status(
+            session,
+            config.profile.sha256,
+            settings.schedule.timezone,
+            settings.scoring.cli.token_created,
+            utcnow(),
+        )
+    console.print(f"backend: {settings.scoring.backend}  model: {settings.scoring.model}")
+    console.print(f"pending job groups: {st.pending}  batches in flight: {st.batches_in_flight}")
+    if st.last_run is None:
+        console.print("last run: none")
+    else:
+        run = st.last_run
+        console.print(
+            f"last run: #{run.id} {run.command} ({run.backend}, {run.mode}) "
+            f"{run.started_at:%Y-%m-%d %H:%M} UTC, {run.calls_made} calls, "
+            f"{run.postings_scored} scored, stop reason: {run.stop_reason or 'running'}"
+        )
+    console.print(
+        f"today: {st.calls_today} calls, api spend ${st.spend_today_usd:.4f}, "
+        f"cli API-equivalent ${st.cli_cost_today_usd:.4f} (not billed on Pro)"
+    )
+    if st.token_warning:
+        console.print(f"[yellow]{escape(st.token_warning)}[/yellow]")
+
+
+@app.command()
+def calibrate(
+    ctx: typer.Context,
+    sample: Annotated[int, typer.Option("--sample", min=2, help="Job groups to score.")] = 50,
+    sizes: Annotated[
+        str, typer.Option("--sizes", help="CLI postings per call to compare.")
+    ] = "20,40,60",
+    seed: Annotated[int, typer.Option("--seed")] = 1,
+    yes: Annotated[
+        bool, typer.Option("--yes", help="Confirm: this spends API money and Pro prompts.")
+    ] = False,
+) -> None:
+    """Compare batch sizes: api at 1 posting/call (reference) vs cli at --sizes."""
+    config = _load(ctx)
+    scoring = config.settings.scoring
+    try:
+        cli_sizes = [int(x) for x in sizes.split(",") if x.strip()]
+    except ValueError as exc:
+        raise typer.BadParameter("--sizes must be comma-separated integers") from exc
+    names = {"api x1": 1, **{f"cli x{n}": n for n in cli_sizes}}
+    calls = estimate_calls(sample, names)
+    console.print(
+        f"{sample} job groups: {calls['api x1']} API requests (billed) and "
+        f"{sum(v for k, v in calls.items() if k != 'api x1')} CLI prompts (Pro usage)"
+    )
+    if not yes:
+        console.print("re-run with --yes to spend them")
+        raise typer.Exit(1)
+    try:
+        reference = Configuration("api x1", make_scorer(scoring, "api", os.environ), 1)
+        cli = make_scorer(scoring, "cli", os.environ)
+    except RuntimeError as exc:
+        err_console.print(f"[red]{escape(str(exc))}[/red]")
+        raise typer.Exit(2) from exc
+    candidates = [Configuration(f"cli x{n}", cli, n) for n in cli_sizes]
+    with _db(config)() as session:
+        ids = sample_job_ids(session, sample, seed)
+        result = run_calibration(config, session, ids, reference, candidates)
+    path = save(result, config.settings.paths.reports)
+    for candidate in result.candidates:
+        table = Table(title=f"{candidate.name} vs {result.reference.name}", title_justify="left")
+        for column in ("title", "company", "ref", "score", "diff", "summary"):
+            table.add_column(column, overflow="fold")
+        for job_id in result.job_ids:
+            ref, got = result.reference.scores.get(job_id), candidate.scores.get(job_id)
+            diff = f"{got - ref:+d}" if ref is not None and got is not None else ""
+            table.add_row(
+                escape(result.titles[job_id][:50]),
+                escape(result.companies[job_id][:25]),
+                str(ref if ref is not None else "-"),
+                str(got if got is not None else "-"),
+                diff,
+                escape(candidate.summaries.get(job_id, "")[:80]),
+            )
+        console.print(table)
+        console.print(
+            f"  {result.diff_stats(candidate)}  calls={candidate.calls} "
+            f"failed={candidate.failed_calls} ${candidate.cost_usd:.4f} {candidate.seconds}s"
+        )
+    ref = result.reference
+    console.print(
+        f"reference: calls={ref.calls} failed={ref.failed_calls} ${ref.cost_usd:.4f} {ref.seconds}s"
+    )
+    console.print(f"saved to {path}")
 
 
 @app.command("filter")

@@ -59,6 +59,7 @@ class StopReason(enum.StrEnum):
     MAX_CALLS = "max_calls"
     USAGE_LIMIT = "usage_limit"
     SPEND_LIMIT = "spend_limit"
+    BATCH_PENDING = "batch_pending"  # a Batches API batch is still processing; next run resumes it
     ERROR = "error"
 
 
@@ -225,6 +226,8 @@ class ScoringCall(Base):
     exit_code: Mapped[int | None]  # cli backend
     http_status: Mapped[int | None]  # api backend
     api_batch_id: Mapped[str | None] = mapped_column(String(100), index=True)
+    # Batches API: custom_id -> job ids, so results can be ingested after a restart.
+    request_map: Mapped[dict[str, Any] | None]
     input_tokens: Mapped[int | None]
     output_tokens: Mapped[int | None]
     cost_usd_estimate: Mapped[float | None] = mapped_column(Float)
@@ -246,6 +249,8 @@ class Score(Base):
     overall_score: Mapped[int | None] = mapped_column(index=True)
     disqualified: Mapped[bool | None] = mapped_column(Boolean)
     status: Mapped[ScoreStatus] = mapped_column(default=ScoreStatus.PENDING, index=True)
+    attempts: Mapped[int] = mapped_column(default=0, server_default="0")  # failed calls so far
+    scored_at: Mapped[datetime | None]
     call_id: Mapped[int | None] = mapped_column(ForeignKey("scoring_calls.id"), index=True)
     input_tokens: Mapped[int | None]
     output_tokens: Mapped[int | None]

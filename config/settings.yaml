@@ -10,7 +10,9 @@ scoring:
 
   # Model for both backends. Full model ID so the CLI and API resolve the same model.
   # Override: --model <id>  or  JOB_SCOUT_MODEL=<id>
-  model: claude-haiku-5-5
+  # claude-haiku-5-5 (the original value) is not a real model ID; the current Haiku is
+  # claude-haiku-4-5 (checked 2026-10-12, see DECISIONS.md P3-C1).
+  model: claude-haiku-4-5
 
   description_max_chars: 6000   # posting description is truncated to this before scoring
 
@@ -50,14 +52,26 @@ scoring:
     binary: claude
     workdir: /var/lib/job-scout/claude-cwd   # empty dir: no CLAUDE.md, hooks or MCP config
     timeout_seconds: 600
-    # Auth: CLAUDE_CODE_OAUTH_TOKEN from `claude setup-token`.
-    # ANTHROPIC_API_KEY must not reach this process (startup check enforces it).
+    # Auth: CLAUDE_CODE_OAUTH_TOKEN from `claude setup-token` (valid one year).
+    # The subprocess gets an allowlisted environment: ANTHROPIC_* never reaches it.
+    token_created: null             # YYYY-MM-DD; `status` and the digest warn 30 days before expiry
 
   api:
     # Auth: ANTHROPIC_API_KEY, only ever passed to the API backend.
     prompt_caching: true
     max_spend_usd_per_run: 5.00     # stop scoring when the run's estimated spend reaches this
     max_retries: 3
+    batch_poll_seconds: 60          # Batches API: how often to poll a submitted batch
+    batch_max_wait_minutes: 120     # stop waiting (the batch keeps running); the next run resumes
+    # USD per million tokens, per model. Batches API usage is billed at batch_discount × these.
+    # Check https://platform.claude.com/docs/en/models/overview when changing models.
+    batch_discount: 0.5
+    prices:
+      claude-haiku-4-5:
+        input: 1.00
+        output: 5.00
+        cache_write: 1.25           # 5-minute cache writes (1.25 × input)
+        cache_read: 0.10            # 0.1 × input
 
 digest:
   min_score: 60

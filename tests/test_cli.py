@@ -1,10 +1,19 @@
+import json
+import sys
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
+from sqlalchemy import select
 from typer.testing import CliRunner
 
 from job_scout.cli import app
+from job_scout.db import make_engine, make_session_factory
+from job_scout.db.models import Job, Source
+from job_scout.fetch.models import Posting
+from job_scout.fetch.store import store_postings
 from tests.conftest import REPO_CONFIG, edit
+from tests.scoring_helpers import result_for, seed_jobs
 
 runner = CliRunner()
 
@@ -56,15 +65,6 @@ def test_fetch_unknown_source_exits_2() -> None:
 
 def _seed_group(db_url: str) -> int:
     """A canonical EMEA-only posting plus a later LATAM copy; returns the copy's id."""
-    from datetime import UTC, datetime, timedelta
-
-    from sqlalchemy import select
-
-    from job_scout.db import make_engine, make_session_factory
-    from job_scout.db.models import Job, Source
-    from job_scout.fetch.models import Posting
-    from job_scout.fetch.store import store_postings
-
     engine = make_engine(db_url)
     sf = make_session_factory(engine)
     now = datetime(2026, 10, 12, tzinfo=UTC)
@@ -121,12 +121,112 @@ def test_explain_unknown_job_exits_1() -> None:
 
 
 def test_unimplemented_command_exits_1() -> None:
-    result = invoke("score")
+    result = invoke("digest")
     assert result.exit_code == 1
-    assert "Phase 3" in result.output
+    assert "Phase 4" in result.output
 
 
 def test_record_refuses_tests_dir() -> None:
     result = invoke("fetch", "--record", "tests/fixtures/http")
     assert result.exit_code == 2
     assert "fixtures are synthetic" in result.output
+
+
+FAKE_CLAUDE = r'''#!{python}
+"""Stand-in for the claude CLI: scores every posting on stdin; never calls a model."""
+import json, os, re, sys
+
+args = sys.argv[1:]
+assert args[0] == "-p" and "--bare" not in args, args
+assert "ANTHROPIC_API_KEY" not in os.environ, "API key leaked to the CLI"
+with open(os.environ["FAKE_CLAUDE_LOG"], "a") as log:
+    log.write(json.dumps({{"args": args, "cwd": os.getcwd()}}) + "\n")
+ids = [int(i) for i in re.findall(r'<posting job_id="(\d+)">', sys.stdin.read())]
+result = dict(json.loads(os.environ["FAKE_RESULT"]))
+results = [dict(result, job_id=i) for i in ids]
+print(json.dumps({{"type": "result", "is_error": False, "result": "",
+                  "structured_output": {{"results": results}}, "total_cost_usd": 0.01,
+                  "usage": {{"input_tokens": 100, "output_tokens": 50}}}}))
+'''
+
+
+def _fake_claude(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    script = tmp_path / "claude"
+    script.write_text(FAKE_CLAUDE.format(python=sys.executable))
+    script.chmod(0o755)
+    log = tmp_path / "calls.jsonl"
+    monkeypatch.setenv("JOB_SCOUT_SCORING__CLI__BINARY", str(script))
+    monkeypatch.setenv("JOB_SCOUT_SCORING__CLI__WORKDIR", str(tmp_path / "cwd"))
+    monkeypatch.setenv("FAKE_CLAUDE_LOG", str(log))
+    monkeypatch.setenv("FAKE_RESULT", json.dumps(result_for(0, 81)))
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-must-not-leak")
+    return log
+
+
+def test_score_with_cli_backend_end_to_end(
+    db_url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    log = _fake_claude(tmp_path, monkeypatch)
+    # The fake CLI needs the allowlisted env to carry its own settings through.
+    monkeypatch.setattr(
+        "job_scout.scoring.backends.cli.ENV_ALLOWLIST", ("PATH", "FAKE_CLAUDE_LOG", "FAKE_RESULT")
+    )
+    engine = make_engine(db_url)
+    ids = seed_jobs(make_session_factory(engine), 25)
+    engine.dispose()
+
+    result = invoke("score", "--dry-run")
+    assert result.exit_code == 0, result.output
+    assert "dry run: 2 calls planned (1x20 + 1x5 postings, 25 total)" in result.output
+    assert not log.exists()
+
+    result = invoke("score", "--max-calls", "1")
+    assert result.exit_code == 0, result.output
+    assert "1 calls, 20 scored" in result.output and "stop reason: max_calls" in result.output
+    call = json.loads(log.read_text().splitlines()[0])
+    assert call["cwd"] == str(tmp_path / "cwd")
+    assert call["args"][call["args"].index("--model") + 1] == "claude-haiku-4-5"
+
+    result = invoke("score")
+    assert result.exit_code == 0, result.output
+    assert "5 scored" in result.output and "stop reason: done" in result.output
+
+    result = invoke("explain", str(ids[0]))
+    assert '"overall_score": 81' in result.output and "backend=cli" in result.output
+
+    result = invoke("status")
+    assert result.exit_code == 0, result.output
+    assert "pending job groups: 0" in result.output
+    assert "stop reason: done" in result.output
+    assert "token_created" in result.output  # creation date not configured: warns
+
+
+@pytest.mark.usefixtures("db_url")
+def test_score_api_backend_needs_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    result = invoke("score", "--backend", "api")
+    assert result.exit_code == 2
+    assert "ANTHROPIC_API_KEY is not set" in result.output
+
+
+@pytest.mark.usefixtures("db_url")
+def test_api_rejects_cli_only_limits() -> None:
+    result = invoke("score", "--backend", "api", "--max-input-tokens", "1000")
+    assert result.exit_code == 2
+    assert "max_input_tokens_per_call not valid for the api backend" in result.output
+
+
+@pytest.mark.usefixtures("db_url")
+def test_calibrate_requires_confirmation() -> None:
+    result = invoke("calibrate", "--sample", "50")
+    assert result.exit_code == 1
+    assert "50 API requests (billed) and 6 CLI prompts" in result.output
+    assert "--yes" in result.output
+
+
+@pytest.mark.usefixtures("db_url")
+def test_dry_run_needs_no_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    result = invoke("score", "--backend", "api", "--mode", "backlog", "--dry-run")
+    assert result.exit_code == 0, result.output
+    assert "Batches API" in result.output and "dry run: 0 calls planned" in result.output

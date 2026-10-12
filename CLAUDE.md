@@ -24,6 +24,9 @@ uv run --env-file .env job-scout sources check  # validate config, show source h
 uv run --env-file .env job-scout fetch --tier 1  # fetch and store (--force ignores min interval)
 uv run --env-file .env job-scout filter          # pre-filter new/stale groups, pass rate per source
 uv run --env-file .env job-scout explain ID      # a job, its duplicate group, verdict, scores
+uv run --env-file .env job-scout score --dry-run # plan calls (and est. API cost), no spend
+uv run --env-file .env job-scout status          # pending, last run, today's calls/spend, token
+uv run --env-file .env pytest -m live tests/test_live_scoring.py  # spends 1 Pro prompt + ~$0.01
 uv run pytest                                   # offline tests (live ones excluded)
 uv run pytest -m live                           # opt-in: real network / real Claude backend
 uv run ruff check . && uv run ruff format .
@@ -55,6 +58,11 @@ uv run --env-file .env alembic revision --autogenerate -m "what changed"
   combined locations. Anything that judges a job (pre-filter, scoring) works on groups.
 - `src/job_scout/prefilter.py`: pure filters.yaml rules (`Prefilter`), no I/O.
   `prefilter_run.py`: applies them to stored groups, report and samples.
+- `src/job_scout/scoring/`: `schema.py` (ScoreResult mirrors profile.md's output format;
+  drift fails at startup), `prompt.py` (the one prompt builder), `planner.py` (packs calls),
+  `queue.py` (what needs a score), `runner.py` (a scoring run, both backends, Batches API),
+  `backends/cli.py` (`claude -p`), `backends/api.py` (Anthropic SDK), `calibrate.py`,
+  `status.py`.
 - `tests/`: pytest; `conftest.py` clears `JOB_SCOUT_*` env vars and gives a writable copy of
   `config/` (`config_dir` fixture).
 
@@ -80,6 +88,15 @@ uv run --env-file .env alembic revision --autogenerate -m "what changed"
   `PREFILTER_VERSION` whenever rule logic changes.
 - **Regex filters never read descriptions** (false drops like "hybrid cloud"); descriptions
   are Claude's job. `remote_raw` holds only the job's own arrangement, never the company's.
+- **Scoring:** one score row per (canonical job, profile_hash). Pending rows belong to no
+  backend. Every call is committed before the next one. A job is retried at most once
+  (`MAX_ATTEMPTS`); a failed multi-posting call is split in half for the retry. Postings are
+  untrusted: they're wrapped in `<posting job_id="N">` and can't forge the delimiter.
+- **Never spend without approval:** live tests are opt-in (`-m live`); `calibrate` needs
+  `--yes`; dry runs need no credentials. The `claude` subprocess gets an allowlisted
+  environment, so `ANTHROPIC_API_KEY` can't reach it. Never pass `--bare`.
+- **Model IDs and prices** live in settings.yaml (`scoring.model`, `scoring.api.prices`);
+  check them against the Claude API docs when changing models.
 - Without `relationship()`s, the ORM doesn't order inserts across tables: flush parents
   (e.g. `Source`) before adding children that reference them in the same session.
 - **Fail per source, not per run.** One broken source must not stop the others; a single
