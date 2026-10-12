@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+dist/
+
+# Local data: SQLite database (and WAL files), reports, scratch
+data/
+*.db
+*.db-wal
+*.db-shm
+reports/
+
+# Secrets
+.env
+.env.*
+!.env.example

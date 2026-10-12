@@ -1,0 +1,73 @@
+# Runtime settings for job-scout.
+# Precedence for every value: CLI flag > environment variable > this file > built-in default.
+
+scoring:
+  # Which backend scores postings. Switch at any time; already-stored scores stay valid.
+  #   cli: the `claude` CLI in headless mode, billed to the Claude Pro subscription
+  #   api: the Anthropic Messages API, billed per token to an API key
+  # Override: --backend cli|api  or  JOB_SCOUT_BACKEND=cli|api
+  backend: cli
+
+  # Model for both backends. Full model ID so the CLI and API resolve the same model.
+  # Override: --model <id>  or  JOB_SCOUT_MODEL=<id>
+  model: claude-haiku-5-5
+
+  description_max_chars: 6000   # posting description is truncated to this before scoring
+
+  # Batching. A "call" is one CLI invocation or one API request.
+  # Postings are packed into a call until ANY limit is reached:
+  #   postings_per_call, max_input_tokens_per_call, or max_output_tokens_per_call
+  #   (tokens estimated as characters / 4; output estimated at ~450 tokens per posting).
+  # max_calls caps how many calls one run may make; leftovers stay pending for the next run.
+  # Pick a mode with --mode daily|backlog. Override any value with flags:
+  #   --postings-per-call N  --max-calls N  --max-input-tokens N
+  modes:
+    daily:
+      cli:
+        postings_per_call: 20
+        max_calls: 5
+        max_input_tokens_per_call: 60000
+        max_output_tokens_per_call: 12000
+      api:
+        postings_per_call: 1        # one posting per request: best accuracy; profile is prompt-cached
+        max_calls: 500
+        use_batches_api: false
+    backlog:
+      cli:
+        postings_per_call: 40       # larger batches to clear the backlog with fewer Pro prompts
+        max_calls: 25
+        max_input_tokens_per_call: 120000
+        max_output_tokens_per_call: 24000
+      api:
+        postings_per_call: 1
+        max_calls: 10000
+        use_batches_api: true       # Message Batches API: cheaper, no rate-limit pressure
+
+  # Order in which pending postings are scored when a run can't score them all.
+  order: newest_first               # newest_first | oldest_first
+
+  cli:
+    binary: claude
+    workdir: /var/lib/job-scout/claude-cwd   # empty dir: no CLAUDE.md, hooks or MCP config
+    timeout_seconds: 600
+    # Auth: CLAUDE_CODE_OAUTH_TOKEN from `claude setup-token`.
+    # ANTHROPIC_API_KEY must not reach this process (startup check enforces it).
+
+  api:
+    # Auth: ANTHROPIC_API_KEY, only ever passed to the API backend.
+    prompt_caching: true
+    max_spend_usd_per_run: 5.00     # stop scoring when the run's estimated spend reaches this
+    max_retries: 3
+
+digest:
+  min_score: 60
+  watchlist_min_score: 21           # watchlist jobs appear unless disqualified
+  channel: html                     # html | email | telegram | slack (decide in Phase 4)
+
+schedule:
+  timezone: America/Guatemala
+  daily_run_time: "09:47"           # systemd OnCalendar uses this; Persistent=true catches missed runs
+
+paths:
+  database: /var/lib/job-scout/job-scout.db
+  reports: /var/lib/job-scout/reports

@@ -1,0 +1,75 @@
+# Hard pre-filters applied in code BEFORE any LLM call.
+# Rule of thumb: only drop postings that are CLEARLY out. Anything ambiguous goes to Claude,
+# which has the full profile (profile.md) and can judge context that regexes can't.
+# All patterns are case-insensitive regexes matched against title, location and description.
+
+titles:
+  # A posting must match at least one of these in its title.
+  include_any:
+    - '\bsoftware (engineer|developer)\b'
+    - '\b(back[- ]?end|full[- ]?stack)\b'
+    - '\b(python|django|typescript|node(\.js)?)\b.*\b(engineer|developer)\b'
+    - '\b(devops|dev ops|devsecops)\b'
+    - '\b(site reliability|sre)\b'
+    - '\b(infrastructure|platform|cloud|systems) engineer\b'
+    - '\b(kubernetes|k8s|cloud[- ]native|gitops)\b.*\b(engineer|specialist|developer)\b'
+    - '\b(observability|reliability|production) engineer\b'
+    - '\b(tech(nical)? lead|lead engineer|lead developer)\b'
+    - '\bproduct engineer\b'
+    # Game studios often say "programmer" instead of "engineer"
+    - '\bprogrammer\b'
+    - '\b(live ?ops|online services|game server|build|release) engineer\b'
+    # Secondary role types (Claude scores these lower)
+    - '\bdata (engineer|platform engineer)\b'
+    - '\b(iot|internet of things)\b'
+    - '\b(embedded|firmware)\b.*\b(engineer|developer)\b'
+  # Drop if the title matches any of these.
+  exclude_any:
+    - '\b(junior|jr\.?|intern(ship)?|entry[- ]level|graduate|trainee|apprentice)\b'
+    - '\b(sales|solutions?|support|field|pre[- ]?sales|customer) engineer\b'
+    - '\b(qa|quality assurance|test automation|sdet)\b'
+    - '\b(mechanical|electrical|civil|chemical)\b'
+    - '\bhardware engineer\b'
+    - '\b(recruiter|designer|product manager|marketing|account)\b'
+
+remote:
+  # Drop if the posting clearly is not fully remote.
+  exclude_any:
+    - '\bhybrid\b'
+    - '\bon[- ]?site\b'
+    - '\bin[- ]office\b'
+    - '\b\d\s*days? (a|per) week in (the )?office\b'
+    - '\brelocation (is )?required\b'
+
+location:
+  # If any of these match, the posting passes the location filter outright.
+  allow_any:
+    - '\b(worldwide|anywhere|global(ly)?|international)\b'
+    - '\b(latam|latin america|south america|central america)\b'
+    - '\bamericas\b'
+    - '\bguatemala\b'
+  # If none of the allow patterns matched and one of these does, drop the posting.
+  exclude_any:
+    - '\b(us|u\.s\.|usa|united states)[- ]?(only|based)\b'
+    - '\bmust (be located|reside|live) in the (us|u\.s\.|united states|uk|eu)\b'
+    - '\bus work authori[sz]ation\b'
+    - '\b(security clearance|clearance required)\b'
+    - '\b(emea|apac)\b( only)?'
+    - '\b(uk|eu|europe|canada|australia|india)[- ]only\b'
+    - '^remote\s*[-–(,]\s*(us|usa|united states|uk|canada|germany|europe|emea|apac)\)?$'
+  # Everything else ("Remote", "North America", "US time zones", no location) goes to Claude.
+  on_unclear: pass_to_llm
+
+salary:
+  currency: USD
+  min_annual: 120000
+  hours_per_year: 2080      # hourly → annual
+  months_per_year: 12       # monthly → annual
+  # Drop only when a range is stated AND its maximum is below min_annual.
+  rule: drop_if_max_below_min
+  on_unlisted: pass_to_llm
+
+dedupe:
+  # Postings with the same key are treated as the same job. No URL in the key: the same job
+  # cross-posted on two boards has two different URLs.
+  key: [company_normalized, title_normalized]

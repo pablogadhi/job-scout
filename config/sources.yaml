@@ -1,0 +1,543 @@
+# Job sources for the pipeline, built from awesome-remote-job (Job boards + Job boards aggregators).
+# Every site from both lists appears below, either as an active source or as a skip with a reason.
+#
+# method:  api | rss | scrape | ats_seed | skip
+# tier:    1 = run daily, high relevance, cheap and reliable (API/RSS)
+#          2 = run daily, relevant but needs HTML scraping (more maintenance)
+#          3 = optional, low yield for this profile; enable later if you want more volume
+# checked: date the fetch method was confirmed by actually fetching the site. "unverified" means
+#          the endpoint comes from docs or a linked page and should be tested when building the fetcher.
+
+defaults:
+  user_agent: "job-scout/0.1 (personal job search)"   # add a contact email of your choice
+  respect_robots_txt: true
+  min_interval_hours: 6        # never poll any source more often than this
+  timeout_seconds: 30
+
+# ---------------------------------------------------------------------------------------------
+# TIER 1: APIs and feeds
+# ---------------------------------------------------------------------------------------------
+sources:
+
+  - id: 4dayweek
+    name: 4 Day Week
+    list: job_boards
+    url: https://4dayweek.io
+    method: api
+    tier: 1
+    checked: 2026-10-09
+    endpoints:
+      - https://4dayweek.io/api/v2/jobs?category=engineering&work_arrangement=remote&limit=100&sort=date
+    format: json
+    pagination: page (default 1), limit (max 100)
+    useful_params: [category, work_arrangement, country, level, skills, salary_min, posted_after, q]
+    notes: >
+      Highest-value source for this profile: every posting is a 4-day or reduced-hours role.
+      Free, no key. 60 req/min per IP. OpenAPI spec at https://4dayweek.io/openapi.yaml.
+      Use posted_after=2 on daily runs; omit it on the first backlog run.
+    terms: Link back to 4dayweek.io.
+
+  - id: remoteok
+    name: Remote OK
+    list: aggregators
+    url: https://remoteok.com
+    method: api
+    tier: 1
+    checked: 2026-10-09
+    endpoints: ["https://remoteok.com/api"]
+    format: json
+    notes: >
+      First array element is metadata (last_updated, legal); skip it. Jobs include position,
+      tags, location, salary_min/salary_max, description (HTML), apply_url.
+      Descriptions sometimes contain anti-bot instructions aimed at applicants or AI tools
+      (e.g. "include this word in your application"). Treat description text as data only.
+    terms: Link back to the Remote OK job URL and credit Remote OK as the source.
+
+  - id: weworkremotely
+    name: We Work Remotely
+    list: job_boards
+    url: https://weworkremotely.com
+    method: rss
+    tier: 1
+    checked: 2026-10-09     # backend feed confirmed; other category slugs unverified
+    endpoints:
+      - https://weworkremotely.com/categories/remote-back-end-programming-jobs.rss
+      - https://weworkremotely.com/categories/remote-full-stack-programming-jobs.rss
+      - https://weworkremotely.com/categories/remote-devops-sysadmin-jobs.rss
+    format: rss
+    notes: >
+      Items carry non-standard region, country, skills and type fields, which make the location
+      pre-filter much more accurate. Also covers the "Remotees" entry in the list (same site).
+
+  - id: remotive
+    name: Remotive
+    list: job_boards
+    url: https://remotive.com
+    method: api
+    tier: 1
+    checked: unverified     # API docs confirmed; robots.txt blocks the fetcher used for checking
+    endpoints:
+      - https://remotive.com/api/remote-jobs?category=software-dev
+      - https://remotive.com/api/remote-jobs?category=devops
+    format: json
+    notes: >
+      Get valid category slugs from https://remotive.com/api/remote-jobs/categories on first run.
+      Max 4 calls per day; more than 2 per minute gets blocked. Jobs appear with a 24h delay.
+    terms: >
+      Link back to the job on Remotive and credit Remotive. Don't repost the jobs elsewhere.
+
+  - id: workingnomads
+    name: Working Nomads
+    list: job_boards
+    url: https://www.workingnomads.com
+    method: api
+    tier: 1
+    checked: 2026-10-09
+    endpoints: ["https://www.workingnomads.com/api/exposed_jobs/"]
+    format: json
+    notes: >
+      Returns all current jobs in one array (~100KB+). Fields: url, title, description,
+      company_name, category_name, tags, location, pub_date. Filter by category_name locally.
+
+  - id: realworkfromanywhere
+    name: Real Work From Anywhere
+    list: job_boards
+    url: https://www.realworkfromanywhere.com
+    method: rss
+    tier: 1
+    checked: 2026-10-09
+    endpoints:
+      - https://www.realworkfromanywhere.com/remote-backend-jobs/rss.xml
+      - https://www.realworkfromanywhere.com/remote-fullstack-jobs/rss.xml
+      - https://www.realworkfromanywhere.com/remote-software-developer-jobs/rss.xml
+      - https://www.realworkfromanywhere.com/remote-devops-and-sysadmin-jobs/rss.xml
+    format: rss
+    notes: Location-independent jobs only, so location eligibility is usually a pass.
+
+  - id: remotefirstjobs
+    name: Remote First Jobs (formerly JobsCollider)
+    list: job_boards
+    url: https://remotefirstjobs.com
+    method: rss
+    tier: 1
+    checked: 2026-10-09
+    endpoints:
+      - https://remotefirstjobs.com/rss/jobs/software-development.rss
+      - https://remotefirstjobs.com/rss/jobs/devops.rss
+      - https://remotefirstjobs.com/rss/jobs/python.rss
+    format: rss
+    alt_api: https://remotefirstjobs.com/api/search-jobs?category=software-development&page=0
+    notes: >
+      jobscollider.com now redirects here. Feed pattern: /rss/jobs/<slug>.rss.
+      The free JSON API returns salary_min/max and up to 3 countries per job, but has a 24h delay
+      and caps at 500 results per query. Prefer RSS for freshness, API for salary data.
+    terms: Credit Remote First Jobs with a link. Don't repost elsewhere.
+
+  - id: hn_whoishiring
+    name: Hacker News "Who is hiring?" (replaces HN hiring / hnhiring.me)
+    list: job_boards
+    url: https://news.ycombinator.com
+    method: api
+    tier: 1
+    checked: 2026-10-09
+    endpoints:
+      - https://hn.algolia.com/api/v1/search_by_date?tags=story,author_whoishiring&hitsPerPage=3
+      - https://hn.algolia.com/api/v1/items/{story_id}
+    format: json
+    notes: >
+      Step 1: find this month's "Ask HN: Who is hiring?" story (October 2026 is objectID 49922569).
+      Step 2: fetch the item tree and treat each top-level comment as one posting.
+      Comments are free text ("Company | Role | REMOTE (US only) | $150k"), so skip the regex
+      pre-filter except for an obvious "REMOTE" check and let Claude parse the rest.
+      New comments keep arriving all month; dedupe by comment id.
+
+  - id: pyjobs
+    name: PyJobs
+    list: job_boards
+    url: https://www.pyjobs.com
+    method: rss
+    tier: 1
+    checked: 2026-10-09
+    endpoints: ["https://www.pyjobs.com/rss"]
+    format: rss
+    notes: Python-only board, actively updated. Site also supports remoteLevel[] filters in URLs.
+
+  - id: typescriptjobs
+    name: TypeScriptJobs
+    list: job_boards
+    url: https://typescriptjobs.net
+    method: rss
+    tier: 1
+    checked: 2026-10-09
+    endpoints: ["https://typescriptjobs.net/feed.xml"]
+    format: rss
+    notes: Synced every 30 minutes. Feed is not remote-only; rely on the remote pre-filter.
+
+  - id: remotegamejobs
+    name: Remote Game Jobs
+    list: job_boards
+    url: https://remotegamejobs.com
+    method: rss
+    tier: 1
+    checked: 2026-10-09
+    endpoints: ["https://remotegamejobs.com/feed.rss"]
+    format: rss
+    notes: >
+      Game industry, every job remote. Small board (~34 open jobs when checked), so cheap to poll.
+      Most listings state a region or a UTC band ("Between UTC-7 and UTC+3", "Must reside within
+      UTC-4 to UTC-8"). Titles often say "Programmer" instead of "Engineer"; filters.yaml allows that.
+      Many roles are gameplay/animation programming (Unity/Unreal/C++), which score low; backend,
+      online services, live ops, build and infra roles at studios are the ones to look for.
+
+  - id: findjobit
+    name: Findjobit
+    list: job_boards
+    url: https://findjobit.com
+    method: rss
+    tier: 1
+    checked: unverified     # feed link found on the site; contents not yet inspected
+    endpoints: ["https://findjobit.com/rss-feed"]
+    format: rss
+    notes: LATAM-focused IT board, mostly in Spanish. Good source for LATAM-eligible roles.
+
+  - id: findwork
+    name: Findwork
+    list: aggregators
+    url: https://findwork.dev
+    method: api
+    tier: 1
+    checked: unverified
+    endpoints: ["https://findwork.dev/api/jobs/"]
+    format: json
+    auth: API key from a free account, sent in the Authorization header (check docs for the exact scheme)
+    notes: Aggregates several boards and adds company data. Will overlap with other sources.
+
+# ---------------------------------------------------------------------------------------------
+# ATS seed: companies, not jobs
+# ---------------------------------------------------------------------------------------------
+
+  - id: remoteintech
+    name: remote-jobs (remoteintech)
+    list: job_boards
+    url: https://github.com/remoteintech/remote-jobs
+    method: ats_seed
+    tier: 1
+    checked: 2026-10-09
+    endpoints:
+      - "git clone https://github.com/remoteintech/remote-jobs, then read src/companies/*.md"
+    notes: >
+      A list of remote-friendly companies, not postings, which makes it a seed for direct ATS polling.
+      Each company file has frontmatter: website, careers_url, region (worldwide | americas |
+      europe | americas-europe | asia-pacific | other), remote_policy, company_size, technologies.
+      Keep region in [worldwide, americas, americas-europe] and remote_policy in
+      [fully-remote, remote-first]. Detect the ATS from careers_url and poll it with the
+      templates under ats_platforms. Re-clone weekly; poll the resulting ATS boards daily.
+      This catches jobs that never reach the boards above.
+
+# ---------------------------------------------------------------------------------------------
+# TIER 2: HTML scraping (relevant, more maintenance)
+# ---------------------------------------------------------------------------------------------
+
+  - id: hiring_lat
+    name: hiring.lat
+    list: job_boards
+    url: https://hiring.lat
+    method: scrape
+    tier: 2
+    checked: 2026-10-09
+    endpoints:
+      - https://hiring.lat/jobs/backend
+      # add other category pages (devops, fullstack) after inspecting the site's nav
+    notes: >
+      LATAM-only roles with country eligibility per listing. Dates are relative ("4d ago").
+      Many listings show a $0-$0 placeholder salary; treat that as unlisted. The site's own average
+      is about $85k, so expect many postings below your $120k floor.
+      "Load more" pagination may be a JS call; check network requests for a JSON endpoint first.
+
+  - id: remotejobs_lat
+    name: RemoteJobs.lat
+    list: job_boards
+    url: https://remotejobs.lat
+    method: scrape
+    tier: 2
+    checked: 2026-10-09
+    endpoints: ["https://remotejobs.lat/"]
+    notes: LATAM-focused, ~1,700 open jobs, listings visible in HTML, updated daily.
+
+  - id: 4dayjob
+    name: 4DayJob
+    list: job_boards
+    url: https://4dayjob.com
+    method: scrape
+    tier: 2
+    checked: 2026-10-09
+    endpoints: ["https://4dayjob.com/?page=1"]
+    notes: >
+      No feed, but listings appear in HTML with plain ?page=N pagination. High value for the
+      4-day-week preference. Will overlap partly with 4dayweek.io.
+
+  - id: devopsprojectshq
+    name: DevOpsJobs (devopsprojectshq.com)
+    list: job_boards
+    url: https://devopsprojectshq.com
+    method: scrape
+    tier: 2
+    checked: 2026-10-09     # board confirmed; listing markup not yet inspected
+    endpoints:
+      - https://devopsprojectshq.com/role/remote-kubernetes/
+    notes: >
+      DevOps, SRE and platform roles only, with a "Work from Anywhere" location filter.
+      Find the anywhere-filtered URL when building. Some filters may be JS-driven.
+
+  - id: realjobsfromanywhere
+    name: Real Jobs From Anywhere
+    list: job_boards
+    url: https://realjobsfromanywhere.com
+    method: scrape
+    tier: 2
+    checked: 2026-10-09
+    endpoints: ["https://realjobsfromanywhere.com/page/1"]
+    notes: No feed. Listings in HTML, /page/N pagination. Mixed tech and non-tech; filter by category.
+
+  - id: nodesk
+    name: NoDesk
+    list: job_boards
+    url: https://nodesk.co
+    method: scrape
+    tier: 2
+    checked: 2026-10-09
+    endpoints:
+      - https://nodesk.co/remote-jobs/engineering/
+      - https://nodesk.co/remote-jobs/devops/
+      - https://nodesk.co/remote-jobs/remote-first/
+    notes: No feed. Has a Worldwide location page (remote-first).
+
+  - id: jobsbyculture
+    name: JobsByCulture
+    list: job_boards
+    url: https://jobsbyculture.com
+    method: scrape
+    tier: 2
+    checked: 2026-10-09
+    endpoints: ["https://jobsbyculture.com/"]
+    notes: >
+      Most useful as enrichment, not as a job source: company pages carry work-life-balance
+      scores and tags (Async-First, Flex Hours, Work-Life Balance). Look up a company here when
+      a posting scores well and pass the culture data to Claude as extra context.
+
+  - id: remotebackendjobs
+    name: Remote Backend Jobs
+    list: job_boards
+    url: https://www.remotebackendjobs.com
+    method: scrape
+    tier: 2
+    checked: 2026-10-09
+    endpoints: ["https://www.remotebackendjobs.com/"]
+    notes: Aggregates "dozens of boards" (unnamed). Expect heavy duplication; dedupe will absorb it.
+
+  - id: remote_io
+    name: Remote.io
+    list: aggregators
+    url: https://www.remote.io
+    method: scrape
+    tier: 2
+    checked: 2026-10-09
+    endpoints: ["https://www.remote.io/remote-jobs/software-development"]
+    notes: ~3,700 jobs, per-listing location shown. No feed.
+
+  - id: dailyremote
+    name: Daily Remote
+    list: job_boards
+    url: https://dailyremote.com
+    method: scrape
+    tier: 2
+    checked: 2026-10-09
+    endpoints: ["https://dailyremote.com/remote-software-development-jobs"]
+    notes: Listings visible without login despite the "premium" label in the list. No feed.
+
+# ---------------------------------------------------------------------------------------------
+# TIER 3: optional, low yield for this profile
+# ---------------------------------------------------------------------------------------------
+
+  - id: aidevboard
+    name: AI Dev Jobs
+    list: job_boards
+    url: https://aidevboard.com
+    method: api
+    tier: 3
+    checked: 2026-10-09
+    endpoints: ["https://aidevboard.com/api/v1/jobs?tags=infrastructure,cloud,distributed-systems"]
+    notes: Mostly AI/ML roles, but has AI Infrastructure and Backend categories. Free read access.
+
+  - id: embedded_jobs
+    name: EmbeddedJobs
+    list: job_boards
+    url: https://embedded.jobs
+    method: scrape
+    tier: 3
+    checked: 2026-10-09
+    notes: Secondary role type (embedded). Mostly on-site roles in Europe/US; low remote yield.
+
+  - id: builtin
+    name: Built In
+    list: job_boards
+    url: https://builtin.com/jobs/remote
+    method: scrape
+    tier: 3
+    checked: 2026-10-09
+    notes: Large, but remote listings are overwhelmingly US-only. Low yield after the location filter.
+
+  - id: javascript_jobs
+    name: JS Remotely
+    list: aggregators
+    url: https://javascript.jobs/remote
+    method: scrape
+    tier: 3
+    checked: 2026-10-09
+    notes: Newest listing was about 3 weeks old when checked. Low activity.
+
+  - id: remoteindex
+    name: Remote Index
+    list: aggregators
+    url: https://remoteindex.co
+    method: scrape
+    tier: 3
+    checked: 2026-10-09
+    notes: Listings not visible in the fetched page; may need a headless browser. Mostly duplicates.
+
+  - id: remotepython
+    name: Remote Python
+    list: aggregators
+    url: https://www.remotepython.com
+    method: rss
+    tier: 3
+    checked: 2026-10-09
+    endpoints: ["https://www.remotepython.com/latest/jobs/feed/"]
+    notes: Feed exists but the newest job was ~3 weeks old. Cheap to keep; expect little.
+
+  - id: trabajoremotochile
+    name: Trabajo Remoto Chile
+    list: job_boards
+    url: https://trabajoremotochile.com
+    method: scrape
+    tier: 3
+    checked: unverified     # site did not respond when checked
+    notes: Aimed at Chilean residents; check by hand whether postings are open to all of LATAM.
+
+# ---------------------------------------------------------------------------------------------
+# SKIPPED (kept so every site from the list is accounted for)
+# ---------------------------------------------------------------------------------------------
+
+skipped:
+  # Blocked by robots.txt for automated fetching (relevant, but don't scrape)
+  - {name: Career Vault,  url: "https://careervault.io", reason: robots.txt disallows automated fetching}
+  - {name: Jobspresso,    url: "https://jobspresso.co", reason: robots.txt disallows automated fetching}
+  - {name: Authentic Jobs, url: "https://authenticjobs.com", reason: robots.txt disallows automated fetching}
+
+  # Technically hostile or not machine-readable
+  - {name: Wellfound,     url: "https://wellfound.com/jobs", reason: login wall and aggressive anti-bot protection}
+  - {name: Google Jobs,   url: "https://www.google.com/search?q=remote&ibp=htl;jobs", reason: no public API; scraping violates Google's terms (paid SERP APIs exist if ever wanted)}
+  - {name: JustRemote,    url: "https://justremote.co", reason: listings not present in HTML; JS app with no feed}
+
+  # Dead, unreachable, or not a job board
+  - {name: SlashJobs,     url: "https://slashjobs.com", reason: domain is for sale}
+  - {name: whoishiring.io, url: "https://whoishiring.io", reason: returns an empty page}
+  - {name: Remote Works,  url: "https://remote.works-hub.com", reason: site unreachable}
+  - {name: Remote 4 Me,   url: "https://remote4me.com", reason: no listings; category links go to a Google Form}
+  - {name: HN hiring,     url: "https://www.hnhiring.me", reason: replaced by direct HN Algolia API source (hn_whoishiring)}
+  - {name: Remotees,      url: "https://weworkremotely.com", reason: list entry links to We Work Remotely; covered there}
+  - {name: Stream Native Jobs, url: "https://streamnative.io/careers", reason: single company careers page with no open roles}
+  - {name: FoundRole,     url: "https://foundrole.com", reason: "job-search tool, not a job board"}
+  - {name: HackerX,       url: "https://hackerx.org/jobs", reason: "recruiting events, not a feed of postings"}
+  - {name: Human Pages,   url: "https://humanpages.ai", reason: AI agents hiring humans for tasks; not engineering jobs}
+
+  # Freelance marketplaces (bidding on gigs, not salaried roles)
+  - {name: Upwork,        url: "https://www.upwork.com", reason: freelance marketplace; RSS feeds discontinued}
+  - {name: Guru,          url: "https://www.guru.com", reason: freelance marketplace}
+  - {name: Workana,       url: "https://www.workana.com", reason: freelance marketplace}
+  - {name: Vollna,        url: "https://www.vollna.com", reason: aggregator of freelance marketplaces}
+  - {name: freelancermap, url: "https://www.freelancermap.com/projects/remote.html", reason: "freelance projects, mostly German market"}
+  - {name: Gridnaut Recruiting, url: "https://gridnaut.site/jobs", reason: contract AI-training/evaluation gigs}
+
+  # Location-restricted (excludes Guatemala)
+  - {name: remote-es/remotes, url: "https://github.com/remote-es/remotes", reason: requires a Spanish employment contract (Spain residency)}
+  - {name: thatmlopsguy/remote-pt, url: "https://github.com/thatmlopsguy/remote-pt", reason: requires a Portuguese contract}
+  - {name: No Fluff Jobs, url: "https://nofluffjobs.com", reason: Poland/CEE market}
+  - {name: JOBBOX.io (landing.jobs), url: "https://landing.jobs/jobs", reason: European market}
+  - {name: SwissDev Jobs, url: "https://swissdevjobs.ch", reason: Swiss market}
+  - {name: zuhausejobs.com, url: "https://zuhausejobs.com", reason: Germany/Austria/Switzerland only}
+  - {name: Jobo,          url: "https://jobo.pl", reason: Poland}
+  - {name: Freel,         url: "https://freel.ca", reason: Canada}
+  - {name: Hasjob,        url: "https://hasjob.co", reason: India market}
+  - {name: CyberJobHunt.in, url: "https://cyberjobhunt.in", reason: "India, cybersecurity"}
+  - {name: Slasify,       url: "https://slasify.com/en", reason: Asia-focused}
+  - {name: usdevjobs.com, url: "https://usdevjobs.com", reason: US jobs only}
+  - {name: Virtual Vocations, url: "https://www.virtualvocations.com", reason: "US-focused, paid membership"}
+  - {name: Skip the Drive, url: "https://www.skipthedrive.com", reason: US-focused}
+  - {name: Dataaxy,       url: "https://dataaxy.com", reason: "North America only, data roles"}
+
+  # Wrong field or stack for this profile
+  - {name: Dribbble Jobs, url: "https://dribbble.com/jobs", reason: design}
+  - {name: UI/UX Jobs Board, url: "https://uiuxjobsboard.com", reason: design}
+  - {name: Remote Frontend Jobs, url: "https://www.remotefrontendjobs.com", reason: frontend-only roles (not of interest)}
+  - {name: Drupal Jobs,   url: "https://jobs.drupal.org", reason: Drupal/PHP}
+  - {name: Larajobs,      url: "https://larajobs.com", reason: Laravel/PHP}
+  - {name: ClojureJobboard.com, url: "https://clojurejobboard.com", reason: Clojure}
+  - {name: Golangprojects, url: "https://www.golangprojects.com", reason: Go-only roles (Go not in skill set)}
+  - {name: Ruby On Remote, url: "https://rubyonremote.com", reason: Ruby}
+  - {name: Vue.js Jobs,   url: "https://vuejobs.com", reason: Vue frontend}
+  - {name: Remote AI Jobs (moaijobs), url: "https://www.moaijobs.com/remote-ai-jobs", reason: ML/data science/research roles}
+  - {name: devtooljobs,   url: "https://devtooljobs.com", reason: "go-to-market roles, not engineering"}
+  - {name: HigherEdJobs,  url: "https://www.higheredjobs.com", reason: higher education}
+  - {name: Remote Job Assistant, url: "https://remotejobassistant.com", reason: non-technical roles}
+  - {name: UN Talent,     url: "https://untalent.org", reason: UN agency roles}
+  - {name: Power to Fly,  url: "https://powertofly.com", reason: "women-focused board, mostly US roles"}
+  - {name: Diversify Tech, url: "https://www.diversifytech.com", reason: "low volume, mostly US roles"}
+
+  # Crypto/Web3: not excluded by your profile, just off by default. Many hire worldwide and pay
+  # well. Several have feeds; ask to enable if you're open to crypto companies.
+  - {name: Crypto Jobs,   url: "https://crypto.jobs", reason: crypto (optional)}
+  - {name: Crypto Jobs List, url: "https://cryptojobslist.com", reason: crypto (optional)}
+  - {name: Cryptocurrency Jobs, url: "https://cryptocurrencyjobs.co", reason: crypto (optional)}
+  - {name: Web3Jobs,      url: "https://web3.career", reason: crypto (optional)}
+  - {name: web3vacancy,   url: "https://web3vacancy.com", reason: crypto (optional)}
+  - {name: tokenjobs.io,  url: "https://tokenjobs.io", reason: crypto (optional)}
+
+# ---------------------------------------------------------------------------------------------
+# ATS endpoint templates (used by the remoteintech seed and the watchlist)
+# Greenhouse verified 2026-10-09 (Canonical); the others are untested.
+#
+# ATS detection, in order (stop at the first hit):
+#   1. careers_url host matches a `detect` pattern below.
+#   2. Fetch the careers page and look for links or embeds pointing at a detect pattern.
+#      Needed because many companies host careers on their own domain
+#      (e.g. Canonical: canonical.com/careers/all is backed by Greenhouse).
+#   3. Try the company slug against each ATS API; a 200 with jobs means a match.
+#   4. Otherwise mark the company "unknown_ats" and list it in a weekly report for manual review.
+# Cache the result per company; re-detect monthly.
+# ---------------------------------------------------------------------------------------------
+
+ats_platforms:
+  greenhouse:      {detect: "boards.greenhouse.io|job-boards.greenhouse.io", api: "https://boards-api.greenhouse.io/v1/boards/{token}/jobs?content=true"}
+  lever:           {detect: "jobs.lever.co",          api: "https://api.lever.co/v0/postings/{company}?mode=json"}
+  ashby:           {detect: "jobs.ashbyhq.com",       api: "https://api.ashbyhq.com/posting-api/job-board/{board}?includeCompensation=true"}
+  workable:        {detect: "apply.workable.com",     api: "https://apply.workable.com/api/v1/widget/accounts/{account}"}
+  recruitee:       {detect: "recruitee.com",          api: "https://{company}.recruitee.com/api/offers/"}
+  smartrecruiters: {detect: "jobs.smartrecruiters.com", api: "https://api.smartrecruiters.com/v1/companies/{company}/postings"}
+
+# ---------------------------------------------------------------------------------------------
+# Watchlist: companies you specifically want to work for.
+# Polled daily regardless of what the seed lists say. An entry here overrides auto-detection.
+# Matching postings get flagged as "watchlist" in the digest so they're never buried.
+# ---------------------------------------------------------------------------------------------
+
+watchlist:
+  - company: Canonical
+    careers_url: https://canonical.com/careers/all
+    ats: greenhouse
+    token: canonical
+    checked: 2026-10-09
+    notes: >
+      Also in remoteintech (region: worldwide, fully-remote). Large board including many
+      non-engineering roles. Location names look like "Home based - Worldwide" or
+      "Home Based - Americas", which the location allow-list already matches.
