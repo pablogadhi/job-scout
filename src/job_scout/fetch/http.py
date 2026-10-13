@@ -5,6 +5,7 @@ Every request goes through `HttpClient.get`, which:
 - checks robots.txt (cached per host for the client's lifetime),
 - spaces requests to the same host by max(1s, robots Crawl-delay, the source's own interval),
 - enforces the source's request budget (e.g. Remotive's 4 calls per day),
+- on HTTP 429, waits (Retry-After, or a short backoff), retries, and slows down for that host,
 - optionally records responses as test fixtures (`fetch --record DIR`).
 """
 
@@ -28,6 +29,10 @@ from job_scout.config.sources import SourceConfig, SourceDefaults
 log = logging.getLogger(__name__)
 
 MIN_HOST_INTERVAL_SECONDS = 1.0
+RATE_LIMIT_RETRIES = 2  # extra attempts after an HTTP 429
+RATE_LIMIT_BACKOFF_SECONDS = 5.0  # first wait when there's no Retry-After; doubles per retry
+RATE_LIMIT_MAX_WAIT_SECONDS = 60.0  # a longer Retry-After isn't waited for: the request fails
+RATE_LIMIT_SLOWDOWN_SECONDS = (2.0, 10.0)  # after a 429: per-host spacing, doubling up to max
 
 # PLAN.md ground rule: never fetch these, whoever asks (a seed company's careers link can
 # point at them). Subdomains included.
@@ -40,7 +45,15 @@ def forbidden(url: str) -> bool:
 
 
 class FetchError(Exception):
-    """A source could not be fetched. The message is shown in source health."""
+    """A source could not be fetched. The message is shown in source health.
+
+    `retryable`: the failure is likely temporary (rate limit, server error, timeout), so
+    trying again later may succeed.
+    """
+
+    def __init__(self, message: str, *, retryable: bool = False) -> None:
+        super().__init__(message)
+        self.retryable = retryable
 
 
 class RobotsDisallowed(FetchError):
@@ -55,7 +68,7 @@ class HttpStatusError(FetchError):
     """The server answered with an error status (4xx/5xx)."""
 
     def __init__(self, message: str, status_code: int) -> None:
-        super().__init__(message)
+        super().__init__(message, retryable=status_code == 429 or status_code >= 500)
         self.status_code = status_code
 
 
@@ -80,6 +93,7 @@ class RequestBudget:
 class _Host:
     robots: RobotFileParser | None = None
     last_request: float | None = None
+    slowdown: float = 0.0  # extra spacing after this host rate-limited us (HTTP 429)
 
 
 @dataclass
@@ -128,15 +142,33 @@ class HttpClient:
         robots = host.robots if self.defaults.respect_robots_txt else None
         if robots is not None and not robots.can_fetch(self.defaults.user_agent, full_url):
             raise RobotsDisallowed(f"robots.txt disallows {full_url}")
-        budget.spend(full_url)
-        self._wait(host, source)
-        log.debug("GET %s", full_url)
-        try:
-            response = self.client.get(full_url, headers=headers)
-        except httpx.HTTPError as exc:
-            raise FetchError(f"{type(exc).__name__} for {full_url}: {exc}") from exc
-        finally:
-            host.last_request = self.clock()
+        for attempt in range(RATE_LIMIT_RETRIES + 1):
+            budget.spend(full_url)
+            self._wait(host, source)
+            log.debug("GET %s", full_url)
+            try:
+                response = self.client.get(full_url, headers=headers)
+            except httpx.HTTPError as exc:
+                raise FetchError(
+                    f"{type(exc).__name__} for {full_url}: {exc}",
+                    retryable=isinstance(exc, httpx.TimeoutException),
+                ) from exc
+            finally:
+                host.last_request = self.clock()
+            if response.status_code != 429 or attempt == RATE_LIMIT_RETRIES:
+                break
+            delay = _retry_after(response) or RATE_LIMIT_BACKOFF_SECONDS * 2**attempt
+            if delay > RATE_LIMIT_MAX_WAIT_SECONDS:
+                break
+            low, high = RATE_LIMIT_SLOWDOWN_SECONDS
+            host.slowdown = min(max(host.slowdown * 2, low), high)
+            log.info(
+                "HTTP 429 from %s: retrying in %.0fs, then %.0fs between requests",
+                urlsplit(full_url).netloc,
+                delay,
+                host.slowdown,
+            )
+            self.sleep(delay)
         if self.recorder:
             self.recorder.record(source.id, full_url, response)
         if response.status_code >= 400:
@@ -164,7 +196,9 @@ class HttpClient:
         # everything is allowed; a server error means assume everything is disallowed, which
         # failing the request does. (urllib.robotparser treats 401/403 as disallow-all.)
         if response.status_code >= 500:
-            raise FetchError(f"{origin}/robots.txt returned HTTP {response.status_code}")
+            raise HttpStatusError(
+                f"{origin}/robots.txt returned HTTP {response.status_code}", response.status_code
+            )
         if response.status_code >= 400:
             parser.parse([])
         else:
@@ -172,7 +206,7 @@ class HttpClient:
         return parser
 
     def _wait(self, host: _Host, source: SourceConfig) -> None:
-        interval = MIN_HOST_INTERVAL_SECONDS
+        interval = max(MIN_HOST_INTERVAL_SECONDS, host.slowdown)
         if host.robots is not None:
             interval = max(interval, float(host.robots.crawl_delay(self.defaults.user_agent) or 0))
         if source.min_request_interval_seconds:
@@ -181,6 +215,14 @@ class HttpClient:
             remaining = interval - (self.clock() - host.last_request)
             if remaining > 0:
                 self.sleep(remaining)
+
+
+def _retry_after(response: httpx.Response) -> float | None:
+    """Retry-After in seconds (the HTTP-date form is ignored: the backoff applies)."""
+    try:
+        return max(0.0, float(response.headers.get("retry-after", "")))
+    except ValueError:
+        return None
 
 
 class Recorder:

@@ -11,11 +11,17 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 from typer.testing import CliRunner
 
-from job_scout.ats.detect import Detector, board_from_url, find_board, slug_candidates
+from job_scout.ats.detect import (
+    Detection,
+    Detector,
+    board_from_url,
+    find_board,
+    slug_candidates,
+)
 from job_scout.ats.platforms import api_url
 from job_scout.ats.refresh import refresh
 from job_scout.ats.seed import SeedCompany, keep, parse_seed
-from job_scout.ats.store import apply_watchlist, boards, upsert_seed
+from job_scout.ats.store import apply_watchlist, boards, save_detection, upsert_seed
 from job_scout.cli import app
 from job_scout.config import AppConfig, ConfigError, load_config
 from job_scout.db import make_engine, make_session_factory
@@ -210,6 +216,21 @@ def test_detect_unknown_and_robots_blocked_platform(app_config: AppConfig) -> No
     result = d.detect(company("ghost", careers_url="https://ghost.example/careers"))
     assert result.ats is None and result.method is None
     assert "HTTP 500" in (result.note or "") and "ashby probing off" in (result.note or "")
+    assert result.retry  # a server error is temporary: detect again later
+
+    d = detector(app_config, {"https://gone.example/careers": httpx.Response(410)})
+    result = d.detect(company("gone", careers_url="https://gone.example/careers"))
+    assert result.ats is None and not result.retry  # nothing temporary failed: unknown
+
+
+def test_rate_limited_probe_is_inconclusive(app_config: AppConfig) -> None:
+    workable = api_url(app_config.sources.ats_platforms["workable"].api, "busyco")
+    d = detector(app_config, {workable: httpx.Response(429)})
+    result = d.detect(company("busyco"))
+    assert result.ats is None and result.retry
+    assert "workable probe: HTTP 429" in (result.note or "")
+    # The same detector, next company: the flag doesn't carry over.
+    assert not d.detect(company("quietco")).retry
 
 
 def test_robots_401_does_not_block_probing(app_config: AppConfig) -> None:
@@ -303,6 +324,66 @@ def test_seed_changes_and_watchlist_removal(
         apply_watchlist(session, app_config.sources.watchlist, NOW)
         apply_watchlist(session, [], NOW)  # Canonical removed from the watchlist
     assert rows(session_factory)["canonical"].status == AtsStatus.NOT_IN_SEED
+
+
+def test_rate_limited_detection_is_retried_then_given_up(
+    app_config: AppConfig, session_factory: sessionmaker[Session]
+) -> None:
+    """Workable rate-limits the probe that would find Tikal Soft: it stays pending (detected
+    again next run) and only counts as unknown after three inconclusive tries."""
+    workable = api_url(app_config.sources.ats_platforms["workable"].api, "tikalsoft")
+    pages: dict[str, httpx.Response | Route] = {
+        SEED_URL: httpx.Response(200, content=SEED),
+        "https://nimbusworks.example/careers": html(
+            '<a href="https://jobs.ashbyhq.com/nimbusworks">Jobs</a>'
+        ),
+        workable: httpx.Response(429),
+    }
+    http = HttpClient(app_config.sources.defaults, transport=web(pages), sleep=lambda _s: None)
+    http.__enter__()
+
+    report = refresh(app_config, session_factory, http, now=NOW)
+    assert report.detected["retry later"] == 1 and report.remaining == 1
+    tikal = rows(session_factory)["tikal-soft"]
+    assert (tikal.status, tikal.detected_at, tikal.detection_retries) == (
+        AtsStatus.PENDING,
+        None,
+        1,
+    )
+    assert "attempt 1 of 3" in (tikal.last_poll_error or "")
+
+    for day in (1, 2):
+        report = refresh(app_config, session_factory, http, now=NOW + timedelta(days=day))
+        assert sum(report.detected.values()) == 1  # only Tikal Soft is detected again
+    tikal = rows(session_factory)["tikal-soft"]
+    assert tikal.status == AtsStatus.UNKNOWN_ATS and tikal.detection_retries == 0
+    assert "gave up after 3 inconclusive detections" in (tikal.last_poll_error or "")
+    assert report.detected["unknown"] == 1 and report.remaining == 0
+
+
+def test_inconclusive_redetection_keeps_a_working_board() -> None:
+    row = AtsCompany(
+        slug="acme",
+        company="Acme",
+        ats="lever",
+        token="acme",
+        method=AtsMethod.CAREERS_URL,
+        status=AtsStatus.OK,
+        source=AtsSeed.REMOTEINTECH,
+        detection_retries=0,
+    )
+    retry = Detection(note="lever probe: HTTP 503", retry=True)
+    assert [save_detection(row, retry, NOW) for _ in range(3)] == [
+        "retry later",
+        "retry later",
+        "lever",
+    ]
+    assert (row.status, row.ats, row.detected_at, row.detection_retries) == (
+        AtsStatus.OK,
+        "lever",
+        NOW,
+        0,
+    )
 
 
 # --- polling -------------------------------------------------------------------------------

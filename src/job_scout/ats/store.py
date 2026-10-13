@@ -16,6 +16,9 @@ from job_scout.ats.seed import SeedCompany
 from job_scout.config.sources import AtsPlatform, WatchlistEntry
 from job_scout.db.models import AtsCompany, AtsMethod, AtsSeed, AtsStatus
 
+# Inconclusive detections (rate limit, server error, timeout) in a row before giving up.
+MAX_DETECTION_ATTEMPTS = 3
+
 
 def slugify(name: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
@@ -119,11 +122,32 @@ def needing_detection(
     return list(session.scalars(query))
 
 
-def save_detection(row: AtsCompany, detection: Detection, now: datetime) -> None:
+def save_detection(row: AtsCompany, detection: Detection, now: datetime) -> str:
+    """Store a detection; returns the outcome: the ATS, "unknown" or "retry later".
+
+    An inconclusive detection leaves the company as it was, to be detected again next run.
+    After MAX_DETECTION_ATTEMPTS in a row it counts as unknown, except that a board already
+    being polled is kept: a check failing is no sign the board moved.
+    """
+    note = detection.note
+    if detection.retry:
+        row.detection_retries += 1
+        if row.detection_retries < MAX_DETECTION_ATTEMPTS:
+            row.last_poll_error = (
+                f"detection inconclusive (attempt {row.detection_retries} of "
+                f"{MAX_DETECTION_ATTEMPTS}), retried next run: {note}"
+            )
+            return "retry later"
+        if row.status == AtsStatus.OK and row.ats:
+            row.detected_at, row.detection_retries = now, 0
+            return row.ats
+        note = f"gave up after {MAX_DETECTION_ATTEMPTS} inconclusive detections: {note}"
+    row.detection_retries = 0
     row.detected_at = now
     row.ats, row.token, row.method = detection.ats, detection.token, detection.method
     row.status = AtsStatus.OK if detection.ats else AtsStatus.UNKNOWN_ATS
-    row.last_poll_error = None if detection.ats else detection.note
+    row.last_poll_error = None if detection.ats else note
+    return detection.ats or "unknown"
 
 
 def as_seed_company(row: AtsCompany) -> SeedCompany:

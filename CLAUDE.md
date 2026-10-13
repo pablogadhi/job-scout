@@ -58,7 +58,8 @@ uv run --env-file .env alembic revision --autogenerate -m "what changed"
 - `src/job_scout/fetch/`: the only package that touches the network.
   - `http.py`: `HttpClient`, the single gateway for requests. It handles the User-Agent,
     robots.txt, per-host spacing (max of 1s, Crawl-delay and the source's interval), request
-    budgets, and the fixture `Recorder`.
+    budgets, HTTP 429 retries (Retry-After, then more spacing for that host), and the
+    fixture `Recorder`. `FetchError.retryable` marks temporary failures (429, 5xx, timeouts).
   - `base.py`: generic `RssFetcher` and `JsonFetcher`, plus `FetchContext`.
   - `sources.py`: per-source mappers and the `FETCHERS` registry. `hn.py`: HN Who is hiring.
   - `normalize.py`: pure helpers (HTML to text, salary parsing, company/title normalization).
@@ -75,8 +76,9 @@ uv run --env-file .env alembic revision --autogenerate -m "what changed"
 - `src/job_scout/ats/`: company job boards. `seed.py` (remoteintech tarball, filtered by
   `seed_regions`/`seed_remote_policies`), `platforms.py` (per-ATS token patterns and job
   mappers), `detect.py` (careers URL -> careers page -> slug probing), `store.py`
-  (`ats_companies`), `refresh.py` (`ats detect` and `run`'s weekly upkeep), `fetcher.py`
-  (the `remoteintech` source polls every board with status ok, watchlist included).
+  (`ats_companies`), `refresh.py` (`ats detect` and `run`'s weekly upkeep; a detection
+  that hit only temporary failures is retried next run, up to 3 times), `fetcher.py` (the
+  `remoteintech` source polls every board with status ok, watchlist included).
 - `src/job_scout/report/`: what the user reads. `data.py` (scored groups into sections:
   watchlist, top, unclear location, below threshold; source health), `render.py` (Jinja2
   templates in `templates/`, HTML + plain text), `build.py` (digest and backlog report:

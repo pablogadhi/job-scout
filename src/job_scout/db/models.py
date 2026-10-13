@@ -318,6 +318,9 @@ class AtsCompany(Base):
     status: Mapped[AtsStatus]
     source: Mapped[AtsSeed]
     detected_at: Mapped[datetime | None]  # last detection attempt (re-detected monthly)
+    # Inconclusive detections in a row (ats.store.MAX_DETECTION_ATTEMPTS); detected_at stays
+    # unset meanwhile, so the company is picked up again next run.
+    detection_retries: Mapped[int] = mapped_column(default=0, server_default="0")
     seen_in_seed_at: Mapped[datetime | None]  # last seed download that listed it
     last_polled_at: Mapped[datetime | None]
     last_poll_error: Mapped[str | None] = mapped_column(Text)

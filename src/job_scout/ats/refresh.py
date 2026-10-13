@@ -109,14 +109,12 @@ def refresh(
             company = as_seed_company(_row(session, slug))
         detection = detector.detect(company)  # network: outside any transaction
         with session_factory.begin() as session:
-            save_detection(_row(session, slug), detection, utcnow())
-        report.detected[detection.ats or "unknown"] += 1
+            outcome = save_detection(_row(session, slug), detection, utcnow())
+        report.detected[outcome] += 1
         log.info(
             "ats: %s -> %s",
             slug,
-            f"{detection.ats}:{detection.token} ({detection.method})"
-            if detection.ats
-            else "unknown",
+            f"{detection.ats}:{detection.token} ({detection.method})" if detection.ats else outcome,
         )
     with session_factory() as session:
         report.remaining = len(needing_detection(session, utcnow(), redetect_days))

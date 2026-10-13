@@ -1040,6 +1040,25 @@ page on the server, and a scoring run with your judgments in the prompt (P8-R1, 
   profile, and lists the disagreements with your reasons (`--all` lists every vote,
   `--since` limits the period). `explain ID` shows your vote too.
 
+### P8 Bugs found and fixed
+
+- **P8-B1 Rate-limited board checks marked companies "unknown" for 30 days** (Phase 5 code,
+  found when you asked about the unknown-ATS list). In the detection run here, 125 of the
+  272 unknown companies had only hit Workable's rate limit (HTTP 429) during the slug
+  probe, and about 40 more were Recruitee probes blocked by the sandbox's proxy. Fixes:
+  - `HttpClient` waits and retries on HTTP 429, up to twice: as long as `Retry-After` says
+    (if 60 seconds or less), else 5 then 10 seconds. That host then gets more spacing
+    between requests (2 seconds, doubling per 429 up to 10) for the rest of the run.
+  - Errors carry `retryable`: 429, 5xx (robots.txt included) and timeouts. Connection and
+    DNS failures aren't retryable: they usually mean the site is gone.
+  - Detection that finds nothing *and* hit a retryable error is inconclusive: the company
+    stays as it was and is detected again next run (`ats detect` or `run`'s capped upkeep),
+    counted as "retry later". After 3 inconclusive tries in a row it becomes unknown,
+    with the note saying so; a board that's already polled is kept instead (new column
+    `ats_companies.detection_retries`, migration `ddc39a2e53b6`).
+  - Companies already marked unknown by a rate limit aren't reset automatically: run
+    `job-scout ats detect --refresh` once to re-detect every company (P8-R4).
+
 ### P8 For you to review
 
 - **P8-R1 On the server:** generate `JOB_SCOUT_FEEDBACK_SECRET` (`openssl rand -hex 32`),
@@ -1049,5 +1068,9 @@ page on the server, and a scoring run with your judgments in the prompt (P8-R1, 
   page"). On your phone, Proton VPN's "Allow LAN connections" must be on at home.
 - **P8-R2 Look at the page** on your phone the first time and tell me if anything's off
   (layout, wording, the 👍/👎 labels).
+- **P8-R4 Re-detect with the fix:** your local database has the sandbox run's results
+  (including the rate-limited and proxy-blocked ones). For the full detection on your
+  machine or the server, use `job-scout ats detect --refresh`, which re-detects every
+  company. A fresh server database needs only `ats detect`.
 - **P8-R3 Number of examples:** 8 to start. More examples cost about 100 tokens each per
   call; fewer may teach too little. Revisit once `feedback report` has a few dozen votes.

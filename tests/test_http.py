@@ -11,11 +11,13 @@ from job_scout.fetch.http import (
     FetchError,
     ForbiddenHost,
     HttpClient,
+    HttpStatusError,
     Recorder,
     RequestBudget,
     RobotsDisallowed,
     forbidden,
 )
+from tests.conftest import fixture_transport
 
 
 def ok(request: httpx.Request) -> httpx.Response:
@@ -181,3 +183,87 @@ def test_forbidden_hosts_are_never_fetched(
 def test_lookalike_hosts_are_allowed() -> None:
     assert not forbidden("https://notlinkedin.com/jobs")
     assert not forbidden("https://google.com.example/x")
+
+
+class FakeTime:
+    """sleep() advances clock(), as real time would."""
+
+    def __init__(self) -> None:
+        self.now = 0.0
+        self.sleeps: list[float] = []
+
+    def sleep(self, seconds: float) -> None:
+        self.sleeps.append(round(seconds, 3))
+        self.now += seconds
+
+    def clock(self) -> float:
+        return self.now
+
+
+def test_rate_limit_waits_retries_and_slows_down(app_config: AppConfig) -> None:
+    source = app_config.sources.get("remoteok")
+    answers = iter([httpx.Response(429, headers={"Retry-After": "3"}), httpx.Response(429)])
+
+    def limited(request: httpx.Request) -> httpx.Response:
+        return next(answers, None) or ok(request)
+
+    time = FakeTime()
+    overrides = {"https://example.com/a": limited, "https://example.com/b": ok}
+    transport = fixture_transport(overrides)
+    budget = RequestBudget()
+    defaults = app_config.sources.defaults
+    with HttpClient(defaults, transport=transport, sleep=time.sleep, clock=time.clock) as http:
+        response = http.get("https://example.com/a", source=source, budget=budget)
+        assert response.status_code == 200 and budget.used == 3
+        # Retry-After 3s, then the backoff (5s doubled on the second retry).
+        assert time.sleeps == [3.0, 10.0]
+        http.get("https://example.com/b", source=source, budget=budget)
+        assert time.sleeps[-1] == 4.0  # this host's spacing: 2s, doubled by the second 429
+
+
+def test_rate_limit_that_persists_is_a_retryable_error(
+    app_config: AppConfig, make_http: Callable[..., HttpClient]
+) -> None:
+    source = app_config.sources.get("remoteok")
+    sleeps: list[float] = []
+    overrides = {
+        "https://example.com/busy": lambda _r: httpx.Response(429),
+        "https://example.com/later": lambda _r: httpx.Response(429, headers={"Retry-After": "900"}),
+        "https://example.com/down": lambda _r: httpx.Response(503),
+        "https://example.com/gone": lambda _r: httpx.Response(404),
+    }
+    with make_http(overrides, sleep=sleeps.append) as http:
+        with pytest.raises(HttpStatusError, match="HTTP 429") as busy:
+            http.get("https://example.com/busy", source=source, budget=RequestBudget())
+        assert busy.value.retryable
+        sleeps.clear()
+        budget = RequestBudget()
+        with pytest.raises(HttpStatusError, match="HTTP 429"):
+            http.get("https://example.com/later", source=source, budget=budget)
+        assert budget.used == 1 and all(s < 60 for s in sleeps)  # too long to wait for
+        with pytest.raises(HttpStatusError) as down:
+            http.get("https://example.com/down", source=source, budget=RequestBudget())
+        assert down.value.retryable
+        with pytest.raises(HttpStatusError) as gone:
+            http.get("https://example.com/gone", source=source, budget=RequestBudget())
+        assert not gone.value.retryable
+
+
+def test_timeouts_are_retryable(
+    app_config: AppConfig, make_http: Callable[..., HttpClient]
+) -> None:
+    def slow(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("timed out", request=request)
+
+    def refused(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("refused", request=request)
+
+    source = app_config.sources.get("remoteok")
+    overrides = {"https://example.com/slow": slow, "https://example.com/refused": refused}
+    with make_http(overrides) as http:
+        with pytest.raises(FetchError) as timeout:
+            http.get("https://example.com/slow", source=source, budget=RequestBudget())
+        assert timeout.value.retryable
+        with pytest.raises(FetchError) as connect:
+            http.get("https://example.com/refused", source=source, budget=RequestBudget())
+        assert not connect.value.retryable

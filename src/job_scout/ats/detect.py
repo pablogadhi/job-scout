@@ -4,7 +4,9 @@
 2. careers_page: the careers page (or, without one, the website and its careers link)
    links to or embeds a board.
 3. probe: the company slug answers on a platform's API with at least one job.
-Otherwise the company is unknown_ats.
+Otherwise the company is unknown_ats, unless a check failed for a temporary reason (rate
+limit, server error, timeout): then the result is inconclusive (`retry`) and the company is
+detected again next run (store.save_detection caps the attempts).
 """
 
 from __future__ import annotations
@@ -41,6 +43,7 @@ class Detection:
     token: str | None = None
     method: AtsMethod | None = None
     note: str | None = None  # why nothing was found, or what failed along the way
+    retry: bool = False  # nothing found, but a check failed temporarily: try again later
 
 
 def find_board(text: str, platforms: Mapping[str, AtsPlatform]) -> tuple[str, str] | None:
@@ -86,8 +89,10 @@ class Detector:
         self.platforms = dict(platforms)
         self.budget = budget or RequestBudget()
         self._blocked: set[str] = set()  # platforms whose API robots.txt disallows us
+        self._inconclusive = False  # this company: a check failed temporarily
 
     def detect(self, company: SeedCompany) -> Detection:
+        self._inconclusive = False
         if hit := board_from_url(company.careers_url, self.platforms):
             return Detection(*hit, AtsMethod.CAREERS_URL)
         notes: list[str] = []
@@ -95,13 +100,17 @@ class Detector:
             return Detection(*hit, AtsMethod.CAREERS_PAGE)
         if hit := self._probe(company, notes):
             return Detection(*hit, AtsMethod.PROBE)
-        return Detection(note="; ".join(notes) or "no board found")
+        return Detection(note="; ".join(notes) or "no board found", retry=self._inconclusive)
+
+    def _failed(self, notes: list[str], note: str, exc: FetchError) -> None:
+        notes.append(note)
+        self._inconclusive = self._inconclusive or exc.retryable
 
     def _page(self, url: str, notes: list[str]) -> str | None:
         try:
             response = self.http.get(url, source=self.source, budget=self.budget)
         except FetchError as exc:
-            notes.append(f"{url}: {exc}")
+            self._failed(notes, f"{url}: {exc}", exc)
             return None
         return response.text[:MAX_PAGE_CHARS]
 
@@ -143,9 +152,12 @@ class Detector:
                     continue
                 except HttpStatusError as exc:
                     if exc.status_code != 404:
-                        notes.append(f"{name} probe: {exc}")
+                        self._failed(notes, f"{name} probe: {exc}", exc)
                     continue
-                except (FetchError, ValueError) as exc:
+                except FetchError as exc:
+                    self._failed(notes, f"{name} probe: {exc}", exc)
+                    continue
+                except ValueError as exc:
                     notes.append(f"{name} probe: {exc}")
                     continue
                 if jobs:
