@@ -97,9 +97,6 @@ digest:
     smtp_host: smtp.protonmail.ch
     smtp_port: 587 # STARTTLS
     from_address: job-scout@gadhi.one # the alias; also the SMTP username
-    # Recipient(s), comma-separated. Not set here: it comes from the environment, so it
-    # can change per machine without editing this file. JOB_SCOUT_DIGEST__EMAIL__TO_ADDRESS
-    to_address: null
 
 schedule:
   timezone: America/Guatemala
