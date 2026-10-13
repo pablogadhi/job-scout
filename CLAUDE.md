@@ -79,6 +79,11 @@ uv run --env-file .env alembic revision --autogenerate -m "what changed"
   watchlist, top, unclear location, below threshold; source health), `render.py` (Jinja2
   templates in `templates/`, HTML + plain text), `build.py` (digest and backlog report:
   write, email, record in `digests`), `mailer.py` (SMTP), `export.py` (CSV, SQLite snapshot).
+- `Dockerfile` + `deploy/`: the server setup (`deploy/README.md`). One image (Python deps from
+  `uv.lock`, the pinned native `claude` binary); `compose.yaml` mounts `config/` read-only and
+  `/var/lib/job-scout`; `entrypoint.sh` migrates, then runs the command; `systemd/` has the
+  08:15 timer, the run service (`TimeoutStartSec`, `OnFailure=`) and the failure-email
+  service, which pipes the run's journal into `job-scout notify-failure`.
 - `tests/`: pytest; `conftest.py` clears `JOB_SCOUT_*` env vars and gives a writable copy of
   `config/` (`config_dir` fixture).
 
@@ -102,6 +107,10 @@ uv run --env-file .env alembic revision --autogenerate -m "what changed"
   `JOB_SCOUT_DIGEST__EMAIL__TO_ADDRESS` (comma-separated) and the SMTP token only from
   `JOB_SCOUT_SMTP_TOKEN`, both checked at send time. The token is wrapped in `SecretStr`,
   never stored in settings or logged. Tests that load the repo config turn email off.
+- **Deploy files are tested for consistency** (`tests/test_deploy.py`): the timer's time and
+  zone must match `schedule.daily_run_time`/`timezone`, data paths must live under
+  `/var/lib/job-scout`, and `deploy/job-scout.env.example` must list every secret the code
+  reads. Bump `CLAUDE_CODE_VERSION` in the Dockerfile only on purpose.
 - **Pydantic for input, SQLAlchemy for storage.** Keep them separate (no SQLModel).
 - **Settings precedence:** CLI flag > env var > `settings.yaml` > built-in default.
   Env vars: `JOB_SCOUT_` prefix, `__` between levels (`JOB_SCOUT_SCORING__MODES__DAILY__CLI__MAX_CALLS`).

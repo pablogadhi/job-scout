@@ -321,3 +321,46 @@ def test_recipients_from_env_and_several(
     )
     assert outcome.emailed is True
     assert FakeSmtp.instances[0].messages[0]["To"] == "a@example.test, b@example.test"
+
+
+def test_failure_report_redacts_and_trims() -> None:
+    from job_scout.report.failure import FailureReport, log_tail, redact
+
+    assert redact("key sk-ant-api03-abcdefghijkl was rejected") == "key [redacted] was rejected"
+    assert redact("JOB_SCOUT_SMTP_TOKEN=s3cret ok") == "[redacted] ok"
+    tail = log_tail("\n".join(f"line {i}" for i in range(500)))
+    assert tail.splitlines()[0] == "line 380" and tail.endswith("line 499")
+    timeout = FailureReport("job-scout.service", "timeout", "15", "")
+    assert timeout.subject == "job-scout: daily run timed out"
+    assert "(no log captured)" in timeout.text(NOW)
+
+
+def test_notify_failure_command(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from typer.testing import CliRunner
+
+    from job_scout.cli import app
+
+    monkeypatch.setattr("job_scout.report.mailer._smtp", FakeSmtp)
+    env = {
+        "COLUMNS": "200",
+        TOKEN_ENV: "tok",
+        "JOB_SCOUT_DIGEST__EMAIL__ENABLED": "true",
+        "JOB_SCOUT_DIGEST__EMAIL__FROM_ADDRESS": "job-scout@example.test",
+        "JOB_SCOUT_DIGEST__EMAIL__TO_ADDRESS": "me@example.test",
+    }
+    log = "fetch ok\nscoring failed: CLAUDE_CODE_OAUTH_TOKEN=abc123 expired\n"
+    args = ["--config-dir", str(REPO_CONFIG), "notify-failure", "--unit", "job-scout.service"]
+    result = CliRunner().invoke(
+        app, [*args, "--result", "exit-code", "--exit-status", "1"], input=log, env=env
+    )
+    assert result.exit_code == 0, result.output
+    (message,) = FakeSmtp.instances[0].messages
+    assert message["Subject"] == "job-scout: daily run failed (exit-code)"
+    body = message.get_body(("plain",)).get_content()
+    assert "scoring failed: [redacted] expired" in body and "abc123" not in body
+
+    off = CliRunner().invoke(
+        app, args, input=log, env={**env, "JOB_SCOUT_DIGEST__EMAIL__ENABLED": "false"}
+    )
+    assert off.exit_code == 1 and "email is disabled" in off.output
+    assert "Last log lines" in off.output  # still printed, for the journal

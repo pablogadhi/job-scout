@@ -1,0 +1,16 @@
+# The daily run: fetch, filter, score, digest. Started by job-scout.timer.
+# A failure (non-zero exit, or killed after TimeoutStartSec) emails a report through
+# job-scout-failure.service; the daily digest itself is the "it ran" signal.
+[Unit]
+Description=job-scout daily run (fetch, filter, score, digest)
+Wants=network-online.target
+After=network-online.target docker.service
+Requires=docker.service
+OnFailure=job-scout-failure.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/job-scout/deploy
+ExecStart=/usr/bin/docker compose run --rm -T job-scout run
+# A hung run (e.g. a stuck Claude call) is killed and reported instead of waiting forever.
+TimeoutStartSec=2h

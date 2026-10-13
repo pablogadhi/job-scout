@@ -341,7 +341,7 @@ without your OK.
 `data/reports/calibration-20261012T232111Z.json`: 50 passed groups, `api x1` as reference.
 
 | Config | Calls | Scored | Time | Cost |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | api x1 | 50 | 50/50 | 429 s | $0.23 billed |
 | cli x20 | 3 | 50/50 | 536 s (~3 min a call) | $0.44 API-equivalent, not billed |
 | cli x40 | 2 | 17/50 | 239 s | $0.22 API-equivalent |
@@ -363,7 +363,7 @@ passed groups, current profile.md (with P3-U4) and filters (P3-U5), `api haiku-4
 reference.
 
 | Config | Scored | Disqualified | Time | Cost | Tokens in / out |
-|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- |
 | api haiku-4-5 x1 | 50/50 | 38 | 429 s | $0.236 | 291k / 29k |
 | api haiku-5-5 x1 (medium) | 50/50 | 16 | 333 s | $0.043 | 398k / 60k |
 | api haiku-5-5 x1 low | 50/50 | 15 | 269 s | $0.035 | 398k / 46k |
@@ -394,7 +394,7 @@ reported version 2.1.296 both before and after you restarted it, but every call 
 this time.
 
 | Config | Disqualified | Time | Cost | Tokens in / out | vs medium: mean diff, within ±10, rank agreement |
-|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- |
 | api x1 medium | 15 | 352 s | $0.043 | 398k / 61k | – |
 | api x1 high | 15 | 434 s | $0.054 | 398k / 84k | 4.4, 47/50, 0.91 |
 | api x1 low | 14 | 270 s | $0.036 | 398k / 49k | 5.5, 46/50, 0.88 |
@@ -526,7 +526,7 @@ this time.
 - **P3-B5 Double-escaped HTML in descriptions** (found in the calibration, P3-R8; a Phase 1
   bug). Some boards send `&lt;p&gt;…`; `html_to_text` decoded it once, leaving literal
   `<div><p><strong>` for Claude. Now, if the text left after one pass still has at least two
-  different HTML tags, it gets a second pass (one mentioned tag, like "use a <div>", is left
+  different HTML tags, it gets a second pass (one mentioned tag, like "use a `<div>`", is left
   alone). Data migration `f680c1d27195` re-cleans stored descriptions, because a job that's
   already stored is never re-mapped: 13 in the local DB (10 realworkfromanywhere, 3
   remoteok), 0 left after it. 2 new tests.
@@ -891,3 +891,71 @@ to an unlisted host, so its hit rate understates the real one.
   checking the target host's robots.txt (e.g. a careers page that redirects to another
   domain). It mattered little for job boards; with ~400 company sites it's worth fixing if
   you want strictness.
+
+---
+
+## Phase 6: Deploy on the home server (branch `phase-6-deploy`)
+
+**Acceptance:** built and checked here as far as the sandbox allows; the server steps are
+yours (P6-R1). Here: `hadolint` and `shellcheck` pass, `docker compose config` validates, the
+timer schedule resolves to 08:15 America/Guatemala (`systemd-analyze calendar`), and the
+image's Python layer was simulated from the built wheel in a fresh virtualenv (migrations
+from `/app/alembic.ini`, templates, `status` and `digest --dry-run` with config from
+`JOB_SCOUT_CONFIG_DIR`). Not possible here: building the image (no access to the Docker
+daemon) and `systemd-analyze verify` (read-only filesystem). 308 offline tests (7 new).
+
+### P6 Your decisions
+
+- **P6-U1 No external monitor** (replaces PLAN.md's healthchecks.io dead man's switch): the
+  server is also your DNS and DHCP, so you notice at once if it's down. The daily digest
+  (sent even when empty) is the "it ran" signal, and a failed or hung run emails its log
+  (P6-D4). Acceptance becomes "a deliberately failed run sends the failure email".
+- **P6-U2 Daily run at 08:15 Guatemala time** (was 08:00): the server boots at 08:00.
+  `Persistent=true` runs a missed run right after a late boot.
+
+### P6 Decisions (Claude)
+
+- **P6-D1 One image** (`Dockerfile`, multi-stage): Python 3.12 slim (Debian bookworm) with the
+  locked dependencies (`uv sync --frozen --no-dev`, project installed non-editable), plus the
+  `claude` CLI pinned to 2.1.296. That npm package ships a native glibc binary per platform,
+  so only the binary is copied into the final image; Node isn't needed at runtime. Runs as a
+  non-root user (UID/GID 1000 by default, build args); `HOME` is in `/var/lib/job-scout/home`.
+  `.dockerignore` keeps `.env`, `data/`, databases and `config/` out of the image.
+- **P6-D2 Config and data are mounted** (`deploy/compose.yaml`): `config/` read-only at
+  `/app/config` (`JOB_SCOUT_CONFIG_DIR`), `/var/lib/job-scout` read-write (the paths
+  settings.yaml already uses). Secrets come from `/etc/job-scout/job-scout.env` (mode 600) via
+  `env_file`; the API key still never reaches the `claude` subprocess (its env allowlist).
+- **P6-D3 Migrations run automatically:** the entrypoint runs `alembic upgrade head` before
+  every command, except `notify-failure`, which must work even when a migration is what
+  failed.
+- **P6-D4 Failure email:** `job-scout.service` has `OnFailure=job-scout-failure.service`, which
+  pipes that run's journal (by `MONITOR_INVOCATION_ID`) into the new `job-scout
+  notify-failure` command. That command emails the result, exit status and last 120 log
+  lines through the digest's Proton settings, and masks anything shaped like an Anthropic
+  key or token, or `NAME=value` for our secret variables. If it can't send, it prints the
+  report to the journal and exits 1.
+- **P6-D5 Hangs become failures:** `TimeoutStartSec=2h` kills a stuck run, which triggers the
+  failure email with result `timeout`.
+- **P6-D6 The deploy files are tested** (`tests/test_deploy.py`): timer vs `daily_run_time`
+  and timezone, OnFailure and timeout present, compose mounts vs the settings paths, every
+  secret the code reads listed in the env template, secrets in `.dockerignore`.
+- **P6-D7 Offline tests can't open SMTP connections either** (the network guard from P5-D10
+  now also blocks `smtplib.SMTP.connect`).
+- **P6-D8 The failure-path check doesn't break anything:** the README uses a throwaway
+  `systemd-run` unit that exits 1 with `OnFailure=job-scout-failure.service`, so the real
+  failure email is exercised without touching config or credentials. (Breaking the config to
+  force a failure would also break `notify-failure`, which loads the same config.)
+- **P6-D9 Markdown tables** in `DECISIONS.md` now use `| --- |` separators and inline HTML is
+  quoted, to pass your markdownlint config (MD060, MD033).
+
+### P6 For you to review
+
+- **P6-R1 On the server** (`deploy/README.md`): clone to `/opt/job-scout`, create
+  `/var/lib/job-scout` (owned by 1000:1000) and `/etc/job-scout/job-scout.env`, set
+  `scoring.cli.token_created`, optionally copy your local database snapshot to keep history,
+  `docker compose build`, run `ats detect`, install and enable the timer, then the two checks:
+  a real run (`systemctl start job-scout.service`) and the failure email (`systemd-run …`).
+- **P6-R2 A git remote** is still needed to get the code onto the server (or copy it).
+- **P6-R3 CPU architecture:** the image builds for the server's own architecture (npm picks
+  the matching `claude` binary). Building elsewhere for another architecture would need
+  `docker buildx --platform`.

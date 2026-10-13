@@ -1,0 +1,11 @@
+# Emails the log of a failed job-scout.service run (its OnFailure= unit). systemd passes
+# MONITOR_* variables describing the failed run (systemd 251 or later).
+[Unit]
+Description=Email the report of a failed job-scout run
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/job-scout/deploy
+ExecStart=/bin/sh -c 'journalctl _SYSTEMD_INVOCATION_ID="$MONITOR_INVOCATION_ID" -o cat --no-pager \
+  | /usr/bin/docker compose run --rm -T job-scout notify-failure \
+      --unit "$MONITOR_UNIT" --result "$MONITOR_SERVICE_RESULT" --exit-status "$MONITOR_EXIT_STATUS"'

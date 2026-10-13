@@ -10,6 +10,7 @@ import csv
 import json
 import logging
 import os
+import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -56,6 +57,8 @@ from job_scout.prefilter_run import (
 )
 from job_scout.report.build import DigestOutcome, make_backlog_report, make_digest
 from job_scout.report.export import export_csv, snapshot_sqlite
+from job_scout.report.failure import FailureReport, log_tail, send_failure_email
+from job_scout.report.mailer import EmailError
 from job_scout.scoring.backends import PlanOnlyScorer, make_scorer
 from job_scout.scoring.calibrate import (
     ConfigSpec,
@@ -526,6 +529,31 @@ def backlog(
     if failures:
         err_console.print(f"[red]backlog finished with failures:[/red] {', '.join(failures)}")
         raise typer.Exit(1)
+
+
+@app.command("notify-failure")
+def notify_failure(
+    ctx: typer.Context,
+    unit: Annotated[str, typer.Option("--unit", help="The failed systemd unit.")] = "job-scout",
+    result: Annotated[
+        str | None, typer.Option("--result", help="systemd's MONITOR_SERVICE_RESULT.")
+    ] = None,
+    exit_status: Annotated[
+        str | None, typer.Option("--exit-status", help="systemd's MONITOR_EXIT_STATUS.")
+    ] = None,
+) -> None:
+    """Email a failed-run report; the run's log comes on stdin (systemd OnFailure= unit)."""
+    config = _load(ctx)
+    log = "" if sys.stdin.isatty() else sys.stdin.read()
+    report = FailureReport(unit, result or None, exit_status or None, log_tail(log))
+    now = datetime.now(ZoneInfo(config.settings.schedule.timezone))
+    try:
+        send_failure_email(config.settings.digest.email, report, os.environ, now)
+    except EmailError as exc:
+        err_console.print(f"[red]could not send the failure email:[/red] {escape(str(exc))}")
+        err_console.print(report.text(now), markup=False)
+        raise typer.Exit(1) from exc
+    console.print(f"failure report emailed: {report.subject}")
 
 
 @app.command()

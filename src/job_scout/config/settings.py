@@ -189,7 +189,7 @@ class Digest(StrictModel):
 
 class Schedule(StrictModel):
     timezone: str = "America/Guatemala"
-    daily_run_time: time = time(9, 47)
+    daily_run_time: time = time(8, 15)  # the systemd timer (deploy/systemd) must match
 
     @field_validator("timezone")
     @classmethod

@@ -1,0 +1,17 @@
+# Only what the image needs: pyproject.toml, uv.lock, src/, alembic.ini, deploy/entrypoint.sh.
+# Never local data or secrets.
+.git
+.venv
+data
+reports
+*.db
+*.db-wal
+*.db-shm
+.env
+.env.*
+**/__pycache__
+.pytest_cache
+.ruff_cache
+dist
+tests
+config

@@ -106,7 +106,7 @@ ats:
 
 schedule:
   timezone: America/Guatemala
-  daily_run_time: "08:00" # systemd OnCalendar uses this; Persistent=true catches missed runs
+  daily_run_time: "08:15"           # the server boots at 08:00; keep in sync with deploy/systemd/job-scout.timer
 
 paths:
   database: /var/lib/job-scout/job-scout.db

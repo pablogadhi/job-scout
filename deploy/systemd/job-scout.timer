@@ -1,0 +1,11 @@
+# Daily at 08:15 Guatemala time (the server boots at 08:00). Persistent=true runs a missed
+# run right after boot. Keep in sync with schedule.daily_run_time in config/settings.yaml.
+[Unit]
+Description=Daily job-scout run
+
+[Timer]
+OnCalendar=*-*-* 08:15:00 America/Guatemala
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import shutil
+import smtplib
 from collections.abc import Callable, Iterator
 from pathlib import Path
 
@@ -26,7 +27,8 @@ KEEP_ENV = {"JOB_SCOUT_SMTP_TOKEN"}
 
 @pytest.fixture(autouse=True)
 def _no_network(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Offline tests can't reach the network: a real HTTP request fails the test at once.
+    """Offline tests can't reach the network: a real HTTP request or SMTP connection fails
+    the test at once.
 
     Fixture transports (httpx.MockTransport) are unaffected; `-m live` tests are exempt.
     """
@@ -36,7 +38,11 @@ def _no_network(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch)
     def refuse(self: object, request: httpx.Request) -> httpx.Response:
         raise AssertionError(f"offline test tried the network: {request.method} {request.url}")
 
+    def refuse_smtp(self: object, host: str = "", *args: object, **kwargs: object) -> None:
+        raise AssertionError(f"offline test tried to connect to SMTP server {host!r}")
+
     monkeypatch.setattr(httpx.HTTPTransport, "handle_request", refuse)
+    monkeypatch.setattr(smtplib.SMTP, "connect", refuse_smtp)
 
 
 @pytest.fixture(autouse=True)
