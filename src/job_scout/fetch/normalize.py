@@ -14,12 +14,17 @@ _BLOCK_TAGS = "p, div, br, ul, ol, h1, h2, h3, h4, h5, h6, tr, table, section, a
 
 
 # Markup left over after one pass means the source escaped its HTML twice ("&lt;p&gt;").
-# Needs two different tags, so a post that mentions "<div>" once isn't parsed again.
-_LEFTOVER_TAG = re.compile(r"</?(p|div|br|ul|ol|li|strong|em|b|i|h[1-6]|span|a)\b[^<>]*>", re.I)
+# Needs two different tags, or an opening and a closing tag, so a post that mentions "<div>"
+# once isn't parsed again.
+_LEFTOVER_TAG = re.compile(r"<(/?)(p|div|br|ul|ol|li|strong|em|b|i|h[1-6]|span|a)\b[^<>]*>", re.I)
 
 
 def looks_double_escaped(text: str | None) -> bool:
-    return bool(text) and len({m.group(1).lower() for m in _LEFTOVER_TAG.finditer(text)}) >= 2
+    if not text:
+        return False
+    tags = [(m.group(1), m.group(2).lower()) for m in _LEFTOVER_TAG.finditer(text)]
+    names = {name for _, name in tags}
+    return len(names) >= 2 or (len(tags) >= 2 and any(closing for closing, _ in tags))
 
 
 def html_to_text(html: str | None) -> str | None:

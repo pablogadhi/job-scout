@@ -6,6 +6,7 @@ Flags override env vars, which override settings.yaml.
 
 from __future__ import annotations
 
+import csv
 import json
 import logging
 import os
@@ -13,7 +14,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Annotated, Any, NoReturn
+from typing import Annotated, Any
 from zoneinfo import ZoneInfo
 
 import typer
@@ -24,9 +25,14 @@ from sqlalchemy import select
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, sessionmaker
 
+from job_scout.ats.refresh import RefreshReport, seed_source
+from job_scout.ats.refresh import refresh as refresh_ats
+from job_scout.ats.store import counts as ats_counts
 from job_scout.config import DEFAULT_CONFIG_DIR, AppConfig, ConfigError, SourceConfig, load_config
 from job_scout.db import SchemaOutdated, check_schema, make_engine, make_session_factory
 from job_scout.db.models import (
+    AtsCompany,
+    AtsStatus,
     Backend,
     Job,
     PrefilterResult,
@@ -37,7 +43,7 @@ from job_scout.db.models import (
     SourceRunKind,
 )
 from job_scout.db.types import utcnow
-from job_scout.fetch.http import HttpClient, Recorder
+from job_scout.fetch.http import FetchError, HttpClient, Recorder
 from job_scout.fetch.runner import NOT_YET, SourceOutcome, run_fetch
 from job_scout.groups import group_of
 from job_scout.log import setup_logging
@@ -102,11 +108,6 @@ def _db(config: AppConfig) -> sessionmaker[Session]:
         err_console.print(f"[red]database error:[/red] {escape(str(exc))}", soft_wrap=True)
         raise typer.Exit(2) from exc
     return make_session_factory(engine)
-
-
-def _not_implemented(phase: int) -> NoReturn:
-    err_console.print(f"[yellow]not implemented yet (PLAN.md Phase {phase})[/yellow]")
-    raise typer.Exit(1)
 
 
 def _scoring_overrides(backend: Backend | None, model: str | None) -> dict[str, Any]:
@@ -408,6 +409,20 @@ def _stage(name: str, failures: list[str], step: Callable[[], Any]) -> Any:
 
 
 def _fetch_and_filter(config: AppConfig, failures: list[str]) -> None:
+    def ats_upkeep() -> None:
+        """Weekly seed download and capped board detection (settings.ats)."""
+        source = seed_source(config)
+        if source is None or not source.is_enabled:
+            return
+        with HttpClient(config.sources.defaults) as http:
+            report = refresh_ats(
+                config,
+                _db(config),
+                http,
+                limit=config.settings.ats.max_detections_per_run,
+            )
+        _print_refresh(report)
+
     def fetch_all() -> None:
         outcomes = _fetch(config, source_ids=[], tier=None)
         _print_outcomes(outcomes, "Fetch results")
@@ -421,6 +436,7 @@ def _fetch_and_filter(config: AppConfig, failures: list[str]) -> None:
             f"pre-filter: evaluated {result.evaluated} job groups, {result.passed} passed"
         )
 
+    _stage("ats", failures, ats_upkeep)
     _stage("fetch", failures, fetch_all)
     _stage("filter", failures, filter_new)
 
@@ -935,13 +951,105 @@ def sources_check(
         f"watchlist: {', '.join(w.company for w in config.sources.watchlist) or 'none'}  "
         f"ATS platforms: {', '.join(config.sources.ats_platforms)}"
     )
+    with session_factory() as session:
+        boards = ats_counts(session)
+    if boards:
+        ok = {ats: n for (status, ats), n in boards.items() if status == "ok"}
+        others = {status: 0 for status, _ in boards if status != "ok"}
+        for (status, _), n in boards.items():
+            if status != "ok":
+                others[status] += n
+        console.print(
+            f"company boards: {sum(ok.values())} polled "
+            f"({', '.join(f'{ats} {n}' for ats, n in sorted(ok.items()))})"
+            + "".join(f", {n} {status}" for status, n in sorted(others.items()))
+        )
+    else:
+        console.print("company boards: none yet (`job-scout ats detect`)")
     if probe:
         outcomes = _fetch(config, source_ids=[s.id for s in enabled], tier=None, probe=True)
         _print_outcomes(outcomes, "Probe results (nothing stored)")
 
 
+def _print_refresh(report: RefreshReport) -> None:
+    if report.seed_downloaded:
+        c = report.changes
+        console.print(
+            f"seed: {report.seed_total} companies, {report.seed_kept} kept by the filters "
+            f"({c.added} new, {c.updated} changed, {c.dropped} dropped)"
+        )
+    detected = ", ".join(f"{n} {ats}" for ats, n in report.detected.most_common()) or "none"
+    console.print(
+        f"watchlist: {report.watchlist} board(s); detected this run: {detected}; "
+        f"{report.remaining} still to detect; {report.requests} requests"
+    )
+
+
 @ats_app.command("detect")
-def ats_detect(ctx: typer.Context) -> None:
-    """(Re)build ats_companies from remoteintech and the watchlist."""
-    _load(ctx)
-    _not_implemented(5)
+def ats_detect(
+    ctx: typer.Context,
+    refresh: Annotated[
+        bool, typer.Option("--refresh", help="Re-detect every company, not just new or stale ones.")
+    ] = False,
+    limit: Annotated[
+        int | None, typer.Option("--limit", min=1, help="Detect at most N companies this run.")
+    ] = None,
+    no_seed: Annotated[
+        bool, typer.Option("--no-seed", help="Use the stored company list; don't download it.")
+    ] = False,
+) -> None:
+    """Download the remoteintech seed, apply the watchlist, and find each company's job board.
+
+    Reports how many companies mapped to each ATS and lists the unknown ones (also saved as
+    reports/ats-unknown-<time>.csv). Safe to interrupt: every detection is saved as it goes.
+    """
+    config = _load(ctx)
+    session_factory = _db(config)
+    try:
+        with HttpClient(config.sources.defaults) as http:
+            report = refresh_ats(
+                config,
+                session_factory,
+                http,
+                download_seed=not no_seed,
+                limit=limit,
+                everything=refresh,
+            )
+    except FetchError as exc:
+        err_console.print(f"[red]ats detect failed:[/red] {escape(str(exc))}")
+        raise typer.Exit(1) from exc
+    _print_refresh(report)
+
+    with session_factory() as session:
+        table = Table(title="Company boards", title_justify="left")
+        for column in ("status", "ats", "companies"):
+            table.add_column(column, justify="right" if column == "companies" else "left")
+        for (status, ats), n in sorted(ats_counts(session).items()):
+            table.add_row(status, ats, str(n))
+        console.print(table)
+        unknown = list(
+            session.scalars(
+                select(AtsCompany)
+                .where(AtsCompany.status == AtsStatus.UNKNOWN_ATS)
+                .order_by(AtsCompany.company)
+            )
+        )
+    if not unknown:
+        return
+    path = config.settings.paths.reports / f"ats-unknown-{utcnow():%Y%m%dT%H%M%SZ}.csv"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as fh:
+        writer = csv.writer(fh)
+        writer.writerow(["company", "careers_url", "website", "region", "note"])
+        for row in unknown:
+            writer.writerow(
+                [row.company, row.careers_url, row.website, row.region, row.last_poll_error]
+            )
+    table = Table(title=f"Unknown ATS ({len(unknown)}): review by hand", title_justify="left")
+    for column in ("company", "careers page"):
+        table.add_column(column, overflow="fold")
+    for row in unknown[:30]:
+        table.add_row(escape(row.company), escape(row.careers_url or row.website or ""))
+    console.print(table)
+    more = f"{len(unknown) - 30} more; " if len(unknown) > 30 else ""
+    console.print(f"{more}full list with notes: {path}")

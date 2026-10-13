@@ -1,0 +1,38 @@
+{
+ "offers": [
+  {
+   "id": 9000001,
+   "guid": "ab1cd",
+   "slug": "senior-devops-engineer",
+   "title": "Senior DevOps Engineer",
+   "status": "published",
+   "company_name": "Laguna Data",
+   "department": "Infrastructure",
+   "employment_type_code": "fulltime_permanent",
+   "remote": true,
+   "hybrid": false,
+   "on_site": false,
+   "location": "Remote",
+   "locations": [
+    {
+     "id": 1,
+     "name": "Remote",
+     "country": null,
+     "city": null
+    }
+   ],
+   "salary": {
+    "min": "9000",
+    "max": "11000",
+    "period": "month",
+    "currency": "USD"
+   },
+   "description": "<p>Run our FluxCD and Prometheus stack.</p>",
+   "requirements": "<ul><li>Kubernetes</li><li>Terraform</li></ul>",
+   "published_at": "2026-10-06 12:00:00 UTC",
+   "created_at": "2026-10-06 11:00:00 UTC",
+   "careers_url": "https://careers.lagunadata.example/o/senior-devops-engineer",
+   "careers_apply_url": "https://careers.lagunadata.example/o/senior-devops-engineer/c/new"
+  }
+ ]
+}

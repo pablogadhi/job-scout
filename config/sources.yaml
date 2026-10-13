@@ -234,14 +234,18 @@ sources:
     tier: 1
     checked: 2026-10-09
     endpoints:
-      - "git clone https://github.com/remoteintech/remote-jobs, then read src/companies/*.md"
+      # GitHub's REST API tarball of the default branch (one request, no git needed).
+      # github.com's robots.txt disallows /*/archive/ for bots, so not the website's archive link.
+      - https://api.github.com/repos/remoteintech/remote-jobs/tarball
+    seed_regions: [worldwide, americas, americas-europe]
+    seed_remote_policies: [fully-remote, remote-first]
     notes: >
       A list of remote-friendly companies, not postings, which makes it a seed for direct ATS polling.
-      Each company file has frontmatter: website, careers_url, region (worldwide | americas |
-      europe | americas-europe | asia-pacific | other), remote_policy, company_size, technologies.
-      Keep region in [worldwide, americas, americas-europe] and remote_policy in
-      [fully-remote, remote-first]. Detect the ATS from careers_url and poll it with the
-      templates under ats_platforms. Re-clone weekly; poll the resulting ATS boards daily.
+      Each company file (src/companies/*.md) has frontmatter: title, slug, website, careers_url,
+      region (worldwide | americas | europe | americas-europe | asia-pacific | other),
+      remote_policy, company_size, technologies. Only companies matching seed_regions and
+      seed_remote_policies are kept. Detect the ATS (order below, under ats_platforms) and poll
+      the boards daily. The seed is re-downloaded weekly (settings.yaml `ats`).
       This catches jobs that never reach the boards above.
 
 # ---------------------------------------------------------------------------------------------
@@ -515,7 +519,10 @@ skipped:
 
 # ---------------------------------------------------------------------------------------------
 # ATS endpoint templates (used by the remoteintech seed and the watchlist)
-# Greenhouse verified 2026-10-09 (Canonical); the others are untested.
+# Greenhouse verified 2026-10-09 (Canonical); Lever, Ashby, Workable and Recruitee payload
+# shapes checked 2026-10-12. SmartRecruiters removed 2026-10-12: api.smartrecruiters.com's
+# robots.txt disallows every bot (`User-agent: * / Disallow: /`); its companies end up as
+# unknown_ats. Ashby's API host answers robots.txt with HTTP 401 (DECISIONS.md P5-R1).
 #
 # ATS detection, in order (stop at the first hit):
 #   1. careers_url host matches a `detect` pattern below.
@@ -531,9 +538,8 @@ ats_platforms:
   greenhouse:      {detect: "boards.greenhouse.io|job-boards.greenhouse.io", api: "https://boards-api.greenhouse.io/v1/boards/{token}/jobs?content=true"}
   lever:           {detect: "jobs.lever.co",          api: "https://api.lever.co/v0/postings/{company}?mode=json"}
   ashby:           {detect: "jobs.ashbyhq.com",       api: "https://api.ashbyhq.com/posting-api/job-board/{board}?includeCompensation=true"}
-  workable:        {detect: "apply.workable.com",     api: "https://apply.workable.com/api/v1/widget/accounts/{account}"}
+  workable:        {detect: "apply.workable.com|[a-z0-9-]+\\.workable\\.com", api: "https://apply.workable.com/api/v1/widget/accounts/{account}?details=true"}
   recruitee:       {detect: "recruitee.com",          api: "https://{company}.recruitee.com/api/offers/"}
-  smartrecruiters: {detect: "jobs.smartrecruiters.com", api: "https://api.smartrecruiters.com/v1/companies/{company}/postings"}
 
 # ---------------------------------------------------------------------------------------------
 # Watchlist: companies you specifically want to work for.

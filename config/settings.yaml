@@ -98,6 +98,12 @@ digest:
     smtp_port: 587 # STARTTLS
     from_address: job-scout@gadhi.one # the alias; also the SMTP username
 
+ats:
+  # Company job boards from the remoteintech seed and the watchlist (sources.yaml).
+  seed_refresh_days: 7              # re-download the seed list this often
+  redetect_days: 30                 # re-detect each company's board this often
+  max_detections_per_run: 40        # `run` caps detection work; `ats detect` has no cap
+
 schedule:
   timezone: America/Guatemala
   daily_run_time: "08:00" # systemd OnCalendar uses this; Persistent=true catches missed runs

@@ -8,7 +8,7 @@ import re
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 import feedparser
 import httpx
@@ -23,6 +23,9 @@ from job_scout.fetch.normalize import (
     struct_time_to_utc,
 )
 
+if TYPE_CHECKING:
+    from job_scout.ats.platforms import Board
+
 log = logging.getLogger(__name__)
 
 
@@ -35,6 +38,10 @@ class FetchContext:
     last_success_at: datetime | None = None
     env: Mapping[str, str] = field(default_factory=dict)
     skipped_items: int = 0
+    # ats_seed sources only: the company boards to poll, and each one's outcome
+    # (slug -> None for success, else the error), which the runner stores.
+    boards: list[Board] = field(default_factory=list)
+    board_results: dict[str, str | None] = field(default_factory=dict)
 
     def get(self, url: str, **kwargs: Any) -> httpx.Response:
         return self.http.get(url, source=self.source, budget=self.budget, **kwargs)

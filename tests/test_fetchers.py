@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 import httpx
 import pytest
 
+from job_scout.ats.platforms import Board, api_url
 from job_scout.config import AppConfig
 from job_scout.fetch.base import FetchContext
 from job_scout.fetch.http import FetchError, HttpClient, RequestBudget
@@ -13,6 +14,25 @@ from job_scout.fetch.models import Posting
 from job_scout.fetch.sources import FETCHERS
 
 NOW = datetime(2026, 10, 12, 18, 0, tzinfo=UTC)
+
+# The company boards in tests/fixtures/http/remoteintech (one per supported ATS).
+FIXTURE_BOARDS = {
+    "quetzal-labs": ("Quetzal Labs", "greenhouse", "quetzallabs"),
+    "brightpath": ("Brightpath", "lever", "brightpath"),
+    "nimbus-works": ("Nimbus Works", "ashby", "nimbusworks"),
+    "tikal-soft": ("Tikal Soft", "workable", "tikalsoft"),
+    "laguna-data": ("Laguna Data", "recruitee", "lagunadata"),
+}
+
+
+def fixture_boards(app_config: AppConfig) -> list[Board]:
+    platforms = app_config.sources.ats_platforms
+    return [
+        Board(slug, company, ats, token, api_url(platforms[ats].api, token))
+        for slug, (company, ats, token) in FIXTURE_BOARDS.items()
+    ]
+
+
 RECORDED = sorted(set(FETCHERS) - {"findwork"})  # findwork needs an API key to record
 
 
@@ -24,13 +44,15 @@ def fetch(
     env: dict[str, str] | None = None,
     last_success_at: datetime | None = None,
 ) -> list[Posting]:
+    source = app_config.sources.get(source_id)
     ctx = FetchContext(
-        source=app_config.sources.get(source_id),
+        source=source,
         http=http,
         budget=RequestBudget(),
         now=NOW,
         last_success_at=last_success_at,
         env=env or {},
+        boards=fixture_boards(app_config) if source.method == "ats_seed" else [],
     )
     with http:
         postings = FETCHERS[source_id].fetch(ctx)

@@ -12,6 +12,7 @@ from collections.abc import Iterator
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
+from job_scout.ats.fetcher import AtsFetcher
 from job_scout.fetch.base import (
     FeedEntry,
     FetchContext,
@@ -336,6 +337,7 @@ def _map_findjobit(entry: FeedEntry) -> Posting:
 
 
 # --- Registry ------------------------------------------------------------------------------
+# remoteintech polls the company boards found by `ats detect` (job_scout.ats).
 
 FETCHERS: dict[str, Fetcher] = {
     "4dayweek": JsonFetcher(
@@ -357,4 +359,5 @@ FETCHERS: dict[str, Fetcher] = {
     "pyjobs": RssFetcher(_map_pyjobs),
     "remotegamejobs": RssFetcher(_map_remotegamejobs),
     "findjobit": RssFetcher(_map_findjobit),
+    "remoteintech": AtsFetcher(),
 }

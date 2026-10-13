@@ -286,7 +286,8 @@ def test_source_health_footer(
         with_key = {
             h.source_id: h for h in source_health(session, app_config, {"FINDWORK_API_KEY": "k"})
         }
-    assert "remoteintech" not in health  # not built yet (Phase 5): not a health problem
+    assert "hiring_lat" not in health  # tier 2 (disabled)
+    assert health["remoteintech"].problem == "never fetched"
     assert health["findwork"].problem == "skipped: FINDWORK_API_KEY not set"
     assert with_key["findwork"].problem == "never fetched"
     assert health["remoteok"].problem == "never fetched"

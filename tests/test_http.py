@@ -9,10 +9,12 @@ from job_scout.config import AppConfig
 from job_scout.fetch.http import (
     BudgetExhausted,
     FetchError,
+    ForbiddenHost,
     HttpClient,
     Recorder,
     RequestBudget,
     RobotsDisallowed,
+    forbidden,
 )
 
 
@@ -147,3 +149,29 @@ def test_recorder_trims_payloads(tmp_path: Path) -> None:
     assert feed == b"<rss><channel><item>0</item><item>1</item></channel></rss>"
     api = json.loads((tmp_path / "src" / manifest["https://e.com/api"]["file"]).read_text())
     assert api == {"data": [0, 1, 2], "page": 1}  # max_items + 1 (Remote OK's metadata row)
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://www.linkedin.com/company/acme/jobs",
+        "https://linkedin.com/jobs",
+        "https://angel.co/company/acme/jobs",
+        "https://wellfound.com/company/acme",
+        "https://uk.indeed.com/cmp/acme",
+        "https://www.google.com/search?q=jobs",
+    ],
+)
+def test_forbidden_hosts_are_never_fetched(
+    app_config: AppConfig, make_http: Callable[..., HttpClient], url: str
+) -> None:
+    def explode(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("no request may reach a forbidden host, not even robots.txt")
+
+    with make_http({"https://": explode}) as http, pytest.raises(ForbiddenHost):
+        http.get(url, source=app_config.sources.get("remoteok"), budget=RequestBudget())
+
+
+def test_lookalike_hosts_are_allowed() -> None:
+    assert not forbidden("https://notlinkedin.com/jobs")
+    assert not forbidden("https://google.com.example/x")

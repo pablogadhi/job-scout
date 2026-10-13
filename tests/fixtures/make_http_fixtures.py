@@ -699,6 +699,298 @@ def findjobit(endpoint: str) -> dict[str, Any]:
     }
 
 
+# --- remoteintech seed + company ATS boards ----------------------------------------------
+
+SEED_COMPANIES = {
+    # slug: frontmatter (kept: worldwide/americas/americas-europe and fully-remote/remote-first)
+    "quetzal-labs": {
+        "title": "Quetzal Labs",
+        "website": "https://quetzal-labs.example/",
+        "careers_url": "https://boards.greenhouse.io/quetzallabs",
+        "region": "worldwide",
+        "remote_policy": "fully-remote",
+    },
+    "brightpath": {
+        "title": "Brightpath",
+        "website": "https://brightpath.example/",
+        "careers_url": "https://jobs.lever.co/brightpath",
+        "region": "americas",
+        "remote_policy": "remote-first",
+    },
+    "nimbus-works": {
+        "title": "Nimbus Works",
+        "website": "https://nimbusworks.example/",
+        "careers_url": "https://nimbusworks.example/careers",
+        "region": "americas-europe",
+        "remote_policy": "fully-remote",
+    },
+    "tikal-soft": {
+        "title": "Tikal Soft",
+        "website": "https://www.tikalsoft.example/",
+        "region": "worldwide",
+        "remote_policy": "fully-remote",
+    },
+    "laguna-data": {
+        "title": "Laguna Data",
+        "website": "https://lagunadata.example/",
+        "careers_url": "https://lagunadata.recruitee.com/",
+        "region": "worldwide",
+        "remote_policy": "fully-remote",
+    },
+    "euro-widgets": {  # filtered out: region
+        "title": "Euro Widgets",
+        "website": "https://eurowidgets.example/",
+        "careers_url": "https://jobs.lever.co/eurowidgets",
+        "region": "europe",
+        "remote_policy": "fully-remote",
+    },
+    "deskbound": {  # filtered out: remote policy
+        "title": "Deskbound",
+        "website": "https://deskbound.example/",
+        "region": "americas",
+        "remote_policy": "hybrid",
+    },
+}
+
+
+def seed_tarball() -> bytes:
+    """The remote-jobs repo as GitHub's tarball endpoint serves it (a top-level folder)."""
+    import gzip
+    import io
+    import tarfile
+
+    files = {"README.md": "# remote-jobs (synthetic)\n"}
+    for slug, fields in SEED_COMPANIES.items():
+        front = "\n".join(f"{k}: {v}" for k, v in fields.items())
+        files[f"src/companies/{slug}.md"] = (
+            f"---\nslug: {slug}\n{front}\naddedAt: 2026-01-01\n---\n\n## Company blurb\n\n"
+            f"{fields['title']} is a synthetic company.\n"
+        )
+    files["src/companies/broken.md"] = "No frontmatter here.\n"
+    raw = io.BytesIO()
+    with tarfile.open(fileobj=raw, mode="w", format=tarfile.PAX_FORMAT) as tar:
+        for name, text in files.items():
+            data = text.encode()
+            info = tarfile.TarInfo(f"remoteintech-remote-jobs-0000000/{name}")
+            info.size, info.mtime = len(data), 1_760_000_000
+            tar.addfile(info, io.BytesIO(data))
+    return gzip.compress(raw.getvalue(), mtime=0)
+
+
+def remoteintech(endpoint: str, platforms: dict[str, str]) -> dict[str, Any]:
+    def board(ats: str, token: str) -> str:
+        return platforms[ats].replace("{" + platforms[ats].split("{")[1].split("}")[0] + "}", token)
+
+    greenhouse = {
+        "jobs": [
+            {
+                "absolute_url": "https://job-boards.greenhouse.io/quetzallabs/jobs/4000001",
+                "data_compliance": [{"type": "gdpr", "requires_consent": False}],
+                "internal_job_id": 3000001,
+                "location": {"name": "Remote - Americas"},
+                "metadata": [],
+                "id": 4000001,
+                "updated_at": "2026-10-08T10:00:00-04:00",
+                "requisition_id": "Q-101",
+                "title": "Senior Backend Engineer (Python)",
+                "company_name": "Quetzal Labs",
+                "first_published": "2026-10-07T09:00:00-04:00",
+                "language": "en",
+                "content": (
+                    "&lt;p&gt;Build payment APIs with Django and PostgreSQL.&lt;/p&gt;"
+                    "&lt;p&gt;Salary: $140,000 - $170,000 USD per year&lt;/p&gt;"
+                ),
+                "departments": [
+                    {"id": 1, "name": "Engineering", "child_ids": [], "parent_id": None}
+                ],
+                "offices": [
+                    {
+                        "id": 2,
+                        "name": "Remote - LATAM",
+                        "location": None,
+                        "child_ids": [],
+                        "parent_id": None,
+                    }
+                ],
+            },
+            {
+                "absolute_url": "https://job-boards.greenhouse.io/quetzallabs/jobs/4000002",
+                "location": {"name": "Guatemala City"},
+                "metadata": [],
+                "id": 4000002,
+                "updated_at": "2026-10-06T10:00:00-04:00",
+                "title": "Office Manager",
+                "company_name": "Quetzal Labs",
+                "first_published": None,
+                "content": "&lt;p&gt;Run the office.&lt;/p&gt;",
+                "departments": [],
+                "offices": [],
+            },
+        ],
+        "meta": {"total": 2},
+    }
+    lever = [
+        {
+            "additional": "<div>Benefits.</div>",
+            "additionalPlain": "Benefits: home office budget.",
+            "categories": {
+                "commitment": "Full-time",
+                "department": "Engineering",
+                "location": "Remote - LATAM",
+                "team": "Platform",
+                "allLocations": ["Remote - LATAM", "Remote - US"],
+            },
+            "createdAt": 1791900000000,
+            "descriptionPlain": "Brightpath runs a Kubernetes platform for clinics.",
+            "description": "<div>Brightpath runs a Kubernetes platform for clinics.</div>",
+            "id": "a1b2c3d4-0000-4000-8000-000000000001",
+            "lists": [
+                {
+                    "text": "What you'll do",
+                    "content": "<li>Operate clusters</li><li>Write Terraform</li>",
+                }
+            ],
+            "text": "Senior Platform Engineer",
+            "country": "MX",
+            "workplaceType": "remote",
+            "hostedUrl": "https://jobs.lever.co/brightpath/a1b2c3d4-0000-4000-8000-000000000001",
+            "applyUrl": "https://jobs.lever.co/brightpath/a1b2c3d4-0000-4000-8000-000000000001/apply",
+            "salaryRange": {
+                "currency": "USD",
+                "interval": "per-year-salary",
+                "min": 130000,
+                "max": 160000,
+            },
+        },
+        {
+            "categories": {
+                "commitment": "Full-time",
+                "location": "Bogotá",
+                "allLocations": ["Bogotá"],
+            },
+            "createdAt": 1791800000000,
+            "descriptionPlain": "Help our customers.",
+            "id": "a1b2c3d4-0000-4000-8000-000000000002",
+            "lists": [],
+            "text": "Customer Success Lead",
+            "workplaceType": "hybrid",
+            "hostedUrl": "https://jobs.lever.co/brightpath/a1b2c3d4-0000-4000-8000-000000000002",
+            "applyUrl": "https://jobs.lever.co/brightpath/a1b2c3d4-0000-4000-8000-000000000002/apply",
+        },
+    ]
+    ashby = {
+        "jobs": [
+            {
+                "id": "b0000000-0000-4000-8000-000000000001",
+                "title": "Staff Software Engineer, Data",
+                "department": "Engineering",
+                "team": "Data",
+                "employmentType": "FullTime",
+                "location": "Remote",
+                "secondaryLocations": [{"location": "Mexico"}],
+                "publishedAt": "2026-10-05T15:00:00.000+00:00",
+                "isListed": True,
+                "isRemote": True,
+                "workplaceType": "Remote",
+                "address": {"postalAddress": {"addressCountry": "Mexico"}},
+                "jobUrl": "https://jobs.ashbyhq.com/nimbusworks/b0000000-0000-4000-8000-000000000001",
+                "applyUrl": "https://jobs.ashbyhq.com/nimbusworks/b0000000-0000-4000-8000-000000000001/application",
+                "descriptionPlain": "Own the data pipeline. Python, Kafka, PostgreSQL.",
+                "descriptionHtml": "<p>Own the data pipeline.</p>",
+                "shouldDisplayCompensationOnJobPostings": True,
+                "compensation": {
+                    "compensationTierSummary": "$125K - $150K",
+                    "scrapeableCompensationSalarySummary": "$125K - $150K",
+                    "compensationTiers": [],
+                    "summaryComponents": [
+                        {
+                            "compensationType": "Salary",
+                            "interval": "1 YEAR",
+                            "currencyCode": "USD",
+                            "minValue": 125000,
+                            "maxValue": 150000,
+                        }
+                    ],
+                },
+            },
+            {
+                "id": "b0000000-0000-4000-8000-000000000002",
+                "title": "Unlisted Role",
+                "location": "Remote",
+                "isListed": False,
+                "jobUrl": "https://jobs.ashbyhq.com/nimbusworks/b0000000-0000-4000-8000-000000000002",
+            },
+        ],
+        "apiVersion": "1",
+    }
+    workable = {
+        "name": "Tikal Soft",
+        "description": "Synthetic software studio.",
+        "jobs": [
+            {
+                "title": "Senior Full-Stack Developer",
+                "shortcode": "TS00000001",
+                "code": "",
+                "employment_type": "Full-time",
+                "telecommuting": True,
+                "department": "Engineering",
+                "url": "https://apply.workable.com/j/TS00000001",
+                "shortlink": "https://apply.workable.com/j/TS00000001",
+                "application_url": "https://apply.workable.com/j/TS00000001/apply",
+                "published_on": "2026-10-04",
+                "created_at": "2026-10-04",
+                "country": "Guatemala",
+                "city": "Guatemala City",
+                "state": "Guatemala",
+                "locations": [
+                    {
+                        "country": "Guatemala",
+                        "countryCode": "GT",
+                        "city": "Guatemala City",
+                        "region": "Guatemala",
+                        "hidden": False,
+                    }
+                ],
+                "description": "<p>TypeScript, React and Django. Fully remote across the Americas.</p>",
+            }
+        ],
+    }
+    recruitee = {
+        "offers": [
+            {
+                "id": 9000001,
+                "guid": "ab1cd",
+                "slug": "senior-devops-engineer",
+                "title": "Senior DevOps Engineer",
+                "status": "published",
+                "company_name": "Laguna Data",
+                "department": "Infrastructure",
+                "employment_type_code": "fulltime_permanent",
+                "remote": True,
+                "hybrid": False,
+                "on_site": False,
+                "location": "Remote",
+                "locations": [{"id": 1, "name": "Remote", "country": None, "city": None}],
+                "salary": {"min": "9000", "max": "11000", "period": "month", "currency": "USD"},
+                "description": "<p>Run our FluxCD and Prometheus stack.</p>",
+                "requirements": "<ul><li>Kubernetes</li><li>Terraform</li></ul>",
+                "published_at": "2026-10-06 12:00:00 UTC",
+                "created_at": "2026-10-06 11:00:00 UTC",
+                "careers_url": "https://careers.lagunadata.example/o/senior-devops-engineer",
+                "careers_apply_url": "https://careers.lagunadata.example/o/senior-devops-engineer/c/new",
+            }
+        ]
+    }
+    return {
+        endpoint: ("application/x-gzip", seed_tarball()),
+        board("greenhouse", "quetzallabs"): (JSON, greenhouse),
+        board("lever", "brightpath"): (JSON, lever),
+        board("ashby", "nimbusworks"): (JSON, ashby),
+        board("workable", "tikalsoft"): (JSON, workable),
+        board("recruitee", "lagunadata"): (JSON, recruitee),
+    }
+
+
 def main() -> None:
     sources = load_config(ROOT / "config").sources
     endpoints = {s.id: s.endpoints for s in sources.sources}
@@ -715,6 +1007,9 @@ def main() -> None:
         "typescriptjobs": typescriptjobs(endpoints["typescriptjobs"][0]),
         "remotegamejobs": remotegamejobs(endpoints["remotegamejobs"][0]),
         "findjobit": findjobit(endpoints["findjobit"][0]),
+        "remoteintech": remoteintech(
+            endpoints["remoteintech"][0], {k: v.api for k, v in sources.ats_platforms.items()}
+        ),
     }
     shutil.rmtree(OUT, ignore_errors=True)
     for source_id, by_url in responses.items():
@@ -723,7 +1018,8 @@ def main() -> None:
         manifest = {}
         for n, (url, (content_type, body)) in enumerate(by_url.items(), start=1):
             is_json = "json" in content_type
-            name = f"{n:02d}.{'json' if is_json else 'xml'}"
+            ext = "json" if is_json else "tar.gz" if "gzip" in content_type else "xml"
+            name = f"{n:02d}.{ext}"
             data = (
                 (json.dumps(body, indent=1, ensure_ascii=False) + "\n").encode()
                 if is_json

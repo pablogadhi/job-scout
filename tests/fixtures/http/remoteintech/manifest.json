@@ -1,0 +1,32 @@
+{
+  "https://api.github.com/repos/remoteintech/remote-jobs/tarball": {
+    "file": "01.tar.gz",
+    "status": 200,
+    "content_type": "application/x-gzip"
+  },
+  "https://boards-api.greenhouse.io/v1/boards/quetzallabs/jobs?content=true": {
+    "file": "02.json",
+    "status": 200,
+    "content_type": "application/json; charset=utf-8"
+  },
+  "https://api.lever.co/v0/postings/brightpath?mode=json": {
+    "file": "03.json",
+    "status": 200,
+    "content_type": "application/json; charset=utf-8"
+  },
+  "https://api.ashbyhq.com/posting-api/job-board/nimbusworks?includeCompensation=true": {
+    "file": "04.json",
+    "status": 200,
+    "content_type": "application/json; charset=utf-8"
+  },
+  "https://apply.workable.com/api/v1/widget/accounts/tikalsoft?details=true": {
+    "file": "05.json",
+    "status": 200,
+    "content_type": "application/json; charset=utf-8"
+  },
+  "https://lagunadata.recruitee.com/api/offers/": {
+    "file": "06.json",
+    "status": 200,
+    "content_type": "application/json; charset=utf-8"
+  }
+}

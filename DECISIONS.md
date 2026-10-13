@@ -759,3 +759,121 @@ Email is built but off until your alias and token exist (P4-R4). 258 offline tes
   `uv run --env-file .env pytest -m live tests/test_live_email.py` (one email).
 - **P4-R5 Look of the report:** checked by tests, not by eye; please skim the first real
   `backlog-latest.html` and tell me what to change.
+
+---
+
+## Phase 5: ATS seed and watchlist (branch `phase-5-ats`)
+
+**Acceptance (2026-10-13, partly live):** offline, `ats detect` (seed download, filters,
+watchlist, all three detection steps, counts per ATS, unknown list) and board polling are
+covered with synthetic fixtures (297 tests; 37 new). Live: the real seed downloaded (884
+companies, 402 kept), and detection ran for the first 40 alphabetically: 10 boards found
+(Greenhouse 3, Lever 3, Workable 2, Ashby 2) plus Canonical from the watchlist, 30 unknown.
+Polling fetched **Canonical's 311 jobs via Greenhouse** and 173 from five other companies
+(453 new groups, 141 past the pre-filter). The other 361 companies need the full run on your
+machine (P5-R2): my sandbox only reaches hosts listed in advance, and it blocked every redirect
+to an unlisted host, so its hit rate understates the real one.
+
+### P5 Config fixes
+
+- **P5-C1 remoteintech endpoint:** was the instruction "git clone …". Now GitHub's REST API
+  tarball (`https://api.github.com/repos/remoteintech/remote-jobs/tarball`): one request,
+  no git binary in the image. github.com's robots.txt disallows `/*/archive/` for bots, so
+  not the website's archive link; the API is GitHub's documented programmatic route.
+- **P5-C2 Seed filters are fields now:** `seed_regions` and `seed_remote_policies` on the
+  source (they were prose in its notes); same values as before.
+- **P5-C3 SmartRecruiters removed from `ats_platforms`:** `api.smartrecruiters.com`'s
+  robots.txt is `User-agent: * / Disallow: /`. Its companies become unknown_ats (1 in the
+  filtered seed).
+- **P5-C4 Workable:** the API template gets `?details=true` (without it the widget API
+  returns no descriptions), and `detect` also matches `<company>.workable.com`, the older
+  board address 3 seed companies still use.
+- **P5-C5 New settings `ats`:** `seed_refresh_days: 7`, `redetect_days: 30`,
+  `max_detections_per_run: 40`.
+
+### P5 Decisions (Claude)
+
+- **P5-D1 Package `ats/`** (seed, platforms, detect, store, refresh, fetcher). Postings
+  from company boards are stored under the `remoteintech` source (watchlist boards too), with
+  `source_job_id` = `<ats>:<board token>:<job id>` and an `ats: <name>` tag.
+- **P5-D2 Detection, in sources.yaml's order:** (1) the careers URL is a board (its host
+  matches `detect`, the token comes from the URL); (2) fetch the careers page (or, with no
+  careers URL, the website and its first same-site careers link) and look for board links or
+  embeds; (3) probe the seed slug and the website's domain label on each platform's API:
+  a match needs HTTP 200 with at least one job. A 404 means "not there"; a platform whose
+  robots.txt disallows us is skipped for the rest of the run. Tokens found in pages aren't
+  verified; polling records an error if one is wrong.
+- **P5-D3 `ats_companies`** keyed by slug (migration `b4ca7cd8f705`; the table had never held
+  rows). Statuses: pending, ok, unknown_ats, not_in_seed. It records how each board was
+  found (`method`), when it was last detected, seen in the seed, and polled, plus the last
+  poll error. A seed company whose careers URL or website changes is detected again; one
+  that leaves the seed (or its filters) stops being polled. A watchlist entry (sources.yaml)
+  overrides detection; removing it hands the company back to detection.
+- **P5-D4 Upkeep:** `ats detect` downloads the seed, applies the watchlist and detects every
+  new or stale company (`--refresh`: all; `--limit N`; `--no-seed`). Each detection is
+  committed on its own, so it's safe to interrupt and resume. `run` and `backlog` start with
+  an `ats` stage: download the seed when it's older than 7 days and detect at most 40
+  companies, so the daily run stays short and re-detection spreads over runs.
+- **P5-D5 Polling:** the `remoteintech` fetcher polls every board with status ok. One failing
+  board is recorded (`last_poll_error`) and skipped; the source fails only if all fail; the
+  fetch note says "N of M company boards failed". With no boards yet the source is skipped
+  ("run `job-scout ats detect`").
+- **P5-D6 Mappers** for Greenhouse, Lever, Ashby, Workable and Recruitee: location from all
+  listed locations, the job's own workplace field as `remote_raw` (Lever, Ashby, Recruitee,
+  Workable's telecommuting flag; Greenhouse has none), structured salary where the ATS has
+  one (Lever `salaryRange`, Ashby compensation components, Recruitee `salary`), otherwise a
+  labelled salary line in the text. Unlisted Ashby jobs and unpublished Recruitee offers are
+  skipped. Large HTML fields are left out of `raw` (the text is in `description_text`).
+  Lever and Ashby salary fields were written from their documented shape; the live samples
+  had none filled in.
+- **P5-D7 Unknown list:** `ats detect` prints the unknown companies and writes
+  `reports/ats-unknown-<time>.csv` (company, careers URL, website, region, why nothing was
+  found).
+- **P5-D8 Seed URLs are cleaned:** a pasted Markdown link (`…/career](https://…)`), several
+  URLs in one field, or trailing punctuation (`…/careers/,`) were in the live seed.
+- **P5-D9 Forbidden hosts, enforced in the HTTP client:** LinkedIn, Indeed,
+  Wellfound/angel.co and Google are refused before any request, robots.txt included. The
+  live seed lists careers pages on LinkedIn and angel.co; PLAN.md's ground rules forbid
+  them. Those companies fall through to probing.
+- **P5-D10 Offline tests can't reach the network:** an autouse fixture makes any real HTTP
+  request fail (MockTransport fixtures are unaffected; `-m live` is exempt). It caught the
+  new `run` stage trying to download the seed from inside a test.
+- **P5-D11 `sources check`** shows the company boards: polled per ATS, pending, unknown.
+- **P5-D12 The "unbuilt command" helper is gone:** every command is built.
+
+### P5 Bugs found and fixed
+
+- **P5-B1 None tags rejected a posting:** a Lever job with no department or team mapped
+  `None` into `tags`, so the posting failed validation. All ATS mappers drop empty tags.
+  Found by the synthetic fixtures.
+- **P5-B2 Escaped HTML with a single tag type stayed escaped** (Phase 4's check needed two
+  different tags): `&lt;p&gt;…&lt;/p&gt;` alone wasn't re-parsed, so a salary line went
+  unnoticed. The check now also accepts an opening plus a closing tag, and the Greenhouse
+  mapper unescapes explicitly (its API always escapes `content`).
+- **P5-B3 `run` reached the network from tests** (the new seed upkeep): stubbed in the
+  pipeline tests, and the network guard (P5-D10) now catches any repeat.
+
+### P5 For you to review
+
+- **P5-R1 Ashby and robots.txt** (decision needed): `api.ashbyhq.com/robots.txt` answers
+  HTTP 401. Our client follows Python's `urllib.robotparser` rule and treats 401/403 as
+  "disallow everything", so Ashby boards are detected but never polled (2 so far:
+  AirGarage, Andela). The robots.txt standard (RFC 9309, section 2.3.1.3) treats any 4xx,
+  401/403 included, as "unavailable": crawlers may then access everything, which is also
+  how Google behaves. Ashby's posting API is a public API meant for job boards. Options:
+  follow RFC 9309 for all hosts (401/403 = no robots.txt), or keep the strict rule.
+- **P5-R2 Run the full detection on your machine:** `uv run --env-file .env job-scout ats
+  detect` (361 companies left; it fetches roughly 400 company sites and probes the ATS
+  APIs, about 15–30 minutes at one request per second per host; safe to interrupt and
+  re-run). Then skim `data/reports/ats-unknown-*.csv`.
+- **P5-R3 Volume and office jobs:** company boards list every role, including office jobs
+  at "remote-first" companies (Asana: Warsaw, Reykjavík), and Greenhouse has no
+  remote/on-site field, so those pass the pre-filter and Claude rejects them. The first 11
+  boards added 141 groups to score. Full detection may bring roughly 1,000–1,500 more for the
+  first backlog (about $1 on the API with Haiku 5.5), then a trickle daily. If that's too
+  much: keep only `fully-remote` seed companies, or require a remote mention in the title or
+  location for company-board postings.
+- **P5-R4 Redirects skip robots.txt checks:** the HTTP client follows redirects without
+  checking the target host's robots.txt (e.g. a careers page that redirects to another
+  domain). It mattered little for job boards; with ~400 company sites it's worth fixing if
+  you want strictness.

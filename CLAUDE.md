@@ -30,6 +30,7 @@ uv run --env-file .env job-scout run             # daily: fetch, filter, score, 
 uv run --env-file .env job-scout backlog --dry-run  # plan the backlog; without --dry-run it spends
 uv run --env-file .env job-scout digest --dry-run   # reports/digest-preview.html, nothing sent
 uv run --env-file .env job-scout export --sqlite    # CSV of every posting + DB snapshot
+uv run --env-file .env job-scout ats detect      # seed + watchlist -> company boards (resumable)
 uv run --env-file .env pytest -m live tests/test_live_email.py  # sends 1 real email
 uv run --env-file .env pytest -m live tests/test_live_scoring.py  # spends 1 Pro prompt + ~$0.01
 uv run --env-file .env job-scout calibrate --sample 50 --configs "api:claude-haiku-5-5:1,cli:claude-haiku-5-5:20"
@@ -46,7 +47,6 @@ uv run --env-file .env alembic revision --autogenerate -m "what changed"
 ## Layout
 
 - `src/job_scout/cli.py`: typer app. Every command loads and validates all of `config/` first.
-  Unbuilt commands exit 1 with the phase that implements them.
 - `src/job_scout/config/`: Pydantic models for the four config files. `extra="forbid"`
   everywhere, so typos fail at startup with exit code 2. `profile.md` is validated for its
   `## Output format` JSON block and hashed (SHA-256 of the raw bytes = `profile_hash`).
@@ -70,6 +70,11 @@ uv run --env-file .env alembic revision --autogenerate -m "what changed"
   `queue.py` (what needs a score), `runner.py` (a scoring run, both backends, Batches API),
   `backends/cli.py` (`claude -p`), `backends/api.py` (Anthropic SDK), `calibrate.py`,
   `status.py`.
+- `src/job_scout/ats/`: company job boards. `seed.py` (remoteintech tarball, filtered by
+  `seed_regions`/`seed_remote_policies`), `platforms.py` (per-ATS token patterns and job
+  mappers), `detect.py` (careers URL -> careers page -> slug probing), `store.py`
+  (`ats_companies`), `refresh.py` (`ats detect` and `run`'s weekly upkeep), `fetcher.py`
+  (the `remoteintech` source polls every board with status ok, watchlist included).
 - `src/job_scout/report/`: what the user reads. `data.py` (scored groups into sections:
   watchlist, top, unclear location, below threshold; source health), `render.py` (Jinja2
   templates in `templates/`, HTML + plain text), `build.py` (digest and backlog report:
@@ -79,9 +84,15 @@ uv run --env-file .env alembic revision --autogenerate -m "what changed"
 
 ## Conventions
 
-- **Code fetches, Claude judges.** Network calls only in fetchers, the scoring backends and
-  `report/mailer.py`. Everything else must be testable offline; tests use recorded fixtures
-  or fakes, never live network (except `-m live`).
+- **Code fetches, Claude judges.** Network calls only through `fetch.http.HttpClient` (used by
+  `fetch/` and `ats/`), the scoring backends and `report/mailer.py`. Everything else must be
+  testable offline; tests use synthetic fixtures or fakes. `tests/conftest.py` makes any real
+  HTTP request in an offline test fail at once; only `-m live` tests may use the network.
+- **Never fetched, whoever asks:** LinkedIn, Indeed, Wellfound/angel.co and Google
+  (`FORBIDDEN_DOMAINS` in `fetch/http.py`), since seed companies sometimes link there.
+- **Company boards:** an ATS platform in `sources.yaml` must be in `SUPPORTED_ATS`
+  (`config/sources.py`) and `ats.platforms.PLATFORMS`; add both, plus synthetic fixtures, to
+  support a new one. A watchlist entry overrides detection for that company.
 - **Digest bookkeeping:** a `digests` row (kind `digest` or `backlog`) records the canonical
   job ids it reported; a digest never repeats them. A digest whose email failed is not
   recorded, so its jobs carry over. The below-threshold list is never recorded.

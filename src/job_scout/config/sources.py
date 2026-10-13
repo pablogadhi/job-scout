@@ -45,6 +45,9 @@ class SourceConfig(StrictModel):
     # full: all filters.yaml rules. remote_mention_only: free-text posts (HN comments) with
     # no real title only need to mention "remote"; Claude parses the rest.
     prefilter: Literal["full", "remote_mention_only"] = "full"
+    # method ats_seed only: which seed companies to keep (empty keeps all).
+    seed_regions: list[str] = []
+    seed_remote_policies: list[str] = []
     notes: str | None = None
     terms: str | None = None
 
@@ -57,6 +60,11 @@ class SkippedSite(StrictModel):
     name: str
     url: str
     reason: str
+
+
+# ATS platforms the code can detect and poll (job_scout.ats.platforms). sources.yaml may list
+# a subset; a name outside this set is a config error.
+SUPPORTED_ATS = frozenset({"greenhouse", "lever", "ashby", "workable", "recruitee"})
 
 
 class AtsPlatform(StrictModel):
@@ -100,6 +108,11 @@ class SourcesConfig(StrictModel):
             if source.id in seen:
                 raise ValueError(f"duplicate source id: {source.id}")
             seen.add(source.id)
+        if unsupported := sorted(set(self.ats_platforms) - SUPPORTED_ATS):
+            raise ValueError(
+                f"ats_platforms: no detector or fetcher for {', '.join(unsupported)}; "
+                f"supported: {', '.join(sorted(SUPPORTED_ATS))}"
+            )
         for entry in self.watchlist:
             if entry.ats not in self.ats_platforms:
                 raise ValueError(

@@ -1,0 +1,32 @@
+{
+ "name": "Tikal Soft",
+ "description": "Synthetic software studio.",
+ "jobs": [
+  {
+   "title": "Senior Full-Stack Developer",
+   "shortcode": "TS00000001",
+   "code": "",
+   "employment_type": "Full-time",
+   "telecommuting": true,
+   "department": "Engineering",
+   "url": "https://apply.workable.com/j/TS00000001",
+   "shortlink": "https://apply.workable.com/j/TS00000001",
+   "application_url": "https://apply.workable.com/j/TS00000001/apply",
+   "published_on": "2026-10-04",
+   "created_at": "2026-10-04",
+   "country": "Guatemala",
+   "city": "Guatemala City",
+   "state": "Guatemala",
+   "locations": [
+    {
+     "country": "Guatemala",
+     "countryCode": "GT",
+     "city": "Guatemala City",
+     "region": "Guatemala",
+     "hidden": false
+    }
+   ],
+   "description": "<p>TypeScript, React and Django. Fully remote across the Americas.</p>"
+  }
+ ]
+}

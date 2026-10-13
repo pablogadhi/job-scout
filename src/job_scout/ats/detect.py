@@ -1,0 +1,153 @@
+"""Find a company's job board, in the order sources.yaml gives (stop at the first hit):
+
+1. careers_url: the URL itself is a board (its host matches a platform's `detect` pattern).
+2. careers_page: the careers page (or, without one, the website and its careers link)
+   links to or embeds a board.
+3. probe: the company slug answers on a platform's API with at least one job.
+Otherwise the company is unknown_ats.
+"""
+
+from __future__ import annotations
+
+import logging
+import re
+from collections.abc import Mapping
+from dataclasses import dataclass
+from urllib.parse import urljoin, urlsplit
+
+from job_scout.ats.platforms import PLATFORMS, api_url, tokens_in
+from job_scout.ats.seed import SeedCompany
+from job_scout.config.sources import AtsPlatform, SourceConfig
+from job_scout.db.models import AtsMethod
+from job_scout.fetch.http import (
+    FetchError,
+    HttpClient,
+    HttpStatusError,
+    RequestBudget,
+    RobotsDisallowed,
+)
+
+log = logging.getLogger(__name__)
+
+_CAREERS_LINK = re.compile(
+    r"""href=["']([^"'#]*(?:careers?|jobs|join-us|work-with-us|hiring)[^"'#]*)["']""", re.I
+)
+MAX_PAGE_CHARS = 2_000_000
+
+
+@dataclass(frozen=True)
+class Detection:
+    ats: str | None = None
+    token: str | None = None
+    method: AtsMethod | None = None
+    note: str | None = None  # why nothing was found, or what failed along the way
+
+
+def find_board(text: str, platforms: Mapping[str, AtsPlatform]) -> tuple[str, str] | None:
+    """The first (ats, token) any configured platform's token pattern finds in the text."""
+    for name in platforms:
+        for token in tokens_in(text, PLATFORMS[name]):
+            return name, token
+    return None
+
+
+def board_from_url(url: str | None, platforms: Mapping[str, AtsPlatform]) -> tuple[str, str] | None:
+    if not url:
+        return None
+    host = urlsplit(url if "://" in url else f"https://{url}").netloc
+    for name, platform in platforms.items():
+        if re.search(platform.detect, host, re.I):
+            for token in tokens_in(url if "://" in url else f"https://{url}", PLATFORMS[name]):
+                return name, token
+    return None
+
+
+def slug_candidates(company: SeedCompany) -> list[str]:
+    """The seed slug, then the website's main domain label (acme.com -> acme)."""
+    candidates = [company.slug]
+    if company.website:
+        host = urlsplit(company.website if "://" in company.website else f"//{company.website}")
+        labels = [p for p in host.netloc.lower().split(".") if p and p != "www"]
+        if len(labels) >= 2:
+            candidates.append(labels[-2])
+    return list(dict.fromkeys(c for c in candidates if re.fullmatch(r"[a-z0-9][a-z0-9_.-]*", c)))
+
+
+class Detector:
+    def __init__(
+        self,
+        http: HttpClient,
+        source: SourceConfig,
+        platforms: Mapping[str, AtsPlatform],
+        budget: RequestBudget | None = None,
+    ) -> None:
+        self.http = http
+        self.source = source
+        self.platforms = dict(platforms)
+        self.budget = budget or RequestBudget()
+        self._blocked: set[str] = set()  # platforms whose API robots.txt disallows us
+
+    def detect(self, company: SeedCompany) -> Detection:
+        if hit := board_from_url(company.careers_url, self.platforms):
+            return Detection(*hit, AtsMethod.CAREERS_URL)
+        notes: list[str] = []
+        if hit := self._from_pages(company, notes):
+            return Detection(*hit, AtsMethod.CAREERS_PAGE)
+        if hit := self._probe(company, notes):
+            return Detection(*hit, AtsMethod.PROBE)
+        return Detection(note="; ".join(notes) or "no board found")
+
+    def _page(self, url: str, notes: list[str]) -> str | None:
+        try:
+            response = self.http.get(url, source=self.source, budget=self.budget)
+        except FetchError as exc:
+            notes.append(f"{url}: {exc}")
+            return None
+        return response.text[:MAX_PAGE_CHARS]
+
+    def _from_pages(self, company: SeedCompany, notes: list[str]) -> tuple[str, str] | None:
+        start = company.careers_url or company.website
+        if not start:
+            return None
+        start = start if "://" in start else f"https://{start}"
+        html = self._page(start, notes)
+        if html is None:
+            return None
+        if hit := find_board(html, self.platforms):
+            return hit
+        if company.careers_url:
+            return None
+        # No careers URL: follow the website's first same-site careers link, once.
+        site = urlsplit(start).netloc.removeprefix("www.")
+        for match in _CAREERS_LINK.finditer(html):
+            link = urljoin(start, match.group(1))
+            if hit := board_from_url(link, self.platforms):
+                return hit
+            if urlsplit(link).netloc.removeprefix("www.") == site and link != start:
+                page = self._page(link, notes)
+                return find_board(page, self.platforms) if page else None
+        return None
+
+    def _probe(self, company: SeedCompany, notes: list[str]) -> tuple[str, str] | None:
+        for candidate in slug_candidates(company):
+            for name, platform in self.platforms.items():
+                if name in self._blocked:
+                    continue
+                url = api_url(platform.api, candidate)
+                try:
+                    payload = self.http.get(url, source=self.source, budget=self.budget).json()
+                    jobs = PLATFORMS[name].jobs(payload)
+                except RobotsDisallowed as exc:
+                    self._blocked.add(name)
+                    notes.append(f"{name} probing off: {exc}")
+                    continue
+                except HttpStatusError as exc:
+                    if exc.status_code != 404:
+                        notes.append(f"{name} probe: {exc}")
+                    continue
+                except (FetchError, ValueError) as exc:
+                    notes.append(f"{name} probe: {exc}")
+                    continue
+                if jobs:
+                    return name, candidate
+        return None

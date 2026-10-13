@@ -126,7 +126,7 @@ def test_remotive_first_run_checks_categories(
     assert outcome.requests == 2  # /categories (first run only) + one jobs endpoint
 
 
-def test_missing_credentials_and_unbuilt_methods_skip(
+def test_sources_that_cannot_run_are_skipped(
     app_config: AppConfig,
     session_factory: sessionmaker[Session],
     make_http: Callable[..., HttpClient],
@@ -142,7 +142,7 @@ def test_missing_credentials_and_unbuilt_methods_skip(
             )
         )
     assert outcomes["findwork"].reason == "FINDWORK_API_KEY is not set"
-    assert "Phase 5" in outcomes["remoteintech"].reason
+    assert outcomes["remoteintech"].reason == "no company boards yet: run `job-scout ats detect`"
     assert "Phase 7" in outcomes["nodesk"].reason
     assert {o.status for o in outcomes.values()} == {"skipped"}
 

@@ -11,6 +11,8 @@ from typing import Literal
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
+from job_scout.ats.store import boards as ats_boards
+from job_scout.ats.store import record_polls
 from job_scout.config import AppConfig, SourceConfig
 from job_scout.db.models import Source, SourceRun, SourceRunKind, SourceRunStatus
 from job_scout.db.types import utcnow
@@ -21,7 +23,7 @@ from job_scout.fetch.store import store_postings
 
 log = logging.getLogger(__name__)
 
-NOT_YET = {"ats_seed": "ATS seed (Phase 5)", "scrape": "scraper (Phase 7)"}
+NOT_YET = {"scrape": "scraper (Phase 7)"}
 
 
 @dataclass
@@ -70,6 +72,8 @@ def _skip_reason(
         return "no fetcher registered"
     if source.auth_env and not env.get(source.auth_env):
         return f"{source.auth_env} is not set"
+    if source.method == "ats_seed" and not ats_boards(session, config.sources.ats_platforms):
+        return "no company boards yet: run `job-scout ats detect`"
     if respect_interval and state.last_run_at is not None:
         interval = timedelta(hours=config.sources.defaults.min_interval_hours)
         if now - state.last_run_at < interval:
@@ -141,9 +145,18 @@ def _run_one(
             return SourceOutcome(source.id, "skipped", reason)
         budget = _budget(session, source, now)
         last_success_at = state.last_success_at
+        boards = (
+            ats_boards(session, config.sources.ats_platforms) if source.method == "ats_seed" else []
+        )
 
     ctx = FetchContext(
-        source=source, http=http, budget=budget, now=now, last_success_at=last_success_at, env=env
+        source=source,
+        http=http,
+        budget=budget,
+        now=now,
+        last_success_at=last_success_at,
+        env=env,
+        boards=boards,
     )
     outcome = SourceOutcome(source.id, "ok")
     postings = []
@@ -159,6 +172,9 @@ def _run_one(
         ctx.skipped_items,
         budget.used,
     )
+    failed_boards = sum(e is not None for e in ctx.board_results.values())
+    if outcome.status == "ok" and failed_boards:
+        outcome.reason = f"{failed_boards} of {len(ctx.boards)} company boards failed"
 
     with session_factory.begin() as session:
         run = SourceRun(
@@ -172,6 +188,7 @@ def _run_one(
             error=outcome.reason,
         )
         if not probe:
+            record_polls(session, ctx.board_results, now)
             state = session.get_one(Source, source.id)
             state.last_run_at = now
             if outcome.status == "ok":

@@ -1,0 +1,61 @@
+{
+ "jobs": [
+  {
+   "absolute_url": "https://job-boards.greenhouse.io/quetzallabs/jobs/4000001",
+   "data_compliance": [
+    {
+     "type": "gdpr",
+     "requires_consent": false
+    }
+   ],
+   "internal_job_id": 3000001,
+   "location": {
+    "name": "Remote - Americas"
+   },
+   "metadata": [],
+   "id": 4000001,
+   "updated_at": "2026-10-08T10:00:00-04:00",
+   "requisition_id": "Q-101",
+   "title": "Senior Backend Engineer (Python)",
+   "company_name": "Quetzal Labs",
+   "first_published": "2026-10-07T09:00:00-04:00",
+   "language": "en",
+   "content": "&lt;p&gt;Build payment APIs with Django and PostgreSQL.&lt;/p&gt;&lt;p&gt;Salary: $140,000 - $170,000 USD per year&lt;/p&gt;",
+   "departments": [
+    {
+     "id": 1,
+     "name": "Engineering",
+     "child_ids": [],
+     "parent_id": null
+    }
+   ],
+   "offices": [
+    {
+     "id": 2,
+     "name": "Remote - LATAM",
+     "location": null,
+     "child_ids": [],
+     "parent_id": null
+    }
+   ]
+  },
+  {
+   "absolute_url": "https://job-boards.greenhouse.io/quetzallabs/jobs/4000002",
+   "location": {
+    "name": "Guatemala City"
+   },
+   "metadata": [],
+   "id": 4000002,
+   "updated_at": "2026-10-06T10:00:00-04:00",
+   "title": "Office Manager",
+   "company_name": "Quetzal Labs",
+   "first_published": null,
+   "content": "&lt;p&gt;Run the office.&lt;/p&gt;",
+   "departments": [],
+   "offices": []
+  }
+ ],
+ "meta": {
+  "total": 2
+ }
+}

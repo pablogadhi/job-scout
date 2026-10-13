@@ -29,6 +29,15 @@ log = logging.getLogger(__name__)
 
 MIN_HOST_INTERVAL_SECONDS = 1.0
 
+# PLAN.md ground rule: never fetch these, whoever asks (a seed company's careers link can
+# point at them). Subdomains included.
+FORBIDDEN_DOMAINS = ("linkedin.com", "indeed.com", "wellfound.com", "angel.co", "google.com")
+
+
+def forbidden(url: str) -> bool:
+    host = (urlsplit(url).hostname or "").lower()
+    return any(host == d or host.endswith(f".{d}") for d in FORBIDDEN_DOMAINS)
+
 
 class FetchError(Exception):
     """A source could not be fetched. The message is shown in source health."""
@@ -36,6 +45,18 @@ class FetchError(Exception):
 
 class RobotsDisallowed(FetchError):
     pass
+
+
+class ForbiddenHost(FetchError):
+    pass
+
+
+class HttpStatusError(FetchError):
+    """The server answered with an error status (4xx/5xx)."""
+
+    def __init__(self, message: str, status_code: int) -> None:
+        super().__init__(message)
+        self.status_code = status_code
 
 
 class BudgetExhausted(FetchError):
@@ -101,6 +122,8 @@ class HttpClient:
     ) -> httpx.Response:
         # Merge, don't replace: endpoints in sources.yaml carry their own query strings.
         full_url = str(httpx.URL(url).copy_merge_params(params)) if params else url
+        if forbidden(full_url):
+            raise ForbiddenHost(f"never fetched (ground rule): {full_url}")
         host = self._host(full_url)
         robots = host.robots if self.defaults.respect_robots_txt else None
         if robots is not None and not robots.can_fetch(self.defaults.user_agent, full_url):
@@ -117,7 +140,9 @@ class HttpClient:
         if self.recorder:
             self.recorder.record(source.id, full_url, response)
         if response.status_code >= 400:
-            raise FetchError(f"HTTP {response.status_code} for {full_url}")
+            raise HttpStatusError(
+                f"HTTP {response.status_code} for {full_url}", response.status_code
+            )
         return response
 
     def _host(self, url: str) -> _Host:

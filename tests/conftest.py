@@ -25,6 +25,21 @@ KEEP_ENV = {"JOB_SCOUT_SMTP_TOKEN"}
 
 
 @pytest.fixture(autouse=True)
+def _no_network(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Offline tests can't reach the network: a real HTTP request fails the test at once.
+
+    Fixture transports (httpx.MockTransport) are unaffected; `-m live` tests are exempt.
+    """
+    if request.node.get_closest_marker("live"):
+        return
+
+    def refuse(self: object, request: httpx.Request) -> httpx.Response:
+        raise AssertionError(f"offline test tried the network: {request.method} {request.url}")
+
+    monkeypatch.setattr(httpx.HTTPTransport, "handle_request", refuse)
+
+
+@pytest.fixture(autouse=True)
 def _clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """Tests must not see JOB_SCOUT_* settings from the developer's shell. Secrets that
     aren't settings stay, for the opt-in live tests; offline tests pass their own env."""

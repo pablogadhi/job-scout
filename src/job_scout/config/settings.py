@@ -201,6 +201,15 @@ class Schedule(StrictModel):
         return value
 
 
+class Ats(StrictModel):
+    """Company job boards (remoteintech seed + watchlist; sources.yaml ats_platforms)."""
+
+    seed_refresh_days: PositiveInt = 7  # re-download the seed list this often
+    redetect_days: PositiveInt = 30  # re-detect a company's board this often
+    # `run` detects at most this many new or stale companies (`ats detect` has no cap).
+    max_detections_per_run: NonNegativeInt = 40
+
+
 class Paths(StrictModel):
     database: Path = Path("/var/lib/job-scout/job-scout.db")
     reports: Path = Path("/var/lib/job-scout/reports")
@@ -217,6 +226,7 @@ class Settings(BaseSettings):
 
     scoring: Scoring = Scoring()
     digest: Digest = Digest()
+    ats: Ats = Ats()
     schedule: Schedule = Schedule()
     paths: Paths = Paths()
     # Full SQLAlchemy URL; overrides paths.database (e.g. to move to Postgres).

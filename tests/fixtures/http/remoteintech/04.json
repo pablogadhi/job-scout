@@ -1,0 +1,53 @@
+{
+ "jobs": [
+  {
+   "id": "b0000000-0000-4000-8000-000000000001",
+   "title": "Staff Software Engineer, Data",
+   "department": "Engineering",
+   "team": "Data",
+   "employmentType": "FullTime",
+   "location": "Remote",
+   "secondaryLocations": [
+    {
+     "location": "Mexico"
+    }
+   ],
+   "publishedAt": "2026-10-05T15:00:00.000+00:00",
+   "isListed": true,
+   "isRemote": true,
+   "workplaceType": "Remote",
+   "address": {
+    "postalAddress": {
+     "addressCountry": "Mexico"
+    }
+   },
+   "jobUrl": "https://jobs.ashbyhq.com/nimbusworks/b0000000-0000-4000-8000-000000000001",
+   "applyUrl": "https://jobs.ashbyhq.com/nimbusworks/b0000000-0000-4000-8000-000000000001/application",
+   "descriptionPlain": "Own the data pipeline. Python, Kafka, PostgreSQL.",
+   "descriptionHtml": "<p>Own the data pipeline.</p>",
+   "shouldDisplayCompensationOnJobPostings": true,
+   "compensation": {
+    "compensationTierSummary": "$125K - $150K",
+    "scrapeableCompensationSalarySummary": "$125K - $150K",
+    "compensationTiers": [],
+    "summaryComponents": [
+     {
+      "compensationType": "Salary",
+      "interval": "1 YEAR",
+      "currencyCode": "USD",
+      "minValue": 125000,
+      "maxValue": 150000
+     }
+    ]
+   }
+  },
+  {
+   "id": "b0000000-0000-4000-8000-000000000002",
+   "title": "Unlisted Role",
+   "location": "Remote",
+   "isListed": false,
+   "jobUrl": "https://jobs.ashbyhq.com/nimbusworks/b0000000-0000-4000-8000-000000000002"
+  }
+ ],
+ "apiVersion": "1"
+}

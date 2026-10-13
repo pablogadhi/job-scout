@@ -1,0 +1,54 @@
+[
+ {
+  "additional": "<div>Benefits.</div>",
+  "additionalPlain": "Benefits: home office budget.",
+  "categories": {
+   "commitment": "Full-time",
+   "department": "Engineering",
+   "location": "Remote - LATAM",
+   "team": "Platform",
+   "allLocations": [
+    "Remote - LATAM",
+    "Remote - US"
+   ]
+  },
+  "createdAt": 1791900000000,
+  "descriptionPlain": "Brightpath runs a Kubernetes platform for clinics.",
+  "description": "<div>Brightpath runs a Kubernetes platform for clinics.</div>",
+  "id": "a1b2c3d4-0000-4000-8000-000000000001",
+  "lists": [
+   {
+    "text": "What you'll do",
+    "content": "<li>Operate clusters</li><li>Write Terraform</li>"
+   }
+  ],
+  "text": "Senior Platform Engineer",
+  "country": "MX",
+  "workplaceType": "remote",
+  "hostedUrl": "https://jobs.lever.co/brightpath/a1b2c3d4-0000-4000-8000-000000000001",
+  "applyUrl": "https://jobs.lever.co/brightpath/a1b2c3d4-0000-4000-8000-000000000001/apply",
+  "salaryRange": {
+   "currency": "USD",
+   "interval": "per-year-salary",
+   "min": 130000,
+   "max": 160000
+  }
+ },
+ {
+  "categories": {
+   "commitment": "Full-time",
+   "location": "Bogotá",
+   "allLocations": [
+    "Bogotá"
+   ]
+  },
+  "createdAt": 1791800000000,
+  "descriptionPlain": "Help our customers.",
+  "id": "a1b2c3d4-0000-4000-8000-000000000002",
+  "lists": [],
+  "text": "Customer Success Lead",
+  "workplaceType": "hybrid",
+  "hostedUrl": "https://jobs.lever.co/brightpath/a1b2c3d4-0000-4000-8000-000000000002",
+  "applyUrl": "https://jobs.lever.co/brightpath/a1b2c3d4-0000-4000-8000-000000000002/apply"
+ }
+]

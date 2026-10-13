@@ -7,6 +7,7 @@ import pytest
 from sqlalchemy import select
 from typer.testing import CliRunner
 
+from job_scout.ats.refresh import RefreshReport
 from job_scout.cli import app
 from job_scout.db import make_engine, make_session_factory
 from job_scout.db.models import Job, Source
@@ -119,12 +120,6 @@ def test_explain_unknown_job_exits_1() -> None:
     result = invoke("explain", "999")
     assert result.exit_code == 1
     assert "no job with id 999" in result.output
-
-
-def test_unimplemented_command_exits_1() -> None:
-    result = invoke("ats", "detect")
-    assert result.exit_code == 1
-    assert "Phase 5" in result.output
 
 
 def test_record_refuses_tests_dir() -> None:
@@ -262,6 +257,7 @@ def _pipeline_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         "job_scout.scoring.backends.cli.ENV_ALLOWLIST", ("PATH", "FAKE_CLAUDE_LOG", "FAKE_RESULT")
     )
     monkeypatch.setattr("job_scout.cli._fetch", lambda *a, **k: [])
+    monkeypatch.setattr("job_scout.cli.refresh_ats", lambda *a, **k: RefreshReport())
     reports = tmp_path / "reports"
     monkeypatch.setenv("JOB_SCOUT_PATHS__REPORTS", str(reports))
     monkeypatch.setenv("JOB_SCOUT_DIGEST__EMAIL__ENABLED", "false")  # whatever settings.yaml says

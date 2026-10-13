@@ -87,8 +87,19 @@ class DigestKind(enum.StrEnum):
 
 
 class AtsStatus(enum.StrEnum):
-    OK = "ok"
-    UNKNOWN_ATS = "unknown_ats"
+    PENDING = "pending"  # not detected yet
+    OK = "ok"  # board found: polled daily
+    UNKNOWN_ATS = "unknown_ats"  # no supported board found: listed for manual review
+    NOT_IN_SEED = "not_in_seed"  # dropped from the seed list (or its filters): not polled
+
+
+class AtsMethod(enum.StrEnum):
+    """How the board was found (sources.yaml ATS detection order)."""
+
+    CAREERS_URL = "careers_url"  # the careers URL is the board itself
+    CAREERS_PAGE = "careers_page"  # the careers page links to or embeds the board
+    PROBE = "probe"  # the company slug answered on the ATS API with jobs
+    WATCHLIST = "watchlist"  # given in sources.yaml
 
 
 class AtsSeed(enum.StrEnum):
@@ -126,6 +137,7 @@ class Base(DeclarativeBase):
         AtsStatus: _enum(AtsStatus),
         DigestKind: _enum(DigestKind),
         AtsSeed: _enum(AtsSeed),
+        AtsMethod: _enum(AtsMethod),
     }
 
 
@@ -280,14 +292,24 @@ class Digest(Base):
 
 
 class AtsCompany(Base):
+    """A company whose own job board (ATS) is polled: from the remoteintech seed or the
+    watchlist. One row per slug; a watchlist entry overrides the seed's detection."""
+
     __tablename__ = "ats_companies"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    company: Mapped[str] = mapped_column(String(255), unique=True)
+    slug: Mapped[str] = mapped_column(String(255), unique=True)
+    company: Mapped[str] = mapped_column(String(255))
+    website: Mapped[str | None] = mapped_column(Text)
     careers_url: Mapped[str | None] = mapped_column(Text)
+    region: Mapped[str | None] = mapped_column(String(64))
+    remote_policy: Mapped[str | None] = mapped_column(String(64))
     ats: Mapped[str | None] = mapped_column(String(32))
     token: Mapped[str | None] = mapped_column(String(255))
-    region: Mapped[str | None] = mapped_column(String(64))
-    detected_at: Mapped[datetime | None]
+    method: Mapped[AtsMethod | None]
     status: Mapped[AtsStatus]
     source: Mapped[AtsSeed]
+    detected_at: Mapped[datetime | None]  # last detection attempt (re-detected monthly)
+    seen_in_seed_at: Mapped[datetime | None]  # last seed download that listed it
+    last_polled_at: Mapped[datetime | None]
+    last_poll_error: Mapped[str | None] = mapped_column(Text)

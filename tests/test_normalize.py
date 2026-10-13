@@ -78,6 +78,10 @@ def test_html_to_text_double_escaped() -> None:
     assert html_to_text(html) == "Acme builds tools.\n\n- Python"
 
 
+def test_html_to_text_double_escaped_single_tag_kind() -> None:
+    assert html_to_text("&lt;p&gt;One.&lt;/p&gt;&lt;p&gt;Two.&lt;/p&gt;") == "One.\n\nTwo."
+
+
 def test_html_to_text_keeps_a_mentioned_tag() -> None:
     html = "<p>Know when to use a &lt;div&gt; and when not to.</p>"
     assert html_to_text(html) == "Know when to use a <div> and when not to."
