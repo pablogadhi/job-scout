@@ -96,10 +96,10 @@ def test_parse_seed_and_filter(app_config: AppConfig) -> None:
 @pytest.mark.parametrize(
     ("raw", "clean"),
     [
-        ("https://alley.co/careers/,", "https://alley.co/careers/"),
+        ("https://acme.example/careers/,", "https://acme.example/careers/"),
         (
-            "https://aula.notion.site/career](https://aula.notion.site/Work-with-us)",
-            "https://aula.notion.site/career",
+            "https://acme.notion.example/career](https://acme.notion.example/Work-with-us)",
+            "https://acme.notion.example/career",
         ),
         ("https://a.example/jobs, https://b.example/jobs", "https://a.example/jobs"),
         ("https://acme.example/careers#open", "https://acme.example/careers#open"),

@@ -948,6 +948,16 @@ daemon) and `systemd-analyze verify` (read-only filesystem). 308 offline tests (
 - **P6-D9 Markdown tables** in `DECISIONS.md` now use `| --- |` separators and inline HTML is
   quoted, to pass your markdownlint config (MD060, MD033).
 
+### P6 Bugs found and fixed
+
+- **P6-B1 Real URLs in a test** (found in a fixture audit you asked for): Phase 5's
+  `test_seed_urls_are_cleaned` used two real companies' careers URLs, copied from malformed
+  entries in the live seed. They're now `acme.example` / `acme.notion.example` with the same
+  malformed shapes. Audited the rest: every file in `tests/fixtures/http/` (the remoteintech
+  tarball included) is built by `make_http_fixtures.py` from invented data and regenerates
+  byte for byte; Phase 6 added no fixture files, and its tests use inline synthetic logs and
+  `example.test` addresses.
+
 ### P6 For you to review
 
 - **P6-R1 On the server** (`deploy/README.md`): clone to `/opt/job-scout`, create
