@@ -160,12 +160,13 @@ class HttpClient:
             response = self.client.get(f"{origin}/robots.txt")
         except httpx.HTTPError as exc:
             raise FetchError(f"could not read {origin}/robots.txt: {exc}") from exc
-        if response.status_code in (401, 403):
-            parser.parse(["User-agent: *", "Disallow: /"])
-        elif response.status_code >= 500:
+        # RFC 9309 2.3.1: any 4xx (401/403 included) means robots.txt is unavailable, so
+        # everything is allowed; a server error means assume everything is disallowed, which
+        # failing the request does. (urllib.robotparser treats 401/403 as disallow-all.)
+        if response.status_code >= 500:
             raise FetchError(f"{origin}/robots.txt returned HTTP {response.status_code}")
-        elif response.status_code >= 400:
-            parser.parse([])  # no robots.txt: everything allowed
+        if response.status_code >= 400:
+            parser.parse([])
         else:
             parser.parse(response.text.splitlines())
         return parser

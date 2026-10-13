@@ -522,7 +522,8 @@ skipped:
 # Greenhouse verified 2026-10-09 (Canonical); Lever, Ashby, Workable and Recruitee payload
 # shapes checked 2026-10-12. SmartRecruiters removed 2026-10-12: api.smartrecruiters.com's
 # robots.txt disallows every bot (`User-agent: * / Disallow: /`); its companies end up as
-# unknown_ats. Ashby's API host answers robots.txt with HTTP 401 (DECISIONS.md P5-R1).
+# unknown_ats. Ashby's API host answers robots.txt with HTTP 401, which RFC 9309 treats as
+# "unavailable" (allowed); polled since DECISIONS.md P5-U1.
 #
 # ATS detection, in order (stop at the first hit):
 #   1. careers_url host matches a `detect` pattern below.

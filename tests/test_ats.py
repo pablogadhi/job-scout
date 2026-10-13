@@ -201,13 +201,28 @@ def test_detect_unknown_and_robots_blocked_platform(app_config: AppConfig) -> No
     d = detector(
         app_config,
         {
-            "https://api.ashbyhq.com/robots.txt": httpx.Response(401),
+            "https://api.ashbyhq.com/robots.txt": httpx.Response(
+                200, text="User-agent: *\nDisallow: /\n"
+            ),
             "https://ghost.example/careers": httpx.Response(500),
         },
     )
     result = d.detect(company("ghost", careers_url="https://ghost.example/careers"))
     assert result.ats is None and result.method is None
     assert "HTTP 500" in (result.note or "") and "ashby probing off" in (result.note or "")
+
+
+def test_robots_401_does_not_block_probing(app_config: AppConfig) -> None:
+    """Ashby's API answers robots.txt with 401: unavailable, so allowed (RFC 9309)."""
+    d = detector(
+        app_config,
+        {
+            "https://api.ashbyhq.com/robots.txt": httpx.Response(401),
+            api_url(app_config.sources.ats_platforms["ashby"].api, "skyline"): jobs(1),
+        },
+    )
+    result = d.detect(company("skyline"))
+    assert (result.ats, result.token, result.method) == ("ashby", "skyline", AtsMethod.PROBE)
 
 
 # --- store + refresh -----------------------------------------------------------------------

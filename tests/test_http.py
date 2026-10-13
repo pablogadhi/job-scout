@@ -53,18 +53,24 @@ def test_robots_disallow_blocks_request(
             http.get("https://example.com/private/x", source=source, budget=RequestBudget())
 
 
-@pytest.mark.parametrize(("status", "allowed"), [(404, True), (403, False)])
-def test_robots_status_codes(
-    app_config: AppConfig, make_http: Callable[..., HttpClient], status: int, allowed: bool
+@pytest.mark.parametrize("status", [404, 401, 403, 410])
+def test_robots_4xx_means_allowed(
+    app_config: AppConfig, make_http: Callable[..., HttpClient], status: int
 ) -> None:
+    """RFC 9309: robots.txt answering any 4xx is "unavailable", so everything is allowed."""
     source = app_config.sources.get("remoteok")
     overrides = {"https://example.com/robots.txt": robots("", status), "https://example.com/": ok}
     with make_http(overrides) as http:
-        if allowed:
-            http.get("https://example.com/a", source=source, budget=RequestBudget())
-        else:
-            with pytest.raises(RobotsDisallowed):
-                http.get("https://example.com/a", source=source, budget=RequestBudget())
+        http.get("https://example.com/a", source=source, budget=RequestBudget())
+
+
+def test_robots_5xx_fails_the_request(
+    app_config: AppConfig, make_http: Callable[..., HttpClient]
+) -> None:
+    source = app_config.sources.get("remoteok")
+    overrides = {"https://example.com/robots.txt": robots("", 503), "https://example.com/": ok}
+    with make_http(overrides) as http, pytest.raises(FetchError, match="HTTP 503"):
+        http.get("https://example.com/a", source=source, budget=RequestBudget())
 
 
 def test_spacing_uses_crawl_delay_and_source_interval(

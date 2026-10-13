@@ -72,7 +72,7 @@ Live run on 2026-10-12: 12 sources stored 2,734 postings; a second run added 0 d
 - **P1-D2 One HTTP gateway** (`fetch/http.py`) for every request: User-Agent, timeout,
   robots.txt (cached per host per run), spacing per host = max(1 s, robots `Crawl-delay`,
   the source's `min_request_interval_seconds`), request budgets.
-- **P1-D3 robots.txt handling:** 404 = allow all; 401/403 = disallow all; 5xx or network
+- **P1-D3 robots.txt handling** (401/403 part superseded by P5-U1): 404 = allow all; 401/403 = disallow all; 5xx or network
   error = the source fails for this run.
 - **P1-D4 New table `source_runs`** (migration `832d7dbee9d9`): one row per source attempt
   with requests made, items fetched/new/duplicate/skipped, error. Used for the rolling-24h
@@ -766,13 +766,27 @@ Email is built but off until your alias and token exist (P4-R4). 258 offline tes
 
 **Acceptance (2026-10-13, partly live):** offline, `ats detect` (seed download, filters,
 watchlist, all three detection steps, counts per ATS, unknown list) and board polling are
-covered with synthetic fixtures (297 tests; 37 new). Live: the real seed downloaded (884
+covered with synthetic fixtures (301 tests; 41 new, with P5-U1). Live: the real seed downloaded (884
 companies, 402 kept), and detection ran for the first 40 alphabetically: 10 boards found
 (Greenhouse 3, Lever 3, Workable 2, Ashby 2) plus Canonical from the watchlist, 30 unknown.
 Polling fetched **Canonical's 311 jobs via Greenhouse** and 173 from five other companies
 (453 new groups, 141 past the pre-filter). The other 361 companies need the full run on your
 machine (P5-R2): my sandbox only reaches hosts listed in advance, and it blocked every redirect
 to an unlisted host, so its hit rate understates the real one.
+
+### P5 Your decisions
+
+- **P5-U1 robots.txt follows RFC 9309** (decides P5-R1): a robots.txt answering any 4xx,
+  401 and 403 included, means "unavailable", so everything on that host is allowed (Google
+  does the same); 5xx and network errors still fail the request (the standard's "assume
+  disallow"). Real `Disallow` rules are respected as before. This replaces Python's
+  `urllib.robotparser` rule (401/403 = disallow all) from P1-D3. Effect: Ashby's posting API
+  is polled now; re-polling on 2026-10-13 fetched AirGarage (18) and Andela (15) with no
+  board errors.
+- **P5-U2 You run the full `ats detect`** on your machine (decides P5-R2).
+- **P5-U3 Company-board postings all go to Claude** (decides P5-R3), office jobs at
+  remote-first companies included, so nothing is missed; about $1 extra on the backlog is
+  acceptable. No pre-filter change.
 
 ### P5 Config fixes
 
@@ -855,18 +869,18 @@ to an unlisted host, so its hit rate understates the real one.
 
 ### P5 For you to review
 
-- **P5-R1 Ashby and robots.txt** (decision needed): `api.ashbyhq.com/robots.txt` answers
+- **P5-R1 Ashby and robots.txt** (decided, P5-U1): `api.ashbyhq.com/robots.txt` answers
   HTTP 401. Our client follows Python's `urllib.robotparser` rule and treats 401/403 as
   "disallow everything", so Ashby boards are detected but never polled (2 so far:
   AirGarage, Andela). The robots.txt standard (RFC 9309, section 2.3.1.3) treats any 4xx,
   401/403 included, as "unavailable": crawlers may then access everything, which is also
   how Google behaves. Ashby's posting API is a public API meant for job boards. Options:
   follow RFC 9309 for all hosts (401/403 = no robots.txt), or keep the strict rule.
-- **P5-R2 Run the full detection on your machine:** `uv run --env-file .env job-scout ats
+- **P5-R2 Run the full detection on your machine** (P5-U2, yours): `uv run --env-file .env job-scout ats
   detect` (361 companies left; it fetches roughly 400 company sites and probes the ATS
   APIs, about 15–30 minutes at one request per second per host; safe to interrupt and
   re-run). Then skim `data/reports/ats-unknown-*.csv`.
-- **P5-R3 Volume and office jobs:** company boards list every role, including office jobs
+- **P5-R3 Volume and office jobs** (decided, P5-U3: keep all): company boards list every role, including office jobs
   at "remote-first" companies (Asana: Warsaw, Reykjavík), and Greenhouse has no
   remote/on-site field, so those pass the pre-filter and Claude rejects them. The first 11
   boards added 141 groups to score. Full detection may bring roughly 1,000–1,500 more for the
