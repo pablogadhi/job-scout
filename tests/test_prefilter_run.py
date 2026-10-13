@@ -49,7 +49,7 @@ def verdict_for(sf: sessionmaker[Session], source_job_id: str) -> PrefilterResul
 def test_group_reevaluated_when_eligible_copy_arrives(
     app_config: AppConfig, session_factory: sessionmaker[Session]
 ) -> None:
-    store(session_factory, "a", "emea", "EMEA", T0)
+    store(session_factory, "a", "emea", "EMEA only", T0)
     assert run_prefilter(app_config, session_factory).evaluated == 1
     assert not verdict_for(session_factory, "emea").passed
 

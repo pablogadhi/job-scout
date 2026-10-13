@@ -2,7 +2,9 @@
 
 ANTHROPIC_API_KEY is read only here. Structured output via `output_config.format` with the
 shared JSON schema; the reply is validated with Pydantic by the caller. The system prompt
-is marked for prompt caching (note: Haiku 4.5 only caches prefixes of 4,096+ tokens).
+is marked for prompt caching (Haiku 4.5 only caches prefixes of 4,096+ tokens, so it has no
+effect there; Haiku 5.5 caches from 512). Haiku 5.5 thinks by default (adaptive, steered by
+`effort`); thinking counts toward max_tokens, hence `thinking_headroom_tokens`.
 """
 
 from __future__ import annotations
@@ -17,6 +19,9 @@ import anthropic
 from job_scout.config.settings import ApiOptions, ModelPrices
 from job_scout.db.models import Backend
 from job_scout.scoring.backends.base import CallRequest, CallResult
+
+# Above about 21k, the SDK refuses non-streaming requests (expected to exceed its timeout).
+NON_STREAMING_MAX_TOKENS = 20_000
 
 
 def estimate_cost(usage: Any, prices: ModelPrices | None, discount: float = 1.0) -> float | None:
@@ -52,6 +57,7 @@ def interpret(message: Any, prices: ModelPrices | None, discount: float = 1.0) -
         "cost_usd": estimate_cost(usage, prices, discount),
         "extra": {
             "message_id": getattr(message, "id", None),
+            "stop_reason": message.stop_reason,
             "cache_read_input_tokens": getattr(usage, "cache_read_input_tokens", None),
         },
     }
@@ -80,9 +86,11 @@ class ApiScorer:
         model: str,
         client: anthropic.Anthropic | None = None,
         environ: Mapping[str, str] | None = None,
+        effort: str | None = None,
     ) -> None:
         self.options = options
         self.model = model
+        self.effort = effort
         self.prices = options.prices.get(model)
         if client is None:
             key = (environ or {}).get("ANTHROPIC_API_KEY")
@@ -95,12 +103,18 @@ class ApiScorer:
         system: dict[str, Any] = {"type": "text", "text": request.system}
         if self.options.prompt_caching:
             system["cache_control"] = {"type": "ephemeral"}
+        output_config: dict[str, Any] = {
+            "format": {"type": "json_schema", "schema": request.schema}
+        }
+        if self.effort:
+            output_config["effort"] = self.effort
+        max_tokens = request.max_output_tokens + self.options.thinking_headroom_tokens
         return {
             "model": self.model,
-            "max_tokens": request.max_output_tokens,
+            "max_tokens": min(max_tokens, NON_STREAMING_MAX_TOKENS),
             "system": [system],
             "messages": [{"role": "user", "content": request.user}],
-            "output_config": {"format": {"type": "json_schema", "schema": request.schema}},
+            "output_config": output_config,
         }
 
     def score(self, request: CallRequest) -> CallResult:

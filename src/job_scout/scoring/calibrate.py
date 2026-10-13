@@ -1,6 +1,7 @@
 """Batch-size calibration (PLAN.md §10 Phase 3): does packing postings into one call change
 the scores? Scores the same sample with a reference configuration (api, 1 posting per call)
-and with candidates (e.g. cli at 20, 40 and 60 per call). Nothing is written to `scores`.
+and with candidates (e.g. cli at 20, 40 and 60 per call). Configurations can also differ in
+model and effort (`--configs`), to compare models. Nothing is written to `scores`.
 """
 
 from __future__ import annotations
@@ -11,6 +12,7 @@ import time
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from typing import Any
 
 from pydantic import ValidationError
 from sqlalchemy import select
@@ -24,6 +26,28 @@ from job_scout.scoring.backends.base import CallRequest, Scorer
 from job_scout.scoring.prompt import PostingInput, render_posting, system_prompt, user_message
 from job_scout.scoring.runner import max_output_tokens
 from job_scout.scoring.schema import ScoreResult, output_json_schema
+
+
+@dataclass(frozen=True)
+class ConfigSpec:
+    """'backend:model:postings_per_call[:effort]', e.g. 'api:claude-haiku-5-5:1:low'."""
+
+    backend: str
+    model: str
+    size: int
+    effort: str | None = None
+
+    @classmethod
+    def parse(cls, text: str) -> ConfigSpec:
+        parts = text.strip().split(":")
+        if len(parts) not in (3, 4) or parts[0] not in ("api", "cli") or not parts[2].isdigit():
+            raise ValueError(f"{text!r}: expected backend:model:postings_per_call[:effort]")
+        return cls(parts[0], parts[1], int(parts[2]), parts[3] if len(parts) == 4 else None)
+
+    @property
+    def name(self) -> str:
+        effort = f" effort={self.effort}" if self.effort else ""
+        return f"{self.backend} {self.model} x{self.size}{effort}"
 
 
 @dataclass(frozen=True)
@@ -42,6 +66,9 @@ class ConfigResult:
     failed_calls: int = 0
     cost_usd: float = 0.0
     seconds: float = 0.0
+    input_tokens: int = 0
+    output_tokens: int = 0  # includes thinking tokens
+    calls_detail: list[dict[str, Any]] = field(default_factory=list)  # one entry per call
 
 
 @dataclass
@@ -104,6 +131,7 @@ def _score_with(
     size = configuration.postings_per_call
     for start in range(0, len(postings), size):
         chunk = list(postings[start : start + size])
+        call_started = time.monotonic()
         reply = configuration.scorer.score(
             CallRequest(
                 system=system,
@@ -115,11 +143,30 @@ def _score_with(
         )
         result.calls += 1
         result.cost_usd += reply.cost_usd or 0.0
+        result.input_tokens += reply.input_tokens or 0
+        result.output_tokens += reply.output_tokens or 0
         items = (
             reply.payload.get("results")
             if reply.status == "ok" and isinstance(reply.payload, dict)
             else None
         )
+        detail: dict[str, Any] = {
+            "postings": len(chunk),
+            "status": reply.status,
+            "error": reply.error,
+            "returned": len(items) if isinstance(items, list) else None,
+            "valid": 0,
+            "rejected": 0,
+            "first_rejection": None,
+            "unknown_ids": [],
+            "missing_ids": [],
+            "input_tokens": reply.input_tokens,
+            "output_tokens": reply.output_tokens,
+            "cost_usd": reply.cost_usd,
+            "seconds": round(time.monotonic() - call_started, 1),
+            "extra": reply.extra,
+        }
+        result.calls_detail.append(detail)
         if not isinstance(items, list):
             result.failed_calls += 1
             if reply.status == "usage_limit":
@@ -129,11 +176,17 @@ def _score_with(
         for item in items:
             try:
                 parsed = ScoreResult.model_validate(item)
-            except ValidationError:
+            except ValidationError as exc:
+                detail["rejected"] += 1
+                detail["first_rejection"] = detail["first_rejection"] or str(exc)[:500]
                 continue
-            if parsed.job_id in wanted and parsed.job_id not in result.scores:
+            if parsed.job_id not in wanted:
+                detail["unknown_ids"].append(parsed.job_id)
+            elif parsed.job_id not in result.scores:
+                detail["valid"] += 1
                 result.scores[parsed.job_id] = parsed.overall_score
                 result.summaries[parsed.job_id] = parsed.summary
+        detail["missing_ids"] = sorted(wanted - result.scores.keys())
     result.seconds = round(time.monotonic() - started, 1)
     return result
 

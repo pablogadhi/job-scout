@@ -13,9 +13,9 @@ from job_scout.scoring.backends.cli import CliScorer
 
 def make_scorer(scoring: Scoring, backend: str, environ: Mapping[str, str]) -> Scorer:
     if backend == "cli":
-        return CliScorer(scoring.cli, scoring.model, environ=environ)
+        return CliScorer(scoring.cli, scoring.model, environ=environ, effort=scoring.effort)
     if backend == "api":
-        return ApiScorer(scoring.api, scoring.model, environ=environ)
+        return ApiScorer(scoring.api, scoring.model, environ=environ, effort=scoring.effort)
     raise ValueError(f"unknown backend {backend!r}")
 
 

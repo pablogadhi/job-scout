@@ -36,9 +36,17 @@ def prefilter(app_config: AppConfig) -> Prefilter:
         (FakeJob(location_raw="Austin, Texas (hybrid)"), "remote: '\\\\bhybrid\\\\b' matched"),
         (FakeJob(remote_raw="on-site (Office)"), "remote: '\\\\bon[- ]?site\\\\b' matched"),
         (FakeJob(title="Backend Engineer (Onsite)"), "remote:"),
+        # Location drops only when it's explicit that the applicant must be there.
         (FakeJob(location_raw="region: USA Only"), "location:"),
-        (FakeJob(location_raw="Remote - US"), "location:"),
-        (FakeJob(location_raw="EMEA"), "location:"),
+        (FakeJob(location_raw="usa only"), "location:"),
+        (FakeJob(location_raw="Remote (US-only)"), "location:"),
+        (FakeJob(location_raw="US/Canada only"), "location:"),
+        (FakeJob(location_raw="EMEA only"), "location:"),
+        (FakeJob(location_raw="United States residents only"), "location:"),
+        (FakeJob(title="Backend Engineer (EU Applicants Only)"), "location:"),
+        (FakeJob(location_raw="Remote; must reside in the U.S."), "location:"),
+        (FakeJob(location_raw="Remote, U.S. citizenship required"), "location:"),
+        (FakeJob(title="Backend Engineer (Security Clearance)"), "location:"),
         (FakeJob(salary_max=50, salary_currency="USD", salary_period="hour"), "salary:"),
         (FakeJob(salary_max=9_000, salary_currency="USD", salary_period="month"), "salary:"),
         (FakeJob(salary_max=110_000, salary_currency="USD", salary_period="year"), "salary:"),
@@ -68,7 +76,16 @@ def test_drop_reason_names_the_matched_text(prefilter: Prefilter) -> None:
         ),
         # An allow match wins over an exclude match: contradictions go to Claude.
         (FakeJob(location_raw="Worldwide (US-only payroll)"), "location allowed"),
+        # A bare place is unclear: Claude reads the description (profile.md).
         (FakeJob(location_raw="United States"), "location unclear, left to Claude"),
+        (FakeJob(location_raw="usa"), "location unclear, left to Claude"),
+        (FakeJob(location_raw="Remote - US"), "location unclear, left to Claude"),
+        (FakeJob(location_raw="Canada (remote)"), "location unclear, left to Claude"),
+        (FakeJob(location_raw="EMEA"), "location unclear, left to Claude"),
+        (FakeJob(location_raw="US-based"), "location unclear, left to Claude"),
+        (FakeJob(location_raw="region: North America Only"), "location unclear, left to Claude"),
+        (FakeJob(location_raw="Remote, no US work authorization required"), "location unclear"),
+        (FakeJob(title="Backend Engineer, join us only if you love Python"), "location unclear"),
         (FakeJob(location_raw="Guatemala,México"), "location allowed ('Guatemala' in location)"),
         (
             FakeJob(salary_max=11_000, salary_currency="USD", salary_period="month"),
@@ -112,7 +129,7 @@ def test_remote_mention_only_mode(prefilter: Prefilter) -> None:
 
 
 def test_group_passes_via_any_copy(prefilter: Prefilter) -> None:
-    emea = FakeJob(id=1, location_raw="EMEA", source_id="4dayweek")
+    emea = FakeJob(id=1, location_raw="EMEA only", source_id="4dayweek")
     latam = FakeJob(id=2, location_raw="LATAM", source_id="4dayweek")
     verdict = prefilter.evaluate_group([emea, latam])
     assert verdict.passed
@@ -121,10 +138,10 @@ def test_group_passes_via_any_copy(prefilter: Prefilter) -> None:
 
 def test_group_drops_with_first_copy_reason(prefilter: Prefilter) -> None:
     verdict = prefilter.evaluate_group(
-        [FakeJob(id=1, location_raw="EMEA"), FakeJob(id=2, location_raw="APAC")]
+        [FakeJob(id=1, location_raw="EMEA only"), FakeJob(id=2, location_raw="APAC only")]
     )
     assert not verdict.passed
-    assert verdict.reason.startswith("location:") and "'EMEA'" in verdict.reason
+    assert verdict.reason.startswith("location:") and "'EMEA only'" in verdict.reason
     assert verdict.reason.endswith("[2 copies]")
 
 

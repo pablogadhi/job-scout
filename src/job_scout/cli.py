@@ -49,6 +49,7 @@ from job_scout.prefilter_run import (
 )
 from job_scout.scoring.backends import PlanOnlyScorer, make_scorer
 from job_scout.scoring.calibrate import (
+    ConfigSpec,
     Configuration,
     estimate_calls,
     run_calibration,
@@ -463,36 +464,71 @@ def calibrate(
         str, typer.Option("--sizes", help="CLI postings per call to compare.")
     ] = "20,40,60",
     seed: Annotated[int, typer.Option("--seed")] = 1,
+    configs: Annotated[
+        str | None,
+        typer.Option(
+            "--configs",
+            help="Instead of --sizes: comma-separated backend:model:postings_per_call[:effort]; "
+            "the first is the reference. E.g. api:claude-haiku-4-5:1,api:claude-haiku-5-5:1:low",
+        ),
+    ] = None,
     yes: Annotated[
         bool, typer.Option("--yes", help="Confirm: this spends API money and Pro prompts.")
     ] = False,
 ) -> None:
-    """Compare batch sizes: api at 1 posting/call (reference) vs cli at --sizes."""
+    """Compare batch sizes (api x1 reference vs cli at --sizes), or models with --configs."""
     config = _load(ctx)
     scoring = config.settings.scoring
     try:
-        cli_sizes = [int(x) for x in sizes.split(",") if x.strip()]
+        if configs:
+            specs = [ConfigSpec.parse(x) for x in configs.split(",") if x.strip()]
+        else:
+            cli_sizes = [int(x) for x in sizes.split(",") if x.strip()]
+            specs = [ConfigSpec("api", scoring.model, 1, scoring.effort)] + [
+                ConfigSpec("cli", scoring.model, n, scoring.effort) for n in cli_sizes
+            ]
     except ValueError as exc:
-        raise typer.BadParameter("--sizes must be comma-separated integers") from exc
-    names = {"api x1": 1, **{f"cli x{n}": n for n in cli_sizes}}
-    calls = estimate_calls(sample, names)
+        raise typer.BadParameter(str(exc)) from exc
+    if len(specs) < 2:
+        raise typer.BadParameter("need a reference and at least one candidate")
+    calls = estimate_calls(sample, {s.name: s.size for s in specs})
+    api_calls = sum(calls[s.name] for s in specs if s.backend == "api")
+    cli_calls = sum(calls[s.name] for s in specs if s.backend == "cli")
     console.print(
-        f"{sample} job groups: {calls['api x1']} API requests (billed) and "
-        f"{sum(v for k, v in calls.items() if k != 'api x1')} CLI prompts (Pro usage)"
+        f"{sample} job groups: {api_calls} API requests (billed) and "
+        f"{cli_calls} CLI prompts (Pro usage)"
     )
     if not yes:
         console.print("re-run with --yes to spend them")
         raise typer.Exit(1)
     try:
-        reference = Configuration("api x1", make_scorer(scoring, "api", os.environ), 1)
-        cli = make_scorer(scoring, "cli", os.environ)
+        built = [
+            Configuration(
+                s.name,
+                make_scorer(
+                    scoring.model_copy(update={"model": s.model, "effort": s.effort}),
+                    s.backend,
+                    os.environ,
+                ),
+                s.size,
+            )
+            for s in specs
+        ]
     except RuntimeError as exc:
         err_console.print(f"[red]{escape(str(exc))}[/red]")
         raise typer.Exit(2) from exc
-    candidates = [Configuration(f"cli x{n}", cli, n) for n in cli_sizes]
+    reference, candidates = built[0], built[1:]
     with _db(config)() as session:
         ids = sample_job_ids(session, sample, seed)
         result = run_calibration(config, session, ids, reference, candidates)
+    for configuration in (result.reference, *result.candidates):
+        for n, call in enumerate(configuration.calls_detail, 1):
+            if call["status"] != "ok" or call["valid"] < call["postings"]:
+                console.print(
+                    f"[yellow]{escape(configuration.name)} call {n}: {call['status']}, "
+                    f"{call['valid']}/{call['postings']} valid, {call['rejected']} rejected: "
+                    f"{escape(str(call['error'] or call['first_rejection'] or ''))[:300]}[/yellow]"
+                )
     path = save(result, config.settings.paths.reports)
     for candidate in result.candidates:
         table = Table(title=f"{candidate.name} vs {result.reference.name}", title_justify="left")
@@ -512,11 +548,13 @@ def calibrate(
         console.print(table)
         console.print(
             f"  {result.diff_stats(candidate)}  calls={candidate.calls} "
-            f"failed={candidate.failed_calls} ${candidate.cost_usd:.4f} {candidate.seconds}s"
+            f"failed={candidate.failed_calls} ${candidate.cost_usd:.4f} {candidate.seconds}s "
+            f"tokens in={candidate.input_tokens:,} out={candidate.output_tokens:,}"
         )
     ref = result.reference
     console.print(
-        f"reference: calls={ref.calls} failed={ref.failed_calls} ${ref.cost_usd:.4f} {ref.seconds}s"
+        f"reference: calls={ref.calls} failed={ref.failed_calls} ${ref.cost_usd:.4f} "
+        f"{ref.seconds}s tokens in={ref.input_tokens:,} out={ref.output_tokens:,}"
     )
     console.print(f"saved to {path}")
 

@@ -70,6 +70,19 @@ def test_html_to_text_keeps_structure() -> None:
     assert html_to_text("  ") is None
 
 
+def test_html_to_text_double_escaped() -> None:
+    html = (
+        "&lt;div class=&quot;intro&quot;&gt;&lt;p&gt;&lt;strong&gt;Acme&lt;/strong&gt; "
+        "builds&amp;nbsp;tools.&lt;/p&gt;&lt;ul&gt;&lt;li&gt;Python&lt;/li&gt;&lt;/ul&gt;&lt;/div&gt;"
+    )
+    assert html_to_text(html) == "Acme builds tools.\n\n- Python"
+
+
+def test_html_to_text_keeps_a_mentioned_tag() -> None:
+    html = "<p>Know when to use a &lt;div&gt; and when not to.</p>"
+    assert html_to_text(html) == "Know when to use a <div> and when not to."
+
+
 def test_fix_mojibake() -> None:
     assert fix_mojibake("ð\u009f\u009a\u0080 Why") == "\U0001f680 Why"
     assert fix_mojibake("Café \U0001f680") == "Café \U0001f680"  # already fine

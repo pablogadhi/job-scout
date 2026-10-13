@@ -80,10 +80,10 @@ class Modes(StrictModel):
     )
     backlog: ModeLimits = ModeLimits(
         cli=CliLimits(
-            postings_per_call=40,
+            postings_per_call=20,
             max_calls=25,
-            max_input_tokens_per_call=120_000,
-            max_output_tokens_per_call=24_000,
+            max_input_tokens_per_call=60_000,
+            max_output_tokens_per_call=12_000,
         ),
         api=ApiLimits(postings_per_call=1, max_calls=10_000, use_batches_api=True),
     )
@@ -112,14 +112,25 @@ class ApiOptions(StrictModel):
     batch_poll_seconds: PositiveInt = 60
     batch_max_wait_minutes: PositiveInt = 120
     batch_discount: float = Field(0.5, gt=0, le=1)
+    # Added to max_tokens on every request: room for thinking on models that think by
+    # default (Claude Haiku 5.5), which counts toward max_tokens. Unused tokens cost nothing.
+    thinking_headroom_tokens: NonNegativeInt = 8_000
     prices: dict[str, ModelPrices] = {
-        "claude-haiku-4-5": ModelPrices(input=1.0, output=5.0, cache_write=1.25, cache_read=0.1)
+        "claude-haiku-4-5": ModelPrices(input=1.0, output=5.0, cache_write=1.25, cache_read=0.1),
+        "claude-haiku-5-5": ModelPrices(
+            input=0.10, output=0.50, cache_write=0.125, cache_read=0.01
+        ),
     }
+
+
+Effort = Literal["low", "medium", "high", "xhigh", "max"]
 
 
 class Scoring(StrictModel):
     backend: Backend = "cli"
-    model: str = "claude-haiku-4-5"
+    model: str = "claude-haiku-5-5"
+    # None: don't send it (Haiku 4.5 rejects it; Haiku 5.5 then defaults to medium).
+    effort: Effort | None = None
     description_max_chars: PositiveInt = 6000
     modes: Modes = Modes()
     order: Literal["newest_first", "oldest_first"] = "newest_first"

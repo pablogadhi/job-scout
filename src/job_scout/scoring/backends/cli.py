@@ -62,13 +62,16 @@ class CliScorer:
         model: str,
         environ: Mapping[str, str] | None = None,
         run: Runner = subprocess.run,
+        effort: str | None = None,
     ) -> None:
         self.options = options
         self.model = model
+        self.effort = effort
         self.env = subprocess_env(os.environ if environ is None else environ)
         self.run = run
 
     def command(self, request: CallRequest) -> list[str]:
+        effort = ["--effort", self.effort] if self.effort else []
         return [
             self.options.binary,
             "-p",
@@ -82,6 +85,7 @@ class CliScorer:
             "--setting-sources", "",
             "--disable-slash-commands",
             "--no-session-persistence",
+            *effort,
         ]  # fmt: skip
 
     def score(self, request: CallRequest) -> CallResult:
@@ -133,12 +137,17 @@ def parse_output(returncode: int, stdout: str, stderr: str, duration_ms: int) ->
         "extra": {
             "session_id": (data or {}).get("session_id"),
             "subtype": (data or {}).get("subtype"),
+            "stop_reason": (data or {}).get("stop_reason"),
+            "num_turns": (data or {}).get("num_turns"),
+            # Per-model token usage: shows whether the CLI also ran other models.
+            "model_usage": (data or {}).get("modelUsage"),
         },
     }
     if _USAGE_LIMIT.search(text):
         return CallResult("usage_limit", error=_short(text), **common)
     if returncode != 0 or data is None or data.get("is_error"):
-        return CallResult("error", error=_short(text) or f"exit code {returncode}", **common)
+        error = _short(text, 1_500) or f"exit code {returncode}"
+        return CallResult("error", error=error, **common)
     if data.get("stop_reason") == "refusal":
         return CallResult("refusal", error=_short(text), **common)
     if data.get("stop_reason") == "max_tokens":

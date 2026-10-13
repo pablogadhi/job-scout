@@ -42,6 +42,12 @@ and score on the rest.
      the US/Canada/UK/EU", "EMEA", "APAC", "US work authorization required", security clearance.
    - Unclear: "North America" (often means US/Canada only), "remote" with no location stated,
      "US time zones" without a residency requirement. Flag these as unclear, do not fail them.
+   - Remote roles listed under a country ("United States (remote)", "Canada (remote)",
+     "Remote - Spain"): the label alone is unclear. Read the description. If it clearly requires
+     the candidate to be located in that country or region, it fails even though the role is
+     remote: "open to candidates residing in the US", "must be based in Canada", "remote within
+     the UK". If the description doesn't say, keep it unclear. A company's customers, offices
+     or headquarters in a country are not a location requirement.
 3. **Minimum compensation: USD $120,000 per year.**
    - Convert when needed: hourly × 2,080; monthly × 12. Use approximate rates for other currencies.
    - Pass if the top of the stated range is ≥ $120k.

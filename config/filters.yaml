@@ -49,14 +49,18 @@ location:
     - '\bamericas\b'
     - '\bguatemala\b'
   # If none of the allow patterns matched and one of these does, drop the posting.
+  # Drop only when it's explicit that the applicant must be in a place that excludes
+  # Guatemala: "USA only", "US/Canada only", "EU applicants only", "must reside in the US",
+  # "US citizenship required". A bare place ("USA", "Remote - US", "Canada (remote)", "EMEA")
+  # is unclear and goes to Claude, which reads the description (profile.md, location
+  # eligibility). "North America only" is not in the place list: Guatemala is in North America.
+  # "US" must be upper case, so "join us only ..." doesn't match.
   exclude_any:
-    - '\b(us|u\.s\.|usa|united states)[- ]?(only|based)\b'
-    - '\bmust (be located|reside|live) in the (us|u\.s\.|united states|uk|eu)\b'
-    - '\bus work authori[sz]ation\b'
-    - '\b(security clearance|clearance required)\b'
-    - '\b(emea|apac)\b( only)?'
-    - '\b(uk|eu|europe|canada|australia|india)[- ]only\b'
-    - '^remote\s*[-–(,]\s*(us|usa|united states|uk|canada|germany|europe|emea|apac)\)?$'
+    # "<place> only", "<place>/<place> only", "<place> residents only", "US-only"
+    - '\b((?-i:US|U\.S\.)|usa|u\.s\.a\.|united states|uk|u\.k\.|united kingdom|britain|ireland|eu|europe|european union|canada|australia|new zealand|india|germany|france|spain|portugal|netherlands|poland|emea|apac|asia|africa|brazil|argentina|mexico|colombia|chile)(\s*(/|,|&|\band\b|\bor\b)\s*((?-i:US|U\.S\.)|usa|u\.s\.a\.|united states|uk|u\.k\.|united kingdom|britain|ireland|eu|europe|european union|canada|australia|new zealand|india|germany|france|spain|portugal|netherlands|poland|emea|apac|asia|africa|brazil|argentina|mexico|colombia|chile))*\)?[\s-]+((based|applicants?|residents?|citizens?|candidates?)\s+)?only\b'
+    - '\bmust (be located|be based|reside|live|be a resident) in (the )?((?-i:US|U\.S\.)|usa|u\.s\.a\.|united states|uk|u\.k\.|united kingdom|britain|ireland|eu|europe|european union|canada|australia|new zealand|india|germany|france|spain|portugal|netherlands|poland|emea|apac|asia|africa|brazil|argentina|mexico|colombia|chile)(?![a-z])'
+    - '(?<!\bno )\b((?-i:US|U\.S\.)|usa|united states|uk|canada|eu) (work authori[sz]ation|work permit|citizenship|citizens?|persons?|residency)( is)? required\b'
+    - '(?<!\bno )\b(security clearance|clearance required)\b'
   # Everything else ("Remote", "North America", "US time zones", no location) goes to Claude.
   on_unclear: pass_to_llm
 

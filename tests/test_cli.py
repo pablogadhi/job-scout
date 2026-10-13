@@ -12,6 +12,7 @@ from job_scout.db import make_engine, make_session_factory
 from job_scout.db.models import Job, Source
 from job_scout.fetch.models import Posting
 from job_scout.fetch.store import store_postings
+from job_scout.scoring.calibrate import ConfigSpec
 from tests.conftest import REPO_CONFIG, edit
 from tests.scoring_helpers import result_for, seed_jobs
 
@@ -72,7 +73,7 @@ def _seed_group(db_url: str) -> int:
         session.add_all([Source(id="a"), Source(id="b")])
         session.flush()
         for source, job_id, location, when in (
-            ("a", "1", "EMEA", now),
+            ("a", "1", "EMEA only", now),
             ("b", "2", "Latin America", now + timedelta(hours=1)),
         ):
             posting = Posting(
@@ -108,7 +109,7 @@ def test_filter_and_explain(db_url: str) -> None:
     assert result.exit_code == 0, result.output
     assert f"duplicate of #{copy_id - 1}" in result.output
     assert "Duplicate group (2 postings)" in result.output
-    assert "a: EMEA" in result.output and "b: Latin America" in result.output
+    assert "a: EMEA only" in result.output and "b: Latin America" in result.output
     assert f"via copy #{copy_id} on b" in result.output
     assert "none yet" in result.output  # no scores before Phase 3
 
@@ -185,7 +186,7 @@ def test_score_with_cli_backend_end_to_end(
     assert "1 calls, 20 scored" in result.output and "stop reason: max_calls" in result.output
     call = json.loads(log.read_text().splitlines()[0])
     assert call["cwd"] == str(tmp_path / "cwd")
-    assert call["args"][call["args"].index("--model") + 1] == "claude-haiku-4-5"
+    assert call["args"][call["args"].index("--model") + 1] == "claude-haiku-5-5"
 
     result = invoke("score")
     assert result.exit_code == 0, result.output
@@ -222,6 +223,28 @@ def test_calibrate_requires_confirmation() -> None:
     assert result.exit_code == 1
     assert "50 API requests (billed) and 6 CLI prompts" in result.output
     assert "--yes" in result.output
+
+
+@pytest.mark.usefixtures("db_url")
+def test_calibrate_compares_models() -> None:
+    result = invoke(
+        "calibrate",
+        "--sample",
+        "50",
+        "--configs",
+        "api:claude-haiku-4-5:1,api:claude-haiku-5-5:1:low,cli:claude-haiku-5-5:20",
+    )
+    assert result.exit_code == 1
+    assert "100 API requests (billed) and 3 CLI prompts" in result.output
+    bad = invoke("calibrate", "--configs", "api:claude-haiku-4-5")
+    assert bad.exit_code == 2 and "backend:model:postings_per_call" in bad.output
+
+
+def test_config_spec() -> None:
+    spec = ConfigSpec.parse("cli:claude-haiku-5-5:20:low")
+    assert spec == ConfigSpec("cli", "claude-haiku-5-5", 20, "low")
+    assert spec.name == "cli claude-haiku-5-5 x20 effort=low"
+    assert ConfigSpec.parse("api:claude-haiku-4-5:1").effort is None
 
 
 @pytest.mark.usefixtures("db_url")

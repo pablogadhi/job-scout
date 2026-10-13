@@ -2,6 +2,7 @@
 
 import json
 import subprocess
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -12,7 +13,12 @@ import pytest
 
 from job_scout.config import AppConfig
 from job_scout.config.settings import ModelPrices
-from job_scout.scoring.backends.api import ApiScorer, estimate_cost, interpret
+from job_scout.scoring.backends.api import (
+    NON_STREAMING_MAX_TOKENS,
+    ApiScorer,
+    estimate_cost,
+    interpret,
+)
 from job_scout.scoring.backends.base import CallRequest
 from job_scout.scoring.backends.cli import CliScorer, parse_output, subprocess_env
 from job_scout.scoring.schema import output_json_schema
@@ -41,6 +47,8 @@ def cli_json(**fields: Any) -> str:
         "total_cost_usd": 0.0123,
         "usage": {"input_tokens": 3000, "cache_read_input_tokens": 500, "output_tokens": 450},
         "session_id": "s-1",
+        "num_turns": 1,
+        "modelUsage": {"claude-haiku-5-5": {"inputTokens": 3000}},
     }
     return json.dumps({**base, **fields})
 
@@ -74,6 +82,8 @@ def test_cli_invocation(app_config: AppConfig, tmp_path: Path) -> None:
 
     assert result.status == "ok" and result.payload["results"][0]["job_id"] == 7
     assert (result.input_tokens, result.output_tokens, result.cost_usd) == (3500, 450, 0.0123)
+    assert result.extra["num_turns"] == 1
+    assert result.extra["model_usage"] == {"claude-haiku-5-5": {"inputTokens": 3000}}
     cmd = seen["cmd"]
     flag = lambda name: cmd[cmd.index(name) + 1]  # noqa: E731
     assert cmd[:2] == ["claude", "-p"] and "--bare" not in cmd
@@ -192,13 +202,35 @@ def test_api_request_shape(app_config: AppConfig) -> None:
     assert result.status == "ok" and result.http_status == 200
     params = messages.calls[0]
     assert params["model"] == "claude-haiku-4-5"
-    assert params["max_tokens"] == 1_900
+    assert params["max_tokens"] == 1_900 + 8_000  # + thinking_headroom_tokens
     assert params["system"] == [
         {"type": "text", "text": "SYSTEM PROMPT", "cache_control": {"type": "ephemeral"}}
     ]
     assert params["messages"] == [{"role": "user", "content": REQUEST.user}]
     assert params["output_config"] == {"format": {"type": "json_schema", "schema": REQUEST.schema}}
+    assert "temperature" not in params and "thinking" not in params  # Haiku 5.5 rejects these
     assert result.cost_usd == pytest.approx((3000 * 1 + 450 * 5) / 1e6)
+
+
+def test_api_effort_and_max_tokens_cap(app_config: AppConfig) -> None:
+    messages = FakeMessages(message())
+    scorer = ApiScorer(
+        app_config.settings.scoring.api,
+        "claude-haiku-5-5",
+        client=SimpleNamespace(messages=messages),  # type: ignore[arg-type]
+        effort="low",
+    )
+    scorer.score(replace(REQUEST, max_output_tokens=16_000))
+    params = messages.calls[0]
+    assert params["output_config"]["effort"] == "low"
+    assert params["max_tokens"] == NON_STREAMING_MAX_TOKENS
+
+
+def test_cli_effort_flag(app_config: AppConfig, tmp_path: Path) -> None:
+    options = app_config.settings.scoring.cli.model_copy(update={"workdir": tmp_path})
+    assert "--effort" not in CliScorer(options, "m", environ={}).command(REQUEST)
+    cmd = CliScorer(options, "m", environ={}, effort="low").command(REQUEST)
+    assert cmd[cmd.index("--effort") + 1] == "low"
 
 
 def test_api_key_required(app_config: AppConfig) -> None:

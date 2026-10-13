@@ -13,8 +13,25 @@ from selectolax.lexbor import LexborHTMLParser
 _BLOCK_TAGS = "p, div, br, ul, ol, h1, h2, h3, h4, h5, h6, tr, table, section, article, pre"
 
 
+# Markup left over after one pass means the source escaped its HTML twice ("&lt;p&gt;").
+# Needs two different tags, so a post that mentions "<div>" once isn't parsed again.
+_LEFTOVER_TAG = re.compile(r"</?(p|div|br|ul|ol|li|strong|em|b|i|h[1-6]|span|a)\b[^<>]*>", re.I)
+
+
+def looks_double_escaped(text: str | None) -> bool:
+    return bool(text) and len({m.group(1).lower() for m in _LEFTOVER_TAG.finditer(text)}) >= 2
+
+
 def html_to_text(html: str | None) -> str | None:
-    """Strip HTML to readable plain text, keeping paragraph and list structure."""
+    """Strip HTML to readable plain text, keeping paragraph and list structure.
+
+    Double-escaped HTML ("&lt;p&gt;Hi&lt;/p&gt;", sent by some boards) gets a second pass.
+    """
+    text = _html_to_text_once(html)
+    return _html_to_text_once(text) if looks_double_escaped(text) else text
+
+
+def _html_to_text_once(html: str | None) -> str | None:
     if not html or not html.strip():
         return None
     tree = LexborHTMLParser(html)

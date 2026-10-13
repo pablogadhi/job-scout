@@ -280,21 +280,154 @@ caused by the rules themselves are listed under P2-R1. Please re-check (P2-R5).
 
 ## Phase 3: Scoring (branch `phase-3-scoring`)
 
-**Acceptance:** built and tested offline; **live checks not run** (P3-R1). Both backends,
+**Acceptance:** built and tested offline, then checked live by you on 2026-10-12. Both backends,
 batching, failure handling, stop reasons, backend switching and the Batches API are
-covered by 55 new offline tests (213 in total) plus 2 opt-in live tests, using a fake `claude` executable and a fake SDK client.
-Not yet done: scoring the same sample live on both backends, confirming Haiku through the
-CLI on your Pro account, and the calibration you approve (P3-R2). No credentials for the
-pipeline were present (`CLAUDE_CODE_OAUTH_TOKEN` and `ANTHROPIC_API_KEY` unset). I did not
-use the `claude` CLI that is logged in on this machine, because that would spend your Pro
-prompts without your OK.
+covered by 55 new offline tests (213 in total; 235 after the review changes below) plus 2 opt-in live tests, using a fake `claude` executable and a fake SDK client.
+You ran both live tests (passed: Pro accepts `claude-haiku-4-5` through the CLI, and the API
+key works) and the calibration (P3 Calibration results). Before that, I did not use the
+`claude` CLI that is logged in on this machine, because that would spend your Pro prompts
+without your OK.
 
-### P3 Config fixes
+### P3 Your decisions
 
-- **P3-C1 Model ID.** `claude-haiku-5-5` (PLAN.md and settings.yaml) is not a real model ID.
-  The current Haiku is `claude-haiku-4-5` ($1 input / $5 output per million tokens). Changed
-  in settings.yaml and the built-in default. You asked for Haiku explicitly, so no other
-  model was considered.
+- **P3-U1 Batch size 20 per CLI call** for daily and backlog runs (open decision #5), from
+  the calibration. The backlog CLI limits went from 40 postings / 120k input / 24k output
+  tokens to the daily values: 20 / 60k / 12k (settings.yaml and the built-in default).
+- **P3-U2 Backends (open decision #6):** `cli` during development and testing (the default,
+  `scoring.backend: cli`); you switch to `api` (Batches API) yourself for the real initial
+  backlog. Nothing changed in code for this.
+- **P3-U3 "Place (remote)" locations stay unclear for the pre-filter (P3-R6).** No
+  filters.yaml rule drops them: you'd rather have Haiku read the whole posting and drop
+  them than have a regex drop an opening that could pass. All 704 such groups keep going to
+  Claude.
+- **P3-U4 profile.md: remote roles listed under a country.** New bullet under location
+  eligibility (you approved the edit): a label such as "United States (remote)" alone is
+  unclear; it fails only when the description clearly requires being located in that
+  country or region ("open to candidates residing in the US"), even though the role is
+  remote. Customers, offices or headquarters in a country don't count. The wording is mine,
+  from your rule. This changes `profile_hash`; no scores were stored yet, so nothing is
+  re-scored. Note: filters.yaml still drops a location field that is exactly
+  "Remote - US"-style (its last `exclude_any` pattern) without reading the description.
+  (Superseded by P3-U5: that pattern is gone.)
+- **P3-U5 Location filters drop only explicit restrictions.** Your rule: exclude only when
+  it's super clear the applicant must be in the place; "usa" passes to Claude, "usa only"
+  is dropped. You approved editing filters.yaml. `location.exclude_any` now has 4 patterns
+  (the wording and place list are mine):
+  1. `<place> only`, also `US/Canada only`, `US-only`, `EU applicants only`,
+     `United States residents only`;
+  2. `must (be located|be based|reside|live|be a resident) in (the) <place>`;
+  3. `<US|USA|United States|UK|Canada|EU> (work authorization|work permit|citizenship|
+     citizens|persons|residency) (is) required`, but not after "no ";
+  4. `security clearance` / `clearance required`, but not after "no ".
+
+  `<place>` is a fixed list of countries and regions that exclude Guatemala (US, UK, EU,
+  Europe, Canada, EMEA, APAC, Brazil, Mexico, …). "US" must be upper case, so "join us
+  only" doesn't match. Removed: `Remote - US` / `Remote (Canada)` as a whole field, bare
+  `EMEA`/`APAC`, `US-based`, and any mention of "US work authorization". "North America
+  only" stays unclear: Guatemala is in North America, and profile.md calls it unclear.
+  Allow patterns still win over excludes. Effect on the local DB: the old rules dropped 2
+  groups ("Remote - US", a title with "EMEA"); the new ones drop none, so 1,122 pass
+  instead of 1,120. The only "USA Only" posting already fails on its title, and HN posts
+  skip location rules (`remote_mention_only`). The location filter is now a safety net;
+  Claude does the location judging. 15 new test cases (both directions).
+
+- **P3-U6 Default model `claude-haiku-5-5`** (your decision, from the model comparison
+  below). Changed in settings.yaml and the built-in default; `effort` stays null, so 5.5
+  uses its default, medium. Haiku 4.5 still works (with `effort: null`). Both live tests
+  pass on 5.5 (2026-10-12), including the CLI one.
+
+### P3 Calibration results
+
+`data/reports/calibration-20261012T232111Z.json`: 50 passed groups, `api x1` as reference.
+
+| Config | Calls | Scored | Time | Cost |
+|---|---|---|---|---|
+| api x1 | 50 | 50/50 | 429 s | $0.23 billed |
+| cli x20 | 3 | 50/50 | 536 s (~3 min a call) | $0.44 API-equivalent, not billed |
+| cli x40 | 2 | 17/50 | 239 s | $0.22 API-equivalent |
+| cli x60 | 1 | 0/50 | 600 s timeout | – |
+
+- x40: the 40-posting call returned only 7 results (the first six and the last); the
+  10-posting call returned all 10. x60 hit the 600 s CLI timeout.
+- x20 vs api x1: mean difference 9.7, max 62, 36 of 50 within ±10, rank agreement 0.60.
+  Both disqualify about 40 of 50; they disagree on 11. The biggest gaps are the
+  *reference* being wrong: 1274 and 2218 (Canada / US-only listings) got 78 and 82 from
+  api x1, and 178 (max C$159k, about US$115k) got 71. Haiku also contradicts itself at x1
+  (1363, "United States (remote)", got 0). The disagreements come from how
+  "Country (remote)" labels are judged (P3-R6), not from batching.
+- The x20 CLI cost ($0.44 for 50) is about double what I'd expect for Haiku; the report
+  can't show why (P3-R7).
+
+**Model comparison** (`data/reports/calibration-20261013T014624Z.json`, 2026-10-12): 50
+passed groups, current profile.md (with P3-U4) and filters (P3-U5), `api haiku-4-5 x1` as
+reference.
+
+| Config | Scored | Disqualified | Time | Cost | Tokens in / out |
+|---|---|---|---|---|---|
+| api haiku-4-5 x1 | 50/50 | 38 | 429 s | $0.236 | 291k / 29k |
+| api haiku-5-5 x1 (medium) | 50/50 | 16 | 333 s | $0.043 | 398k / 60k |
+| api haiku-5-5 x1 low | 50/50 | 15 | 269 s | $0.035 | 398k / 46k |
+| cli haiku-4-5 x20 | 50/50 | 22 | 688 s | $0.60 API-equivalent | 162k / 75k |
+| cli haiku-5-5 x20 | 20/50 (2 of 3 calls failed) | 5 of 20 | 594 s | $0.10 API-equivalent | 616k / 140k |
+
+- Haiku 5.5 uses about 37% more input tokens (tokenizer) and 2× the output tokens
+  (thinking) of 4.5, yet costs about 5.5× less (10× cheaper per token, and caching now
+  works). It's also faster.
+- The two models disagree a lot (mean difference 18.5, 18 of 50 within ±10), and the
+  disagreement is mostly 4.5 disqualifying on location. Checked against the descriptions,
+  5.5 follows profile.md and 4.5 doesn't: 4.5 disqualified 1361 (Netflix) for "US residency
+  required", which the description never says; 2505 (Grafana, "candidates in the USA time
+  zones") although time zones never disqualify; and 2159 and 1889 on "United States
+  (remote)" labels alone, which P3-U4 makes unclear. 5.5 marked those unclear and scored
+  the rest.
+- 5.5 isn't perfect: it disqualified 1278 ("Europe / Asia / Africa (remote)", label only).
+  At low effort it disqualified 2824 (Czechia/Hungary/Ukraine, label only), where medium
+  effort said unclear.
+- 4.5 is also inconsistent with itself across batch sizes: 38 disqualified at x1 vs 22 at
+  x20.
+- `cli haiku-5-5 x20`: 2 of its 3 calls failed and it reported 616k input tokens for 3
+  calls (vs 162k for 4.5). The report can't say why: that's P3-R7.
+
+**Effort comparison** (`data/reports/calibration-20261013T023203Z.json`, 2026-10-12): the
+same 50 groups, Haiku 5.5, `api x1` at medium (the default) as reference. The `claude` CLI
+reported version 2.1.296 both before and after you restarted it, but every call succeeded
+this time.
+
+| Config | Disqualified | Time | Cost | Tokens in / out | vs medium: mean diff, within ±10, rank agreement |
+|---|---|---|---|---|---|
+| api x1 medium | 15 | 352 s | $0.043 | 398k / 61k | – |
+| api x1 high | 15 | 434 s | $0.054 | 398k / 84k | 4.4, 47/50, 0.91 |
+| api x1 low | 14 | 270 s | $0.036 | 398k / 49k | 5.5, 46/50, 0.88 |
+| cli x20 medium | 18 | 381 s | $0.057 API-equivalent | 347k / 95k | 7.8, 40/50, 0.85 |
+| cli x20 high | 12 | 421 s | $0.057 API-equivalent | 172k / 102k | 6.9, 34/50, 0.86 |
+
+- Noise baseline: the same configuration (api x1 medium) in the two runs differs by 4.6 on
+  average (max 25, 44/50 within ±10). High and low effort are within that noise, so
+  effort barely changes the scores. High costs 26% more and takes 23% longer; low saves 15%.
+  Effort stays at the default (medium).
+- The location cases are now consistent across effort levels and backends: 1361, 2505,
+  2159 and 1889 are unclear and scored 40–66 everywhere (4.5 disqualified all four); 1278
+  ("Europe / Asia / Africa (remote)") is disqualified everywhere.
+- High effort's largest API output was 2,772 tokens, far below `thinking_headroom_tokens`
+  (8,000); nothing was truncated.
+- CLI x20 is a bit noisier than the API (7.8 vs 4.6) but usable.
+- **Why the CLI uses so many tokens (P3-R10):** per-call detail shows each `claude -p` call
+  took 2 to 5 turns (`stop_reason: tool_use`), all on claude-haiku-5-5. `--json-schema`
+  works through a structured-output tool, and every extra turn resends the whole prompt
+  (20 postings, about 27–35k tokens). One call used 5 turns and 237k input tokens. That
+  explains the 616k in the model comparison.
+
+- **P3-C1 Model ID: my mistake, corrected.** I claimed `claude-haiku-5-5` (PLAN.md and
+  settings.yaml) was not a real model ID and switched the default to `claude-haiku-4-5`.
+  It is real: Claude Haiku 5.5, released 2026-10-07, after what I knew about. You caught it;
+  the Models API on your key lists it (checked 2026-10-12). The default stays
+  `claude-haiku-4-5` until you decide from the comparison (P3-R9). Haiku 5.5 vs 4.5, from
+  the docs: 10× cheaper per token ($0.10 / $0.50 per million input / output, for prompts up
+  to 100k tokens; 5× that above), about 30% more tokens for the same text (new tokenizer),
+  adaptive thinking on by default at `medium` effort (thinking tokens are billed as output
+  and count toward `max_tokens`), prompt caching from 512 tokens (so caching the ~3k-token
+  profile works on 5.5), and `temperature`/`top_p`/`top_k` and assistant prefill are
+  rejected (we send none of them).
 - **P3-C2 New settings:** `scoring.api.prices` per model (input, output, cache write, cache
   read), `batch_discount: 0.5`, `batch_poll_seconds: 60`, `batch_max_wait_minutes: 120`, and
   `scoring.cli.token_created` (date `claude setup-token` was run; drives the expiry warning).
@@ -367,6 +500,18 @@ prompts without your OK.
   agreement, and saves a JSON report under `paths.reports`. It requires `--yes`, after
   showing what it will spend.
 - **P3-D17 Dry runs need no credentials** and show an estimated API cost.
+- **P3-D19 `scoring.effort`** (new, default null = not sent): passed as
+  `output_config.effort` (api) and `--effort` (cli). Haiku 4.5 rejects it, so it stays null
+  for 4.5.
+- **P3-D20 `scoring.api.thinking_headroom_tokens: 8000`** (new): added to `max_tokens` on
+  every API request, because Haiku 5.5's thinking counts toward `max_tokens` and the old
+  limit (1,000 + 900 per posting) would cut it off. It only raises the cap; unused tokens
+  cost nothing. Capped at 20,000 per request (the SDK refuses larger non-streaming requests).
+- **P3-D21 `calibrate --configs`** (new): compares any configurations,
+  `backend:model:postings_per_call[:effort]`, the first being the reference, e.g.
+  `api:claude-haiku-4-5:1,api:claude-haiku-5-5:1:low`. The report now also totals input and
+  output tokens per configuration (output includes thinking). Without `--configs` it
+  behaves as before.
 - **P3-D18 Migration `a3a84e7eab32`:** `scores.attempts`, `scores.scored_at`,
   `scoring_calls.request_map` (batch custom_id → job ids, for resuming).
 
@@ -378,10 +523,17 @@ prompts without your OK.
   caught in review before any field had such a name.
 - **P3-B3 Dry run with `--backend api`** demanded an API key; caught on the local data.
 - **P3-B4 A test pinned the old model ID** (`claude-haiku-5-5`); updated with P3-C1.
+- **P3-B5 Double-escaped HTML in descriptions** (found in the calibration, P3-R8; a Phase 1
+  bug). Some boards send `&lt;p&gt;…`; `html_to_text` decoded it once, leaving literal
+  `<div><p><strong>` for Claude. Now, if the text left after one pass still has at least two
+  different HTML tags, it gets a second pass (one mentioned tag, like "use a <div>", is left
+  alone). Data migration `f680c1d27195` re-cleans stored descriptions, because a job that's
+  already stored is never re-mapped: 13 in the local DB (10 realworkfromanywhere, 3
+  remoteok), 0 left after it. 2 new tests.
 
 ### P3 For you to review
 
-- **P3-R1 Live checks**, once credentials are in `.env`:
+- **P3-R1 Live checks** (done by you on 2026-10-12, kept for reference):
   1. `claude setup-token`, then put `CLAUDE_CODE_OAUTH_TOKEN` and the date in
      `scoring.cli.token_created`; put `ANTHROPIC_API_KEY` in `.env`.
   2. `uv run --env-file .env pytest -m live tests/test_live_scoring.py`: one Pro prompt
@@ -389,13 +541,44 @@ prompts without your OK.
      check: it fails, never falls back.
   3. `uv run --env-file .env job-scout calibrate --sample 50 --yes`: 50 API requests
      (about $0.35) and 6 Pro prompts.
-- **P3-R2 Batch-size defaults (open decision #5):** set from the calibration results.
+- **P3-R2 Batch-size defaults (open decision #5):** decided, P3-U1.
 - **P3-R3 Two CLI details unverified** until the first live call: whether
   `--setting-sources ""` (load no settings files) is accepted, and the exact wording of
   the Pro usage-limit message (detection uses a regex over several known phrasings).
-- **P3-R4 Backlog backend (open decision #6),** estimated on the 1,120 groups in the local
-  DB: `cli` backlog = 28 prompts at 40 per call (two runs, within Pro's limit of roughly
-  10–40 prompts per 5 hours, shared with your chats); `api` with the Batches API ≈ $3.68
+- **P3-R4 Backlog backend (open decision #6):** decided, P3-U2. Estimates on the 1,120 groups in the local
+  DB: `cli` backlog = 56 prompts at 20 per call (Pro allows roughly 10–40 prompts per
+  5 hours, shared with your chats); `api` with the Batches API ≈ $3.68
   for all of them; `api` daily without batches ≈ $3.16 for 500.
 - **P3-R5 CLI calls per daily run (open decision #7):** still 5 (100 postings at 20 per
   call).
+- **P3-R6 "Country (remote)" locations** (decided, P3-U3). 4dayweek lists where a role is open as
+  `<place> (remote)` entries. 704 of the 1,120 passed groups list only such places, none of
+  them allowed (e.g. 294 are just "United States (remote)"). profile.md doesn't say whether
+  that label alone is a fail or unclear, and Haiku flips between the two. Checked against
+  descriptions: of those 704, 53 mention LATAM / anywhere / South America / "open to
+  candidates", and none of the ones I read opens the role to Guatemala (most confirm
+  "residing in the US", or say "customers worldwide"). Options: a location `exclude_any`
+  rule in filters.yaml on the location field (drops them before Claude; "North America
+  (remote)", 12 groups, would have to stay unclear per profile.md), and/or one line in
+  profile.md. Both files are read-only: your call.
+- **P3-R7 Calibration report detail** (done): each configuration's `calls_detail` lists, per
+  call, postings sent, status, error (up to 1,500 characters for CLI errors), results
+  returned, valid, rejected (with the first validation error), unknown and missing ids,
+  tokens, cost, seconds, and backend extras: for the CLI, `num_turns`, `stop_reason` and
+  `model_usage` (per-model tokens, which shows if the CLI ran other models); for the API,
+  `stop_reason`. `calibrate` prints a line for every call that failed or came back short.
+  Originally proposed as: record each call's status, results
+  returned vs rejected, and the CLI's per-model usage, so a result like x40's 33 missing
+  scores or the x20 cost can be explained.
+- **P3-R8 Double-escaped HTML** (fixed, P3-B5): some
+  sources send descriptions as `&lt;p&gt;…`, and `html_to_text` decodes them only once,
+  so Claude gets literal `<div><p><strong>` tags. 10 of 39 realworkfromanywhere jobs and 3
+  of 99 remoteok jobs are affected.
+- **P3-R9 Default model:** decided, P3-U6. Original note: the comparison favors `claude-haiku-5-5` at the default
+  (medium) effort on the API: cheaper, faster, and it follows the location rules where 4.5
+  doesn't. The CLI path with 5.5 isn't usable until its failures are explained (P3-R7).
+- **P3-R10 CLI turns** (open): a `claude -p --json-schema` call takes 2–5 turns, each resending
+  the whole prompt, so a CLI call can use several times the tokens of a single request.
+  Every call still succeeded, and the Pro plan counts usage, not dollars, but it eats into
+  the 5-hour limit faster. This CLI version has no `--max-turns`. If the Pro limit becomes
+  a problem, options are smaller batches or the API backend.

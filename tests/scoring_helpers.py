@@ -88,7 +88,7 @@ class FakeScorer:
         self,
         behave: Callable[[CallRequest], CallResult] | None = None,
         backend: Backend = Backend.CLI,
-        model: str = "claude-haiku-4-5",
+        model: str = "claude-haiku-5-5",
     ) -> None:
         self.backend = backend
         self.model = model

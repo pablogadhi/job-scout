@@ -10,7 +10,7 @@ from tests.conftest import REPO_CONFIG, edit
 def test_repo_config_is_valid() -> None:
     config = load_config(REPO_CONFIG)
     assert config.settings.scoring.backend == "cli"
-    assert config.settings.scoring.model == "claude-haiku-4-5"
+    assert config.settings.scoring.model == "claude-haiku-5-5"
     assert (
         config.profile.sha256
         == hashlib.sha256((REPO_CONFIG / "profile.md").read_bytes()).hexdigest()

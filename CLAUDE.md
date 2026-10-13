@@ -27,6 +27,8 @@ uv run --env-file .env job-scout explain ID      # a job, its duplicate group, v
 uv run --env-file .env job-scout score --dry-run # plan calls (and est. API cost), no spend
 uv run --env-file .env job-scout status          # pending, last run, today's calls/spend, token
 uv run --env-file .env pytest -m live tests/test_live_scoring.py  # spends 1 Pro prompt + ~$0.01
+uv run --env-file .env job-scout calibrate --sample 50 --configs "api:claude-haiku-5-5:1,cli:claude-haiku-5-5:20"
+                                                # compare configs; spends, so needs --yes
 uv run pytest                                   # offline tests (live ones excluded)
 uv run pytest -m live                           # opt-in: real network / real Claude backend
 uv run ruff check . && uv run ruff format .

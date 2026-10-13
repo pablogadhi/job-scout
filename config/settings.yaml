@@ -10,9 +10,13 @@ scoring:
 
   # Model for both backends. Full model ID so the CLI and API resolve the same model.
   # Override: --model <id>  or  JOB_SCOUT_MODEL=<id>
-  # claude-haiku-5-5 (the original value) is not a real model ID; the current Haiku is
-  # claude-haiku-4-5 (checked 2026-10-12, see DECISIONS.md P3-C1).
-  model: claude-haiku-4-5
+  # Default since 2026-10-12 (DECISIONS.md P3-U6). claude-haiku-4-5 still works, with
+  # effort: null.
+  model: claude-haiku-5-5
+  # Thinking effort: low | medium | high | xhigh | max, or null to not send it.
+  # Haiku 4.5 rejects it (keep null); Haiku 5.5 defaults to medium.
+  # Override: JOB_SCOUT_SCORING__EFFORT=low
+  effort: null
 
   description_max_chars: 6000   # posting description is truncated to this before scoring
 
@@ -31,15 +35,15 @@ scoring:
         max_input_tokens_per_call: 60000
         max_output_tokens_per_call: 12000
       api:
-        postings_per_call: 1        # one posting per request: best accuracy; profile is prompt-cached
+        postings_per_call: 1        # one posting per request (caching inactive: DECISIONS.md P3-D13)
         max_calls: 500
         use_batches_api: false
     backlog:
       cli:
-        postings_per_call: 40       # larger batches to clear the backlog with fewer Pro prompts
+        postings_per_call: 20       # calibration: 40 per call lost 33 of 50 results, 60 timed out
         max_calls: 25
-        max_input_tokens_per_call: 120000
-        max_output_tokens_per_call: 24000
+        max_input_tokens_per_call: 60000
+        max_output_tokens_per_call: 12000
       api:
         postings_per_call: 1
         max_calls: 10000
@@ -66,12 +70,20 @@ scoring:
     # USD per million tokens, per model. Batches API usage is billed at batch_discount × these.
     # Check https://platform.claude.com/docs/en/models/overview when changing models.
     batch_discount: 0.5
+    # Added to max_tokens on every request: room for thinking on models that think by
+    # default (Haiku 5.5); thinking counts toward max_tokens. Unused tokens cost nothing.
+    thinking_headroom_tokens: 8000
     prices:
       claude-haiku-4-5:
         input: 1.00
         output: 5.00
         cache_write: 1.25           # 5-minute cache writes (1.25 × input)
         cache_read: 0.10            # 0.1 × input
+      claude-haiku-5-5:             # prompts up to 100k tokens; above that, 5× these
+        input: 0.10
+        output: 0.50                # includes thinking tokens
+        cache_write: 0.125
+        cache_read: 0.01
 
 digest:
   min_score: 60

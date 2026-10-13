@@ -66,7 +66,7 @@ def test_scores_everything_pending(
     assert set(stored) == set(ids)
     score = stored[ids[0]]
     assert score.status == ScoreStatus.SCORED and score.overall_score == 70
-    assert score.backend == Backend.CLI and score.model == "claude-haiku-4-5"
+    assert score.backend == Backend.CLI and score.model == "claude-haiku-5-5"
     assert score.profile_hash == app_config.profile.sha256
     assert score.result["matched_skills"] == ["Python", "Django"]
     with session_factory() as session:
