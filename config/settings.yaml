@@ -86,14 +86,24 @@ scoring:
         cache_read: 0.01
 
 digest:
-  min_score: 60
+  min_score: 50                     # 50 while testing (DECISIONS.md P4-U2); plan default 60
   watchlist_min_score: 21           # watchlist jobs appear unless disqualified
-  channel: html                     # html | email | telegram | slack (decide in Phase 4)
+  send_when_empty: true             # still email a digest with no new matches (health footer)
+  # The HTML digest is always written under paths.reports. Email is sent in addition when
+  # enabled: Proton SMTP submission from an alias (DECISIONS.md P4-U7). The SMTP token is
+  # read only from the JOB_SCOUT_SMTP_TOKEN environment variable, never from this file.
+  email:
+    enabled: false
+    smtp_host: smtp.protonmail.ch
+    smtp_port: 587                  # STARTTLS
+    from_address: null              # the alias; also the SMTP username
+    to_address: null                # your main address
 
 schedule:
   timezone: America/Guatemala
-  daily_run_time: "09:47"           # systemd OnCalendar uses this; Persistent=true catches missed runs
+  daily_run_time: "08:00"           # systemd OnCalendar uses this; Persistent=true catches missed runs
 
 paths:
   database: /var/lib/job-scout/job-scout.db
   reports: /var/lib/job-scout/reports
+  exports: /var/lib/job-scout/exports   # job-scout export (CSV, --sqlite snapshot)

@@ -48,9 +48,14 @@ _USAGE_LIMIT = re.compile(
 Runner = Callable[..., subprocess.CompletedProcess[str]]
 
 
+# Set for every call: no auto-update (the CLI version is pinned and updated deliberately,
+# PLAN.md Phase 6), no telemetry or error reporting.
+FIXED_ENV = {"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"}
+
+
 def subprocess_env(environ: Mapping[str, str]) -> dict[str, str]:
     """Only allowlisted variables: ANTHROPIC_API_KEY and friends can never get through."""
-    return {k: environ[k] for k in ENV_ALLOWLIST if k in environ}
+    return {**{k: environ[k] for k in ENV_ALLOWLIST if k in environ}, **FIXED_ENV}
 
 
 class CliScorer:
@@ -146,8 +151,11 @@ def parse_output(returncode: int, stdout: str, stderr: str, duration_ms: int) ->
     if _USAGE_LIMIT.search(text):
         return CallResult("usage_limit", error=_short(text), **common)
     if returncode != 0 or data is None or data.get("is_error"):
-        error = _short(text, 1_500) or f"exit code {returncode}"
-        return CallResult("error", error=error, **common)
+        # `subtype` names the failure (e.g. error_max_turns) when `result` is empty.
+        subtype = (data or {}).get("subtype")
+        reason = " ".join(filter(None, [subtype if subtype != "success" else None, text]))
+        error = _short(reason, 1_500) or f"exit code {returncode}"
+        return CallResult("error", error=f"{error} (exit code {returncode})", **common)
     if data.get("stop_reason") == "refusal":
         return CallResult("refusal", error=_short(text), **common)
     if data.get("stop_reason") == "max_tokens":

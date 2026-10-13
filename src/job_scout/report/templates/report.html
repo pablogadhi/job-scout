@@ -1,0 +1,139 @@
+<!doctype html>
+{#- One template for the daily digest and the backlog report. Posting text is untrusted:
+    autoescape is on, and nothing here marks a value safe. No scripts or external assets,
+    so the same HTML works as an email body. -#}
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ heading }}</title>
+<style>
+  body { margin: 0; padding: 16px; background: #f6f7f9; color: #1d2330;
+         font: 15px/1.5 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  .wrap { max-width: 760px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 18px; margin: 28px 0 8px; border-bottom: 1px solid #d9dde3; padding-bottom: 4px; }
+  .muted { color: #5b6473; font-size: 13px; }
+  .job { background: #fff; border: 1px solid #d9dde3; border-radius: 8px; padding: 12px 14px;
+         margin: 10px 0; }
+  .job h3 { font-size: 16px; margin: 0 0 2px; }
+  .score { display: inline-block; min-width: 30px; text-align: center; font-weight: 700;
+           border-radius: 6px; padding: 0 6px; margin-right: 6px; background: #e7ecf3; }
+  .s-high { background: #d5f2dc; color: #135c26; }
+  .s-mid { background: #fff1cc; color: #6b4e00; }
+  .s-low { background: #f1f2f4; color: #5b6473; }
+  .badge { display: inline-block; font-size: 12px; border-radius: 10px; padding: 0 8px;
+           margin-left: 4px; background: #e8e3fb; color: #3d2a8a; }
+  .flag { color: #9b1c1c; }
+  .row { margin: 4px 0; }
+  .label { color: #5b6473; }
+  a { color: #1d5bd8; }
+  details > summary { cursor: pointer; font-weight: 600; margin: 8px 0; }
+  table.health { border-collapse: collapse; font-size: 13px; }
+  table.health td, table.health th { border-bottom: 1px solid #e3e6eb; padding: 3px 8px;
+                                      text-align: left; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>{{ heading }}</h1>
+<p class="muted">
+  Generated {{ generated_at }} &middot; threshold {{ settings.min_score }}
+  (watchlist {{ settings.watchlist_min_score }}) &middot; profile {{ profile_hash[:12] }}
+  {%- if since %} &middot; new since {{ since }}{% endif %}
+</p>
+<p>
+  {{ sections.watchlist | length }} watchlist &middot; {{ sections.top | length }} top matches
+  &middot; {{ sections.unclear | length }} with unclear location
+  {%- if include_below %} &middot; {{ sections.below | length }} below threshold{% endif %}
+</p>
+
+{%- macro score_class(score) -%}
+  {%- if score >= 70 %}s-high{% elif score >= 50 %}s-mid{% else %}s-low{% endif -%}
+{%- endmacro %}
+
+{%- macro job(item) %}
+{%- set r = item.result %}
+<div class="job">
+  <h3><span class="score {{ score_class(item.overall) }}">{{ item.overall }}</span>
+    <a href="{{ item.apply_url | http_url }}">{{ item.title }}</a> &mdash; {{ item.company }}
+    {%- if item.watchlist %}<span class="badge">watchlist</span>{% endif %}
+    {%- if r.four_day_week == "yes" %}<span class="badge">4-day week</span>{% endif %}
+  </h3>
+  <div class="row">{{ r.summary }}</div>
+  {%- if r.disqualified %}
+  <div class="row flag"><span class="label">Disqualified:</span> {{ r.disqualify_reason or "yes" }}</div>
+  {%- endif %}
+  <div class="row"><span class="label">Location ({{ r.location_eligibility }}):</span> {{ r.location_notes }}</div>
+  <div class="row"><span class="label">Salary ({{ r.salary }}):</span>
+    {{ item.salary or "not stated" }}
+    {%- if r.salary_usd_range %} &middot; ~{{ r.salary_usd_range }} USD{% endif %}
+    {%- if r.salary_notes %} &middot; {{ r.salary_notes }}{% endif %}</div>
+  <div class="row"><span class="label">Role:</span> {{ r.role_category }}, {{ r.seniority }}
+    &middot; skill fit {{ r.skill_fit }}/5, seniority fit {{ r.seniority_fit }}/5
+    &middot; remote: {{ r.remote }} &middot; {{ r.employment_type }}</div>
+  {%- if r.matched_skills %}
+  <div class="row"><span class="label">Matched:</span> {{ r.matched_skills | join(", ") }}</div>
+  {%- endif %}
+  {%- if r.gaps %}<div class="row"><span class="label">Gaps:</span> {{ r.gaps | join(", ") }}</div>{% endif %}
+  {%- if r.wlb_positive %}
+  <div class="row"><span class="label">Work-life balance:</span> {{ r.wlb_positive | join(", ") }}</div>
+  {%- endif %}
+  {%- if r.wlb_negative %}
+  <div class="row flag"><span class="label">WLB concerns:</span> {{ r.wlb_negative | join(", ") }}</div>
+  {%- endif %}
+  {%- if r.red_flags %}
+  <div class="row flag"><span class="label">Red flags:</span> {{ r.red_flags | join(", ") }}</div>
+  {%- endif %}
+  <div class="row muted">
+    {%- for listing in item.listings %}
+    <a href="{{ listing.url | http_url }}">{{ listing.source_id }}</a>{% if listing.location %} ({{ listing.location }}){% endif %}{% if not loop.last %} &middot; {% endif %}
+    {%- endfor %}
+    &middot; posted {{ item.posted_at.date() if item.posted_at else "?" }} &middot; job #{{ item.job_id }}
+  </div>
+</div>
+{%- endmacro %}
+
+{%- if sections.watchlist %}
+<h2>Watchlist matches</h2>
+{%- for item in sections.watchlist %}{{ job(item) }}{% endfor %}
+{%- endif %}
+
+<h2>Top matches</h2>
+{%- for item in sections.top %}{{ job(item) }}{% else %}
+<p class="muted">{{ "No matches" if include_below else "Nothing new" }} at or above {{ settings.min_score }}.</p>
+{%- endfor %}
+
+{%- if sections.unclear %}
+<details>
+<summary>Unclear location ({{ sections.unclear | length }}): worth a manual look</summary>
+{%- for item in sections.unclear %}{{ job(item) }}{% endfor %}
+</details>
+{%- endif %}
+
+{%- if include_below and sections.below %}
+<details>
+<summary>Below threshold ({{ sections.below | length }})</summary>
+{%- for item in sections.below %}{{ job(item) }}{% endfor %}
+</details>
+{%- endif %}
+
+<h2>Pipeline health</h2>
+<p class="muted">
+  {{ status.pending }} job groups waiting to be scored
+  {%- if status.batches_in_flight %} &middot; {{ status.batches_in_flight }} batch(es) in flight{% endif %}
+  {%- if status.last_run %} &middot; last scoring run: {{ status.last_run.calls_made }} calls,
+  stop reason {{ status.last_run.stop_reason or "?" }}{% endif %}
+  {%- if status.token_warning %}<br><span class="flag">{{ status.token_warning }}</span>{% endif %}
+</p>
+<table class="health">
+  <tr><th>source</th><th>last fetch</th><th>items</th><th></th></tr>
+  {%- for s in health %}
+  <tr><td>{{ s.source_id }}</td><td>{{ s.last_run_at.strftime("%Y-%m-%d %H:%M") if s.last_run_at else "never" }}</td>
+      <td>{{ s.last_item_count if s.last_item_count is not none else "" }}</td>
+      <td class="flag">{{ s.problem or "" }}</td></tr>
+  {%- endfor %}
+</table>
+</div>
+</body>
+</html>

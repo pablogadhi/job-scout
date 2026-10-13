@@ -1,0 +1,44 @@
+{#- Plain-text twin of report.html, for the email's text/plain part. -#}
+{{ heading }}
+Generated {{ generated_at }}, threshold {{ settings.min_score }} (watchlist {{ settings.watchlist_min_score }}){% if since %}, new since {{ since }}{% endif %}
+{{ sections.watchlist | length }} watchlist, {{ sections.top | length }} top matches, {{ sections.unclear | length }} with unclear location
+{%- macro job(item) %}
+{%- set r = item.result %}
+
+[{{ item.overall }}] {{ item.title }} - {{ item.company }}{% if item.watchlist %} (watchlist){% endif %}{% if r.four_day_week == "yes" %} (4-day week){% endif %}
+  {{ r.summary }}
+  Location ({{ r.location_eligibility }}): {{ r.location_notes }}
+  Salary ({{ r.salary }}): {{ item.salary or "not stated" }}{% if r.salary_usd_range %}, ~{{ r.salary_usd_range }} USD{% endif %}
+{%- if r.matched_skills %}
+  Matched: {{ r.matched_skills | join(", ") }}
+{%- endif %}
+{%- if r.gaps %}
+  Gaps: {{ r.gaps | join(", ") }}
+{%- endif %}
+{%- if r.red_flags %}
+  Red flags: {{ r.red_flags | join(", ") }}
+{%- endif %}
+  Apply: {{ item.apply_url }}
+  Job #{{ item.job_id }}
+{%- endmacro %}
+{%- if sections.watchlist %}
+
+== Watchlist matches ==
+{%- for item in sections.watchlist %}{{ job(item) }}{% endfor %}
+{%- endif %}
+
+== Top matches ==
+{%- for item in sections.top %}{{ job(item) }}{% else %}
+Nothing new at or above {{ settings.min_score }}.
+{%- endfor %}
+{%- if sections.unclear %}
+
+== Unclear location: worth a manual look ==
+{%- for item in sections.unclear %}{{ job(item) }}{% endfor %}
+{%- endif %}
+
+== Pipeline health ==
+{{ status.pending }} job groups waiting to be scored{% if status.token_warning %}
+{{ status.token_warning }}{% endif %}
+{%- for s in health %}{% if s.problem %}
+{{ s.source_id }}: {{ s.problem }}{% endif %}{% endfor %}

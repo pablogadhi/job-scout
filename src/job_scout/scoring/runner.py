@@ -112,22 +112,27 @@ class ScoringRunner:
 
     def run(self, options: RunOptions) -> RunReport:
         report = RunReport()
-        with self.sf.begin() as session:
-            report.enqueued = enqueue(session, self.profile_hash)
-
-        postings = self._pending_postings()
         planner = BatchPlanner(options.limits, len(self.system) // CHARS_PER_TOKEN + 1)
-        plan = planner.plan(postings)
-        report.planned_calls = [len(call) for call in plan]
         if options.dry_run:
+            # Plan against what a real run would queue, then roll it all back: no writes.
+            with self.sf() as session:
+                report.enqueued = enqueue(session, self.profile_hash)
+                plan = planner.plan(self._pending_postings(session))
+                report.pending_left = pending_count(session, self.profile_hash)
+                session.rollback()
+            report.planned_calls = [len(call) for call in plan]
             prices = self.config.settings.scoring.api.prices.get(self.scorer.model)
             if self.scorer.backend == "api" and prices is not None:
                 discount = self.config.settings.scoring.api.batch_discount
                 factor = discount if options.use_batches_api else 1.0
                 report.estimated_cost_usd = sum(self._estimate(c, prices, factor) for c in plan)
-            with self.sf() as session:
-                report.pending_left = pending_count(session, self.profile_hash)
             return report
+
+        with self.sf.begin() as session:
+            report.enqueued = enqueue(session, self.profile_hash)
+        with self.sf() as session:
+            plan = planner.plan(self._pending_postings(session))
+        report.planned_calls = [len(call) for call in plan]
 
         with self.sf.begin() as session:
             run = Run(
@@ -317,7 +322,8 @@ class ScoringRunner:
 
         api = self.config.settings.scoring.api
         prices = scorer.prices
-        plan = planner.plan(self._pending_postings())
+        with self.sf() as session:
+            plan = planner.plan(self._pending_postings(session))
         if not plan:
             return
         # Spend guard, up front: a batch is all-or-nothing once submitted.
@@ -436,12 +442,11 @@ class ScoringRunner:
 
     # --- helpers ---------------------------------------------------------------------------
 
-    def _pending_postings(self) -> list[PostingInput]:
+    def _pending_postings(self, session: Session) -> list[PostingInput]:
         max_chars = self.config.settings.scoring.description_max_chars
         order = self.config.settings.scoring.order
-        with self.sf() as session:
-            ids = list(session.scalars(pending_query(self.profile_hash, order)))
-            return [render_posting(g, max_chars) for g in load_groups(session, ids)]
+        ids = list(session.scalars(pending_query(self.profile_hash, order)))
+        return [render_posting(g, max_chars) for g in load_groups(session, ids)]
 
     def _finish(self, report: RunReport) -> None:
         with self.sf.begin() as session:

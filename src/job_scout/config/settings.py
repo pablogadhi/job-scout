@@ -24,6 +24,7 @@ from pydantic import (
     PositiveFloat,
     PositiveInt,
     field_validator,
+    model_validator,
 )
 from pydantic.fields import FieldInfo
 from pydantic_settings import (
@@ -154,10 +155,30 @@ class Scoring(StrictModel):
         return type(limits).model_validate({**limits.model_dump(), **update})
 
 
+class Email(StrictModel):
+    """SMTP delivery. The password (a Proton SMTP token) comes only from JOB_SCOUT_SMTP_TOKEN."""
+
+    enabled: bool = False
+    smtp_host: str = "smtp.protonmail.ch"
+    smtp_port: PositiveInt = 587  # STARTTLS
+    from_address: str | None = None  # also the SMTP username
+    to_address: str | None = None
+    timeout_seconds: PositiveInt = 30
+
+    @model_validator(mode="after")
+    def _addresses_when_enabled(self) -> Email:
+        if self.enabled and not (self.from_address and self.to_address):
+            raise ValueError("email.enabled needs from_address and to_address")
+        return self
+
+
 class Digest(StrictModel):
+    """The HTML file is always written (paths.reports); email is optional."""
+
     min_score: int = Field(60, ge=0, le=100)
     watchlist_min_score: int = Field(21, ge=0, le=100)
-    channel: Literal["html", "email", "telegram", "slack"] = "html"
+    send_when_empty: bool = True  # email a digest with no new matches (its health footer)
+    email: Email = Email()
 
 
 class Schedule(StrictModel):
@@ -177,6 +198,7 @@ class Schedule(StrictModel):
 class Paths(StrictModel):
     database: Path = Path("/var/lib/job-scout/job-scout.db")
     reports: Path = Path("/var/lib/job-scout/reports")
+    exports: Path = Path("/var/lib/job-scout/exports")
 
 
 class Settings(BaseSettings):

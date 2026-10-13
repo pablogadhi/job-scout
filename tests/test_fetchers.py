@@ -87,8 +87,8 @@ def test_4dayweek_incremental_window(
 
     http = make_http({"https://4dayweek.io/api/v2/jobs": handler})
     fetch(app_config, http, "4dayweek", last_success_at=NOW)
-    # Merged into the configured query, never replacing it; at least two days of overlap.
-    assert requested[0].params["posted_after"] == "2"
+    # Merged into the configured query, never replacing it; at least a week of overlap.
+    assert requested[0].params["posted_after"] == "7"
     assert requested[0].params["limit"] == "100"
     assert requested[0].params["category"] == "engineering"
 

@@ -582,3 +582,159 @@ this time.
   Every call still succeeded, and the Pro plan counts usage, not dollars, but it eats into
   the 5-hour limit faster. This CLI version has no `--max-turns`. If the Pro limit becomes
   a problem, options are smaller batches or the API backend.
+
+---
+
+## Phase 4: Backlog report and digest (branch `phase-4-digest`)
+
+**Acceptance (2026-10-12, small CLI test you chose):** `backlog --max-calls 3` scored 30
+groups and wrote a backlog report (6 unclear location, 24 below threshold). Then two
+`run`s (5 CLI calls each): the first digest had 2 top + 21 unclear, all newly scored; the
+second had 2 top + 1 unclear, only jobs scored in that run. No job id appears in two
+reports. 13 Pro prompts in total; 1,380 groups still pending for the real backlog on the API.
+Email is built but off until your alias and token exist (P4-R4). 258 offline tests.
+
+### P4 Your decisions
+
+- **P4-U1 Digest delivery (open decision #1): email, plus the HTML file on the home
+  server.** How email is sent is still to be agreed (P4-R1).
+- **P4-U2 Score threshold (#2): 50 for now,** to test. `digest.min_score: 50` in
+  settings.yaml (PLAN.md's default was 60).
+- **P4-U3 Daily run time (#4): 08:00 Guatemala time.** `schedule.daily_run_time: "08:00"`.
+- **P4-U4 CLI calls per daily run (#7): 5,** the default. For the real runs you'll likely
+  use the API backend too.
+- **P4-U5 Title filter (P2-R1):** don't drop titles whose role or level is ambiguous
+  ("Forward Deployed Engineer", "Staff Engineer"), and always keep "Senior … Engineer".
+  filters.yaml (you approved the edit) now includes any title with "engineer(s)" or
+  "developer(s)"; the exclude list still drops clear non-fits (sales/solutions/support
+  engineer, QA, junior/intern, mechanical/electrical, hardware, recruiter/designer/
+  marketing). I added `asic|fpga|rtl|physical design` to the excludes (chip design, never
+  this profile). "Engineering Manager" still doesn't match (the word is "engineering"),
+  which fits profile.md ("not of interest"). Note that an exclude still wins over
+  "senior": "Senior Solutions Engineer" is dropped by your existing solutions-engineer
+  rule. Effect on the local DB: 1,529 groups pass instead of 1,122 (+407: ML/AI
+  engineers, forward deployed, staff/principal, frontend, iOS, security, …; Claude scores
+  frontend-only and mobile-only in the 21–49 range per profile.md). 8 new test cases.
+- **P4-U6 Crypto/Web3 boards (#3): stay skipped.** Crypto companies that post on the
+  general boards (Coinbase etc.) keep coming through as before; nothing filters them.
+
+- **P4-U7 Email via Proton SMTP submission from a dedicated alias** (decides P4-R1): you're
+  creating an alias on your domain in Proton and a send-only SMTP token for it. The digest
+  goes from the alias to your main address via `smtp.protonmail.ch:587` (STARTTLS);
+  the token is read only from `JOB_SCOUT_SMTP_TOKEN`. Proton has no official sending API,
+  and Bridge needs a desktop app, so SMTP submission it is. A token is send-only, works for
+  its one address, and can be revoked on its own.
+- **P4-U8 `job-scout export`:** a single command that writes everything to CSV for
+  skimming, without filters: one row per posting with its pre-filter verdict and current
+  score.
+- **P4-U9 Backlog report gets a collapsed "Below threshold" section** (score and one-line
+  summary of what Claude scored under `digest.min_score`).
+
+### P4 Decisions (Claude)
+
+- **P4-D1 HTML with Jinja2** (new dependency, `jinja2>=3.1`): one template
+  (`report/templates/report.html`) for the digest and the backlog report, plus a plain-text
+  twin for the email's text part. No scripts or external assets, so the file works as an
+  email body; collapsed sections use `<details>` (clients without support show them open).
+- **P4-D2 Sections** (PLAN.md §8), each job in one section, best score first (ties: newest
+  posting): *Watchlist* (any listing's company matches a watchlist company by normalized
+  name, not disqualified, score ≥ `watchlist_min_score`); *Top matches* (score ≥
+  `min_score`, location pass); *Unclear location* (score ≥ `min_score`, location
+  unclear; collapsed); *Below threshold* (the rest, including disqualified; backlog report
+  only, collapsed). Watchlist matching is by company name until Phase 5 adds the ATS feeds.
+- **P4-D3 What counts as reported:** each delivered digest or backlog report stores its
+  canonical job ids in `digests` (new columns `kind`, `report_path`, `emailed`; migration
+  `1a82f9c690ad`). A digest leaves out every job any earlier digest *or backlog report*
+  showed, so after the backlog run the daily digest shows only new matches. The
+  below-threshold list is never recorded. A digest whose email failed isn't recorded, so
+  its jobs carry over to the next one rather than being lost.
+- **P4-D4 Empty digests are still emailed** by default (`digest.send_when_empty: true`):
+  the footer shows source and scoring health, so silence never hides a broken pipeline.
+- **P4-D5 Email settings:** `digest.email` (enabled, smtp_host `smtp.protonmail.ch`, port
+  587, from_address = SMTP username, to_address) replaces `digest.channel`. STARTTLS with
+  Python's default certificate checks; text + HTML parts. The token is read from
+  `JOB_SCOUT_SMTP_TOKEN` only when sending, never stored in settings, and never in errors.
+- **P4-D6 `run`** = fetch (enabled sources) → filter → score (daily mode, configured
+  backend) → digest. Every stage runs even if an earlier one failed, so a digest still goes
+  out; the exit code is 1 if any stage failed (all fetches failed, filter or scoring error,
+  missing credentials, email failure) so Phase 6's health check notices. Hitting the Pro
+  usage limit is not a failure.
+- **P4-D7 `backlog`** = fetch → filter → score (backlog mode, all scoring flags) → ranked
+  report of *everything* scored so far under the current profile (cumulative across
+  re-runs), which also records its reported jobs. `--dry-run` only plans the scoring: no
+  fetch, no report.
+- **P4-D8 Report files** under `paths.reports`: `digest-<UTC time>.html` and
+  `backlog-<UTC time>.html`, each also copied to `digest-latest.html` /
+  `backlog-latest.html`. `digest --dry-run` writes `digest-preview.html` only (no email, no
+  database writes).
+- **P4-D9 `export`** (P4-U8) writes `jobs-<UTC time>.csv` to `paths.exports` (new setting;
+  `--out` overrides): one row per stored posting, duplicates included and linked by
+  `group_id`, with the group's pre-filter verdict and current-profile score (status, score,
+  disqualified and reason, location eligibility, summary, backend, model). `--sqlite` adds
+  `job-scout-<UTC time>.db` via SQLite's online backup API, opened read-only, so it's
+  consistent while the pipeline writes. Postgres is refused for `--sqlite`.
+- **P4-D10 Untrusted posting text in reports:** autoescape on; every link goes through an
+  `http_url` filter that only allows http(s) (`javascript:` becomes `#`); CSV cells starting
+  with `= + - @` get a leading `'` so a spreadsheet won't run them as formulas.
+- **P4-D11 Footer:** enabled sources with last fetch time, item count and a problem flag
+  (never fetched, failed N runs in a row, 0 items 3+ runs in a row), plus pending groups,
+  batches in flight, the last scoring run and the token warning.
+- **P4-D12 Live email test** (`tests/test_live_email.py`, `-m live`): sends one message;
+  skipped until the token and addresses are set.
+
+- **P4-D13 4dayweek incremental window: at least 7 days** (was 2). Their OpenAPI spec says
+  `posted_after` means "posted within the last N days". A run on Monday night got 0 new
+  postings (nothing dated after Saturday), which is correct, but a job that appears on the
+  board with a posting date several days old would fall outside a 2-day window. The
+  overlap costs about 4 extra requests and comes back as "seen". sources.yaml note updated.
+- **P4-D14 The `claude` subprocess gets `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`:** no
+  auto-update (PLAN.md Phase 6 pins the CLI version), no telemetry or error reporting. The
+  sandbox had blocked both (`downloads.claude.ai`, a Datadog intake host) during the runs.
+- **P4-D15 The source-health footer** skips sources that aren't built yet (remoteintech,
+  Phase 5) and shows "skipped: FINDWORK_API_KEY not set" instead of "never fetched".
+
+### P4 Bugs found and fixed
+
+- **P4-B1 Dry runs wrote to the database** (Phase 3 bug): `score --dry-run` (help: "no
+  calls, no writes") committed the pending score rows it planned. Now it plans inside a
+  transaction that's rolled back. Your local DB still holds 2,242 such pending rows from
+  earlier dry runs (1,120 under the old profile, 1,122 under the current one); they're
+  harmless, since a real run creates the same rows and old-profile rows are never used.
+
+- **P4-B2 CLI errors said only "exit code 1":** when the CLI's JSON has an empty `result`,
+  the failure reason is in `subtype`. Errors now include it, e.g.
+  `error_max_structured_output_retries (exit code 1)`.
+- **P4-B3 The backlog report's empty Top section said "Nothing new"**; it now says "No
+  matches" (only the digest is about what's new).
+
+### Answers to the Phase 1–3 review items
+
+- **P1-U3** User-Agent interpretation confirmed: keep `job-scout/0.1 (personal job
+  search)` without an email.
+- **P1-R1** Findwork: you'll create the account and set `FINDWORK_API_KEY` later (I'll
+  remind you).
+- **P1-R2** 4dayweek per-country copies: fine as is.
+- **P1-R3** Low-yield sources stay: after the first run, dedupe means only new postings
+  reach Claude; remove them later if they prove useless.
+- **P2-R2** (non-USD salaries left to Claude) and **P2-R4** (HN remote-mention mode):
+  fine as is.
+- **P2-R5** Spot check: you'll do it.
+- **P3-R3** (usage-limit wording), **P3-R10** (CLI turns), the HN title/location merge,
+  and the dry-run estimate for Haiku 5.5: accepted as is.
+
+### P4 For you to review
+
+- **P4-R1 How email is sent:** decided, P4-U7.
+- **P4-R3 Live acceptance:** done with the small CLI test (see the top of this section). The
+  real backlog (about 1,380 groups left, est. $0.45–0.60 on the API with batches) is yours
+  to start: `job-scout backlog --backend api`.
+- **P4-R6 CLI structured-output failures:** 2 of 13 CLI calls today ended with
+  `error_max_structured_output_retries` (the CLI gave up producing valid JSON for 20
+  postings). The split-and-retry recovered every posting. If it gets frequent, smaller
+  CLI batches (`--postings-per-call 10`) are the lever; the API backend doesn't have it.
+- **P4-R4 Email:** once the alias and its token exist, set `digest.email.from_address`,
+  `to_address` and `enabled: true` (or the matching `JOB_SCOUT_DIGEST__EMAIL__*` env vars),
+  put the token in `.env` as `JOB_SCOUT_SMTP_TOKEN`, then run
+  `uv run --env-file .env pytest -m live tests/test_live_email.py` (one email).
+- **P4-R5 Look of the report:** checked by tests, not by eye; please skim the first real
+  `backlog-latest.html` and tell me what to change.

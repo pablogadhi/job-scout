@@ -122,9 +122,9 @@ def test_explain_unknown_job_exits_1() -> None:
 
 
 def test_unimplemented_command_exits_1() -> None:
-    result = invoke("digest")
+    result = invoke("ats", "detect")
     assert result.exit_code == 1
-    assert "Phase 4" in result.output
+    assert "Phase 5" in result.output
 
 
 def test_record_refuses_tests_dir() -> None:
@@ -253,3 +253,86 @@ def test_dry_run_needs_no_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
     result = invoke("score", "--backend", "api", "--mode", "backlog", "--dry-run")
     assert result.exit_code == 0, result.output
     assert "Batches API" in result.output and "dry run: 0 calls planned" in result.output
+
+
+def _pipeline_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Fake claude, reports under tmp_path, and no network: fetching returns nothing."""
+    _fake_claude(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        "job_scout.scoring.backends.cli.ENV_ALLOWLIST", ("PATH", "FAKE_CLAUDE_LOG", "FAKE_RESULT")
+    )
+    monkeypatch.setattr("job_scout.cli._fetch", lambda *a, **k: [])
+    reports = tmp_path / "reports"
+    monkeypatch.setenv("JOB_SCOUT_PATHS__REPORTS", str(reports))
+    return reports
+
+
+def _seed(db_url: str, count: int, start: int = 1) -> list[int]:
+    engine = make_engine(db_url)
+    ids = seed_jobs(make_session_factory(engine), count, start=start)
+    engine.dispose()
+    return ids
+
+
+def test_run_daily_pipeline_digests_only_new_jobs(
+    db_url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    reports = _pipeline_env(tmp_path, monkeypatch)
+    _seed(db_url, 3)
+    result = invoke("run")
+    assert result.exit_code == 0, result.output
+    assert "pre-filter: evaluated 3 job groups, 3 passed" in result.output
+    assert "3 scored" in result.output and "digest: 0 watchlist, 3 top" in result.output
+    assert "email disabled" in result.output
+    assert (reports / "digest-latest.html").exists()
+
+    _seed(db_url, 2, start=10)
+    result = invoke("run")
+    assert result.exit_code == 0, result.output
+    assert "digest: 0 watchlist, 2 top" in result.output  # the first 3 aren't repeated
+
+
+def test_run_exits_1_when_email_fails_but_finishes(
+    db_url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _pipeline_env(tmp_path, monkeypatch)
+    monkeypatch.setenv("JOB_SCOUT_DIGEST__EMAIL__ENABLED", "true")
+    monkeypatch.setenv("JOB_SCOUT_DIGEST__EMAIL__FROM_ADDRESS", "a@example.test")
+    monkeypatch.setenv("JOB_SCOUT_DIGEST__EMAIL__TO_ADDRESS", "b@example.test")
+    monkeypatch.delenv("JOB_SCOUT_SMTP_TOKEN", raising=False)
+    _seed(db_url, 1)
+    result = invoke("run")
+    assert result.exit_code == 1
+    assert "1 scored" in result.output and "email failed" in result.output
+    assert "JOB_SCOUT_SMTP_TOKEN is not set" in result.output
+    assert "run finished with failures: digest" in result.output
+
+
+def test_backlog_then_digest(db_url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    reports = _pipeline_env(tmp_path, monkeypatch)
+    _seed(db_url, 25)
+    result = invoke("backlog", "--dry-run")
+    assert result.exit_code == 0, result.output
+    assert "mode backlog" in result.output and "backlog report" not in result.output
+
+    result = invoke("backlog", "--max-calls", "1")
+    assert result.exit_code == 0, result.output
+    assert "backlog report: 0 watchlist, 20 top" in result.output
+    assert "5 job groups still pending" in result.output
+    assert list(reports.glob("backlog-2*.html"))
+
+    result = invoke("backlog")
+    assert "backlog report: 0 watchlist, 25 top" in result.output  # cumulative
+
+    result = invoke("digest")
+    assert result.exit_code == 0, result.output
+    assert "digest: 0 watchlist, 0 top" in result.output  # all already in a backlog report
+
+
+def test_export_command(db_url: str, tmp_path: Path) -> None:
+    _seed(db_url, 2)
+    result = invoke("export", "--out", str(tmp_path / "exports"), "--sqlite")
+    assert result.exit_code == 0, result.output
+    assert "2 postings" in result.output and "database snapshot" in result.output
+    assert len(list((tmp_path / "exports").glob("jobs-*.csv"))) == 1
+    assert len(list((tmp_path / "exports").glob("job-scout-*.db"))) == 1

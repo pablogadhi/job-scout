@@ -64,7 +64,12 @@ def test_env_is_an_allowlist() -> None:
             "AWS_SECRET_ACCESS_KEY": "aws",
         }
     )
-    assert env == {"PATH": "/usr/bin", "HOME": "/home/x", "CLAUDE_CODE_OAUTH_TOKEN": "oauth"}
+    assert env == {
+        "PATH": "/usr/bin",
+        "HOME": "/home/x",
+        "CLAUDE_CODE_OAUTH_TOKEN": "oauth",
+        "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+    }
 
 
 def test_cli_invocation(app_config: AppConfig, tmp_path: Path) -> None:
@@ -97,7 +102,7 @@ def test_cli_invocation(app_config: AppConfig, tmp_path: Path) -> None:
     )
     assert seen["input"] == REQUEST.user  # postings on stdin
     assert seen["cwd"] == tmp_path / "cwd" and seen["cwd"].is_dir()
-    assert seen["env"] == {"PATH": "/bin"}  # no API key
+    assert seen["env"] == {"PATH": "/bin", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"}
     assert seen["timeout"] == options.timeout_seconds
 
 
@@ -127,6 +132,14 @@ def test_cli_invocation(app_config: AppConfig, tmp_path: Path) -> None:
 )
 def test_parse_cli_output(returncode: int, stdout: str, stderr: str, status: str) -> None:
     assert parse_output(returncode, stdout, stderr, 10).status == status
+
+
+def test_cli_error_names_the_subtype() -> None:
+    stdout = cli_json(is_error=True, subtype="error_max_turns", result="")
+    result = parse_output(1, stdout, "", 10)
+    assert result.status == "error"
+    assert result.error == "error_max_turns (exit code 1)"
+    assert result.input_tokens == 3500  # usage is kept for failed calls too
 
 
 def test_cli_timeout(app_config: AppConfig, tmp_path: Path) -> None:

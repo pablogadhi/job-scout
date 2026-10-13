@@ -34,7 +34,8 @@ sources:
     notes: >
       Highest-value source for this profile: every posting is a 4-day or reduced-hours role.
       Free, no key. 60 req/min per IP. OpenAPI spec at https://4dayweek.io/openapi.yaml.
-      Use posted_after=2 on daily runs; omit it on the first backlog run.
+      Use posted_after on daily runs (at least 7 days, DECISIONS.md P4-D13); omit it on the
+      first backlog run.
     terms: Link back to 4dayweek.io.
 
   - id: remoteok

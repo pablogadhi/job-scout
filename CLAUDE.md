@@ -26,6 +26,11 @@ uv run --env-file .env job-scout filter          # pre-filter new/stale groups, 
 uv run --env-file .env job-scout explain ID      # a job, its duplicate group, verdict, scores
 uv run --env-file .env job-scout score --dry-run # plan calls (and est. API cost), no spend
 uv run --env-file .env job-scout status          # pending, last run, today's calls/spend, token
+uv run --env-file .env job-scout run             # daily: fetch, filter, score, digest (spends)
+uv run --env-file .env job-scout backlog --dry-run  # plan the backlog; without --dry-run it spends
+uv run --env-file .env job-scout digest --dry-run   # reports/digest-preview.html, nothing sent
+uv run --env-file .env job-scout export --sqlite    # CSV of every posting + DB snapshot
+uv run --env-file .env pytest -m live tests/test_live_email.py  # sends 1 real email
 uv run --env-file .env pytest -m live tests/test_live_scoring.py  # spends 1 Pro prompt + ~$0.01
 uv run --env-file .env job-scout calibrate --sample 50 --configs "api:claude-haiku-5-5:1,cli:claude-haiku-5-5:20"
                                                 # compare configs; spends, so needs --yes
@@ -65,13 +70,25 @@ uv run --env-file .env alembic revision --autogenerate -m "what changed"
   `queue.py` (what needs a score), `runner.py` (a scoring run, both backends, Batches API),
   `backends/cli.py` (`claude -p`), `backends/api.py` (Anthropic SDK), `calibrate.py`,
   `status.py`.
+- `src/job_scout/report/`: what the user reads. `data.py` (scored groups into sections:
+  watchlist, top, unclear location, below threshold; source health), `render.py` (Jinja2
+  templates in `templates/`, HTML + plain text), `build.py` (digest and backlog report:
+  write, email, record in `digests`), `mailer.py` (SMTP), `export.py` (CSV, SQLite snapshot).
 - `tests/`: pytest; `conftest.py` clears `JOB_SCOUT_*` env vars and gives a writable copy of
   `config/` (`config_dir` fixture).
 
 ## Conventions
 
-- **Code fetches, Claude judges.** Network calls only in fetchers. Everything else must be
-  testable offline; tests use recorded fixtures, never live network (except `-m live`).
+- **Code fetches, Claude judges.** Network calls only in fetchers, the scoring backends and
+  `report/mailer.py`. Everything else must be testable offline; tests use recorded fixtures
+  or fakes, never live network (except `-m live`).
+- **Digest bookkeeping:** a `digests` row (kind `digest` or `backlog`) records the canonical
+  job ids it reported; a digest never repeats them. A digest whose email failed is not
+  recorded, so its jobs carry over. The below-threshold list is never recorded.
+- **Reports are untrusted-content HTML:** Jinja2 autoescape stays on, links go through the
+  `http_url` filter (http/https only), and CSV cells that start like a formula get a `'`.
+- **Email:** `digest.email` in settings.yaml; the SMTP token comes only from
+  `JOB_SCOUT_SMTP_TOKEN`, read at send time, never stored in settings or logged.
 - **Pydantic for input, SQLAlchemy for storage.** Keep them separate (no SQLModel).
 - **Settings precedence:** CLI flag > env var > `settings.yaml` > built-in default.
   Env vars: `JOB_SCOUT_` prefix, `__` between levels (`JOB_SCOUT_SCORING__MODES__DAILY__CLI__MAX_CALLS`).

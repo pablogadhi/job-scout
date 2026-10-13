@@ -241,8 +241,10 @@ def test_dry_run_plans_without_calls(
     scorer = FakeScorer()
     report = runner(app_config, session_factory, scorer).run(options(dry_run=True))
     assert report.planned_calls == [20, 5] and scorer.requests == []
+    assert report.enqueued == (25, 0) and report.pending_left == 25
     with session_factory() as session:
         assert session.scalar(select(Run.id)) is None
+        assert session.scalar(select(Score.id)) is None  # nothing queued for real
 
 
 def test_group_gaining_a_copy_is_requeued(

@@ -35,15 +35,18 @@ from job_scout.fetch.normalize import (
 # --- 4dayweek (JSON, paginated) ----------------------------------------------------------
 
 FOURDAYWEEK_MAX_PAGES = 30
+# Minimum `posted_after` window (days). Wider than the gap between runs, so a job that shows
+# up on the board with a posting date a few days old isn't missed; the overlap is "seen".
+FOURDAYWEEK_MIN_WINDOW_DAYS = 7
 
 
 def _fourdayweek_pages(ctx: FetchContext, url: str) -> Iterator[Any]:
     params: dict[str, Any] = {}
     if ctx.last_success_at is not None:
-        # Incremental after the first run: postings from the last N days, at least 2 so
-        # consecutive windows overlap (the overlap comes back as "seen").
+        # Incremental after the first run: postings from the last N days ("posted within
+        # the last N days" in their OpenAPI spec), never less than the minimum window.
         days = math.ceil((ctx.now - ctx.last_success_at).total_seconds() / 86400) + 1
-        params["posted_after"] = min(max(days, 2), 365)
+        params["posted_after"] = min(max(days, FOURDAYWEEK_MIN_WINDOW_DAYS), 365)
     for page in range(1, FOURDAYWEEK_MAX_PAGES + 1):
         payload = ctx.get_json(url, params={**params, "page": page})
         yield payload

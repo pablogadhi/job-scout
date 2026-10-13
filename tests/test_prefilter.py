@@ -120,6 +120,27 @@ def test_programmer_titles_pass_for_game_studios(prefilter: Prefilter) -> None:
     assert prefilter.evaluate(FakeJob(title="Senior Online Services Programmer")).passed
 
 
+@pytest.mark.parametrize(
+    "title",
+    [
+        "Forward Deployed Engineer",
+        "Staff Engineer",
+        "Senior Integration Engineer",
+        "Principal Engineer",
+        "Senior Engineer (.NET)",
+    ],
+)
+def test_ambiguous_engineering_titles_go_to_claude(prefilter: Prefilter, title: str) -> None:
+    assert prefilter.evaluate(FakeJob(title=title)).passed
+
+
+@pytest.mark.parametrize(
+    "title", ["Senior Solutions Engineer", "ASIC Physical Design Engineer", "Engineering Manager"]
+)
+def test_clear_non_fits_still_dropped(prefilter: Prefilter, title: str) -> None:
+    assert not prefilter.evaluate(FakeJob(title=title)).passed
+
+
 def test_remote_mention_only_mode(prefilter: Prefilter) -> None:
     hn = FakeJob(source_id="hn", title="Acme | Staff PM | Full-time")
     assert not prefilter.evaluate(hn).passed

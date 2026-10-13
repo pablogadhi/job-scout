@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -47,6 +48,8 @@ from job_scout.prefilter_run import (
     sample,
     source_report,
 )
+from job_scout.report.build import DigestOutcome, make_backlog_report, make_digest
+from job_scout.report.export import export_csv, snapshot_sqlite
 from job_scout.scoring.backends import PlanOnlyScorer, make_scorer
 from job_scout.scoring.calibrate import (
     ConfigSpec,
@@ -356,18 +359,108 @@ def score(
     )
 
 
+def _print_digest(config: AppConfig, outcome: DigestOutcome, dry_run: bool) -> None:
+    s = outcome.sections
+    console.print(
+        f"digest: {len(s.watchlist)} watchlist, {len(s.top)} top, {len(s.unclear)} unclear "
+        f"location -> {outcome.path}"
+    )
+    email = config.settings.digest.email
+    if dry_run:
+        console.print("[bold]dry run[/bold]: preview only; nothing emailed or recorded")
+    elif outcome.emailed:
+        console.print(f"emailed to {email.to_address}")
+    elif outcome.emailed is False:
+        err_console.print(
+            f"[red]email failed:[/red] {escape(outcome.email_error or '?')}; not recorded, "
+            "so the next digest carries these jobs again"
+        )
+    elif outcome.skipped_empty:
+        console.print("nothing new: email skipped (digest.send_when_empty is false)")
+    elif not email.enabled:
+        console.print("email disabled (digest.email.enabled); HTML file only")
+
+
 @app.command()
 def digest(ctx: typer.Context, dry_run: DryRunOpt = False) -> None:
-    """Render and send the digest of newly scored jobs."""
-    _load(ctx)
-    _not_implemented(4)
+    """Write the digest of new matches (HTML) and email it when email is enabled.
+
+    --dry-run writes reports/digest-preview.html and sends or records nothing.
+    """
+    config = _load(ctx)
+    outcome = make_digest(config, _db(config), now=utcnow(), environ=os.environ, dry_run=dry_run)
+    _print_digest(config, outcome, dry_run)
+    if outcome.emailed is False:
+        raise typer.Exit(1)
+
+
+def _stage(name: str, failures: list[str], step: Callable[[], Any]) -> Any:
+    """Run one pipeline stage; a failure is logged and recorded, and the next stage still runs."""
+    try:
+        return step()
+    except typer.Exit as exc:
+        if exc.exit_code:
+            failures.append(name)
+    except Exception:
+        log.exception("%s failed", name)
+        failures.append(name)
+    return None
+
+
+def _fetch_and_filter(config: AppConfig, failures: list[str]) -> None:
+    def fetch_all() -> None:
+        outcomes = _fetch(config, source_ids=[], tier=None)
+        _print_outcomes(outcomes, "Fetch results")
+        attempted = [o for o in outcomes if o.status != "skipped"]
+        if attempted and all(o.status == "failed" for o in attempted):
+            raise typer.Exit(1)
+
+    def filter_new() -> None:
+        result = run_prefilter(config, _db(config))
+        console.print(
+            f"pre-filter: evaluated {result.evaluated} job groups, {result.passed} passed"
+        )
+
+    _stage("fetch", failures, fetch_all)
+    _stage("filter", failures, filter_new)
 
 
 @app.command()
 def run(ctx: typer.Context) -> None:
-    """Daily pipeline: fetch, filter, score (daily mode), digest."""
-    _load(ctx)
-    _not_implemented(4)
+    """Daily pipeline: fetch, filter, score (daily mode), digest. What the timer calls.
+
+    Every stage runs even if an earlier one failed (the digest still goes out); the exit code
+    is 1 if any stage failed, so the server's health check notices.
+    """
+    config = _load(ctx)
+    session_factory = _db(config)
+    failures: list[str] = []
+    _fetch_and_filter(config, failures)
+    _stage(
+        "score",
+        failures,
+        lambda: _run_scoring(
+            config,
+            session_factory,
+            mode=ScoringMode.DAILY,
+            command="run",
+            postings_per_call=None,
+            max_calls=None,
+            max_input_tokens=None,
+            dry_run=False,
+        ),
+    )
+
+    def send_digest() -> None:
+        outcome = make_digest(config, session_factory, now=utcnow(), environ=os.environ)
+        _print_digest(config, outcome, dry_run=False)
+        if outcome.emailed is False:
+            raise typer.Exit(1)
+
+    _stage("digest", failures, send_digest)
+    if failures:
+        err_console.print(f"[red]run finished with failures:[/red] {', '.join(failures)}")
+        raise typer.Exit(1)
 
 
 @app.command()
@@ -380,9 +473,70 @@ def backlog(
     max_input_tokens: MaxInputTokensOpt = None,
     dry_run: DryRunOpt = False,
 ) -> None:
-    """Fetch everything, score in backlog mode, write a ranked report."""
-    _load(ctx, _scoring_overrides(backend, model))
-    _not_implemented(4)
+    """Fetch everything, score in backlog mode, write a ranked report. Re-run until nothing
+    is pending; each run's report covers everything scored so far.
+
+    --dry-run only plans the scoring (no fetch, no calls, no report).
+    """
+    config = _load(ctx, _scoring_overrides(backend, model))
+    session_factory = _db(config)
+
+    def score_backlog() -> RunReport:
+        return _run_scoring(
+            config,
+            session_factory,
+            mode=ScoringMode.BACKLOG,
+            command="backlog",
+            postings_per_call=postings_per_call,
+            max_calls=max_calls,
+            max_input_tokens=max_input_tokens,
+            dry_run=dry_run,
+        )
+
+    if dry_run:
+        score_backlog()
+        return
+    failures: list[str] = []
+    _fetch_and_filter(config, failures)
+    report = _stage("score", failures, score_backlog)
+    outcome = make_backlog_report(config, session_factory, now=utcnow(), environ=os.environ)
+    s = outcome.sections
+    console.print(
+        f"backlog report: {len(s.watchlist)} watchlist, {len(s.top)} top, "
+        f"{len(s.unclear)} unclear location, {len(s.below)} below threshold -> {outcome.path}"
+    )
+    if report is not None and report.pending_left:
+        console.print(f"{report.pending_left} job groups still pending: run `backlog` again")
+    if failures:
+        err_console.print(f"[red]backlog finished with failures:[/red] {', '.join(failures)}")
+        raise typer.Exit(1)
+
+
+@app.command()
+def export(
+    ctx: typer.Context,
+    out: Annotated[
+        Path | None, typer.Option("--out", help="Directory (default: paths.exports).")
+    ] = None,
+    sqlite: Annotated[
+        bool, typer.Option("--sqlite", help="Also write a consistent snapshot of the database.")
+    ] = False,
+) -> None:
+    """Write every posting to CSV (verdict and current score included) for skimming."""
+    config = _load(ctx)
+    directory = out or config.settings.paths.exports
+    stamp = f"{utcnow():%Y%m%dT%H%M%SZ}"
+    with _db(config)() as session:
+        path = directory / f"jobs-{stamp}.csv"
+        rows = export_csv(session, config.profile.sha256, path)
+    console.print(f"{rows} postings -> {path}")
+    if sqlite:
+        try:
+            snapshot = snapshot_sqlite(config.settings.db_url, directory / f"job-scout-{stamp}.db")
+        except ValueError as exc:
+            err_console.print(f"[red]{escape(str(exc))}[/red]")
+            raise typer.Exit(2) from exc
+        console.print(f"database snapshot -> {snapshot}")
 
 
 @app.command()

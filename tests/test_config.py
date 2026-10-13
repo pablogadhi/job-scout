@@ -48,7 +48,7 @@ def test_skipped_reasons_with_commas_are_whole() -> None:
 
 
 def test_file_beats_default(config_dir: Path) -> None:
-    edit(config_dir / "settings.yaml", "min_score: 60", "min_score: 70")
+    edit(config_dir / "settings.yaml", "min_score: 50", "min_score: 70")
     assert load_settings_only(config_dir).digest.min_score == 70
 
 
@@ -110,7 +110,7 @@ def test_limits_with_flag_overrides() -> None:
 @pytest.mark.parametrize(
     ("file", "old", "new", "message"),
     [
-        ("settings.yaml", "min_score: 60", "min_scor: 60", "digest.min_scor"),
+        ("settings.yaml", "min_score: 50", "min_scor: 50", "digest.min_scor"),
         ("settings.yaml", "backend: cli", "backend: gpt", "scoring.backend"),
         ("settings.yaml", "timezone: America/Guatemala", "timezone: Mars/Base", "unknown timezone"),
         ("sources.yaml", "    tier: 1\n", "    tier: 1\n    teir: 1\n", "teir"),

@@ -58,7 +58,7 @@ def _neutralize(text: str) -> str:
     return _TAG.sub(lambda m: m.group(0) + "_quoted", text)
 
 
-def _salary_line(group: Group) -> str | None:
+def salary_line(group: Group) -> str | None:
     for job in group.jobs:
         if job.salary_min or job.salary_max:
             amounts = " - ".join(
@@ -86,7 +86,7 @@ def render_posting(group: Group, description_max_chars: int) -> PostingInput:
         lines.extend(f"- {location}" for location in locations)
     if job.remote_raw:
         lines.append(f"workplace: {job.remote_raw}")
-    lines.append(f"salary: {_salary_line(group) or 'not stated'}")
+    lines.append(f"salary: {salary_line(group) or 'not stated'}")
     if job.tags:
         lines.append(f"tags: {', '.join(job.tags)}")
     if job.posted_at:

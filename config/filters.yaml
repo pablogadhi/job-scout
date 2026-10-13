@@ -23,6 +23,10 @@ titles:
     - '\bdata (engineer|platform engineer)\b'
     - '\b(iot|internet of things)\b'
     - '\b(embedded|firmware)\b.*\b(engineer|developer)\b'
+    # Any other engineer/developer title: ambiguous ones ("Forward Deployed Engineer",
+    # "Staff Engineer", "Senior Integration Engineer") go to Claude rather than being
+    # dropped (DECISIONS.md P4-U5). The exclude list below still removes the clear non-fits.
+    - '\b(engineer|developer)s?\b'
   # Drop if the title matches any of these.
   exclude_any:
     - '\b(junior|jr\.?|intern(ship)?|entry[- ]level|graduate|trainee|apprentice)\b'
@@ -30,6 +34,7 @@ titles:
     - '\b(qa|quality assurance|test automation|sdet)\b'
     - '\b(mechanical|electrical|civil|chemical)\b'
     - '\bhardware engineer\b'
+    - '\b(asic|fpga|rtl|physical design)\b'
     - '\b(recruiter|designer|product manager|marketing|account)\b'
 
 remote:

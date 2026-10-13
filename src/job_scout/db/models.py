@@ -81,6 +81,11 @@ class SourceRunKind(enum.StrEnum):
     PROBE = "probe"  # `sources check --probe`: nothing stored, requests still count
 
 
+class DigestKind(enum.StrEnum):
+    DIGEST = "digest"  # the daily digest
+    BACKLOG = "backlog"  # a backlog report; its jobs aren't repeated by later digests
+
+
 class AtsStatus(enum.StrEnum):
     OK = "ok"
     UNKNOWN_ATS = "unknown_ats"
@@ -119,6 +124,7 @@ class Base(DeclarativeBase):
         SourceRunStatus: _enum(SourceRunStatus),
         SourceRunKind: _enum(SourceRunKind),
         AtsStatus: _enum(AtsStatus),
+        DigestKind: _enum(DigestKind),
         AtsSeed: _enum(AtsSeed),
     }
 
@@ -259,11 +265,18 @@ class Score(Base):
 
 
 class Digest(Base):
+    """A delivered digest or backlog report. `job_ids` (canonical jobs) are never reported
+    again by a later digest. A digest whose email failed isn't recorded, so its jobs carry
+    over to the next one."""
+
     __tablename__ = "digests"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     sent_at: Mapped[datetime] = mapped_column(default=utcnow)
     job_ids: Mapped[list[int]] = mapped_column(default=list)
+    kind: Mapped[DigestKind] = mapped_column(default=DigestKind.DIGEST, server_default="digest")
+    report_path: Mapped[str | None] = mapped_column(Text)
+    emailed: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
 
 
 class AtsCompany(Base):
