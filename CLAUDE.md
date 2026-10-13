@@ -87,8 +87,10 @@ uv run --env-file .env alembic revision --autogenerate -m "what changed"
   recorded, so its jobs carry over. The below-threshold list is never recorded.
 - **Reports are untrusted-content HTML:** Jinja2 autoescape stays on, links go through the
   `http_url` filter (http/https only), and CSV cells that start like a formula get a `'`.
-- **Email:** `digest.email` in settings.yaml; the SMTP token comes only from
-  `JOB_SCOUT_SMTP_TOKEN`, read at send time, never stored in settings or logged.
+- **Email:** `digest.email` in settings.yaml; the recipient(s) from
+  `JOB_SCOUT_DIGEST__EMAIL__TO_ADDRESS` (comma-separated) and the SMTP token only from
+  `JOB_SCOUT_SMTP_TOKEN`, both checked at send time. The token is wrapped in `SecretStr`,
+  never stored in settings or logged. Tests that load the repo config turn email off.
 - **Pydantic for input, SQLAlchemy for storage.** Keep them separate (no SQLModel).
 - **Settings precedence:** CLI flag > env var > `settings.yaml` > built-in default.
   Env vars: `JOB_SCOUT_` prefix, `__` between levels (`JOB_SCOUT_SCORING__MODES__DAILY__CLI__MAX_CALLS`).

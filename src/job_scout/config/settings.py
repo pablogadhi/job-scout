@@ -162,14 +162,20 @@ class Email(StrictModel):
     smtp_host: str = "smtp.protonmail.ch"
     smtp_port: PositiveInt = 587  # STARTTLS
     from_address: str | None = None  # also the SMTP username
+    # Comma-separated recipients; usually set with JOB_SCOUT_DIGEST__EMAIL__TO_ADDRESS. Checked
+    # when sending (like the token), so a machine without it still loads the config.
     to_address: str | None = None
     timeout_seconds: PositiveInt = 30
 
     @model_validator(mode="after")
-    def _addresses_when_enabled(self) -> Email:
-        if self.enabled and not (self.from_address and self.to_address):
-            raise ValueError("email.enabled needs from_address and to_address")
+    def _sender_when_enabled(self) -> Email:
+        if self.enabled and not self.from_address:
+            raise ValueError("email.enabled needs from_address")
         return self
+
+    @property
+    def recipients(self) -> list[str]:
+        return [a.strip() for a in (self.to_address or "").split(",") if a.strip()]
 
 
 class Digest(StrictModel):

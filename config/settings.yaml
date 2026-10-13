@@ -18,7 +18,7 @@ scoring:
   # Override: JOB_SCOUT_SCORING__EFFORT=low
   effort: null
 
-  description_max_chars: 6000   # posting description is truncated to this before scoring
+  description_max_chars: 6000 # posting description is truncated to this before scoring
 
   # Batching. A "call" is one CLI invocation or one API request.
   # Postings are packed into a call until ANY limit is reached:
@@ -35,38 +35,38 @@ scoring:
         max_input_tokens_per_call: 60000
         max_output_tokens_per_call: 12000
       api:
-        postings_per_call: 1        # one posting per request (caching inactive: DECISIONS.md P3-D13)
+        postings_per_call: 1 # one posting per request (caching inactive: DECISIONS.md P3-D13)
         max_calls: 500
         use_batches_api: false
     backlog:
       cli:
-        postings_per_call: 20       # calibration: 40 per call lost 33 of 50 results, 60 timed out
+        postings_per_call: 20 # calibration: 40 per call lost 33 of 50 results, 60 timed out
         max_calls: 25
         max_input_tokens_per_call: 60000
         max_output_tokens_per_call: 12000
       api:
         postings_per_call: 1
         max_calls: 10000
-        use_batches_api: true       # Message Batches API: cheaper, no rate-limit pressure
+        use_batches_api: true # Message Batches API: cheaper, no rate-limit pressure
 
   # Order in which pending postings are scored when a run can't score them all.
-  order: newest_first               # newest_first | oldest_first
+  order: newest_first # newest_first | oldest_first
 
   cli:
     binary: claude
-    workdir: /var/lib/job-scout/claude-cwd   # empty dir: no CLAUDE.md, hooks or MCP config
+    workdir: /var/lib/job-scout/claude-cwd # empty dir: no CLAUDE.md, hooks or MCP config
     timeout_seconds: 600
     # Auth: CLAUDE_CODE_OAUTH_TOKEN from `claude setup-token` (valid one year).
     # The subprocess gets an allowlisted environment: ANTHROPIC_* never reaches it.
-    token_created: null             # YYYY-MM-DD; `status` and the digest warn 30 days before expiry
+    token_created: null # YYYY-MM-DD; `status` and the digest warn 30 days before expiry
 
   api:
     # Auth: ANTHROPIC_API_KEY, only ever passed to the API backend.
     prompt_caching: true
-    max_spend_usd_per_run: 5.00     # stop scoring when the run's estimated spend reaches this
+    max_spend_usd_per_run: 5.00 # stop scoring when the run's estimated spend reaches this
     max_retries: 3
-    batch_poll_seconds: 60          # Batches API: how often to poll a submitted batch
-    batch_max_wait_minutes: 120     # stop waiting (the batch keeps running); the next run resumes
+    batch_poll_seconds: 60 # Batches API: how often to poll a submitted batch
+    batch_max_wait_minutes: 120 # stop waiting (the batch keeps running); the next run resumes
     # USD per million tokens, per model. Batches API usage is billed at batch_discount × these.
     # Check https://platform.claude.com/docs/en/models/overview when changing models.
     batch_discount: 0.5
@@ -77,33 +77,35 @@ scoring:
       claude-haiku-4-5:
         input: 1.00
         output: 5.00
-        cache_write: 1.25           # 5-minute cache writes (1.25 × input)
-        cache_read: 0.10            # 0.1 × input
-      claude-haiku-5-5:             # prompts up to 100k tokens; above that, 5× these
+        cache_write: 1.25 # 5-minute cache writes (1.25 × input)
+        cache_read: 0.10 # 0.1 × input
+      claude-haiku-5-5: # prompts up to 100k tokens; above that, 5× these
         input: 0.10
-        output: 0.50                # includes thinking tokens
+        output: 0.50 # includes thinking tokens
         cache_write: 0.125
         cache_read: 0.01
 
 digest:
-  min_score: 50                     # 50 while testing (DECISIONS.md P4-U2); plan default 60
-  watchlist_min_score: 21           # watchlist jobs appear unless disqualified
-  send_when_empty: true             # still email a digest with no new matches (health footer)
+  min_score: 50 # 50 while testing (DECISIONS.md P4-U2); plan default 60
+  watchlist_min_score: 21 # watchlist jobs appear unless disqualified
+  send_when_empty: true # still email a digest with no new matches (health footer)
   # The HTML digest is always written under paths.reports. Email is sent in addition when
   # enabled: Proton SMTP submission from an alias (DECISIONS.md P4-U7). The SMTP token is
   # read only from the JOB_SCOUT_SMTP_TOKEN environment variable, never from this file.
   email:
-    enabled: false
+    enabled: true
     smtp_host: smtp.protonmail.ch
-    smtp_port: 587                  # STARTTLS
-    from_address: null              # the alias; also the SMTP username
-    to_address: null                # your main address
+    smtp_port: 587 # STARTTLS
+    from_address: job-scout@gadhi.one # the alias; also the SMTP username
+    # Recipient(s), comma-separated. Not set here: it comes from the environment, so it
+    # can change per machine without editing this file. JOB_SCOUT_DIGEST__EMAIL__TO_ADDRESS
+    to_address: null
 
 schedule:
   timezone: America/Guatemala
-  daily_run_time: "08:00"           # systemd OnCalendar uses this; Persistent=true catches missed runs
+  daily_run_time: "08:00" # systemd OnCalendar uses this; Persistent=true catches missed runs
 
 paths:
   database: /var/lib/job-scout/job-scout.db
   reports: /var/lib/job-scout/reports
-  exports: /var/lib/job-scout/exports   # job-scout export (CSV, --sqlite snapshot)
+  exports: /var/lib/job-scout/exports # job-scout export (CSV, --sqlite snapshot)

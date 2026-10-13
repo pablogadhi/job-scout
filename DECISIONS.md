@@ -630,6 +630,16 @@ Email is built but off until your alias and token exist (P4-R4). 258 offline tes
 - **P4-U9 Backlog report gets a collapsed "Below threshold" section** (score and one-line
   summary of what Claude scored under `digest.min_score`).
 
+- **P4-U10 Email on; the recipient comes from the environment.** You enabled email with
+  `from_address: job-scout@gadhi.one` in settings.yaml (test email received 2026-10-12).
+  `to_address` stays null there and is set by `JOB_SCOUT_DIGEST__EMAIL__TO_ADDRESS` (in
+  `.env` locally, the server's env file later), so recipients change without editing
+  config. Several addresses work, comma-separated. Because the recipient may now be absent
+  at load time, the config check only requires `from_address` when email is enabled; a
+  missing recipient is an email failure at send time (like a missing token): the digest
+  isn't recorded and carries over. Offline tests switch email off themselves, whatever
+  settings.yaml says.
+
 ### P4 Decisions (Claude)
 
 - **P4-D1 HTML with Jinja2** (new dependency, `jinja2>=3.1`): one template

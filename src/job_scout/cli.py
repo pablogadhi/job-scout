@@ -369,7 +369,7 @@ def _print_digest(config: AppConfig, outcome: DigestOutcome, dry_run: bool) -> N
     if dry_run:
         console.print("[bold]dry run[/bold]: preview only; nothing emailed or recorded")
     elif outcome.emailed:
-        console.print(f"emailed to {email.to_address}")
+        console.print(f"emailed to {', '.join(email.recipients)}")
     elif outcome.emailed is False:
         err_console.print(
             f"[red]email failed:[/red] {escape(outcome.email_error or '?')}; not recorded, "

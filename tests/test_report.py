@@ -30,6 +30,8 @@ EMAIL = {
 
 
 def config_with(tmp_path: Path, **digest: Any) -> AppConfig:
+    """The repo config, email off unless a test turns it on (whatever settings.yaml says)."""
+    digest = {"email": {"enabled": False}, **digest}
     return load_config(
         REPO_CONFIG,
         {"paths": {"reports": str(tmp_path / "reports")}, "digest": digest},
@@ -297,3 +299,24 @@ def test_token_never_shows_in_reprs() -> None:
     assert token is not None and token.get_secret_value() == "super-secret-token"
     assert "super-secret" not in repr(token) and "super-secret" not in str(token)
     assert read_token({}) is None
+
+
+def test_recipients_from_env_and_several(
+    tmp_path: Path, session_factory: sessionmaker[Session]
+) -> None:
+    no_recipient = config_with(tmp_path, email={**EMAIL, "to_address": None})
+    outcome = make_digest(
+        no_recipient, session_factory, now=NOW, environ={TOKEN_ENV: "t"}, smtp_factory=FakeSmtp
+    )
+    assert outcome.emailed is False and "JOB_SCOUT_DIGEST__EMAIL__TO_ADDRESS" in (
+        outcome.email_error or ""
+    )
+    assert not outcome.recorded and not FakeSmtp.instances
+
+    two = config_with(tmp_path, email={**EMAIL, "to_address": "a@example.test, b@example.test"})
+    assert two.settings.digest.email.recipients == ["a@example.test", "b@example.test"]
+    outcome = make_digest(
+        two, session_factory, now=NOW, environ={TOKEN_ENV: "t"}, smtp_factory=FakeSmtp
+    )
+    assert outcome.emailed is True
+    assert FakeSmtp.instances[0].messages[0]["To"] == "a@example.test, b@example.test"

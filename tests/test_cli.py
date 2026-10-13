@@ -264,6 +264,7 @@ def _pipeline_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setattr("job_scout.cli._fetch", lambda *a, **k: [])
     reports = tmp_path / "reports"
     monkeypatch.setenv("JOB_SCOUT_PATHS__REPORTS", str(reports))
+    monkeypatch.setenv("JOB_SCOUT_DIGEST__EMAIL__ENABLED", "false")  # whatever settings.yaml says
     return reports
 
 

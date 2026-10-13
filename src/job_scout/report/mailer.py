@@ -17,6 +17,7 @@ from pydantic import SecretStr
 from job_scout.config.settings import Email
 
 TOKEN_ENV = "JOB_SCOUT_SMTP_TOKEN"
+TO_ENV = "JOB_SCOUT_DIGEST__EMAIL__TO_ADDRESS"  # the setting's env var (digest.email.to_address)
 
 SmtpFactory = Callable[[str, int, float], smtplib.SMTP]
 
@@ -32,11 +33,11 @@ def _smtp(host: str, port: int, timeout: float) -> smtplib.SMTP:
 def build_message(
     settings: Email, subject: str, text: str, html: str, now: datetime
 ) -> EmailMessage:
-    assert settings.from_address and settings.to_address
+    assert settings.from_address
     message = EmailMessage()
     message["Subject"] = subject
     message["From"] = settings.from_address
-    message["To"] = settings.to_address
+    message["To"] = ", ".join(settings.recipients)
     message["Date"] = format_datetime(now)
     message["Message-ID"] = make_msgid(domain=settings.from_address.rpartition("@")[2])
     message.set_content(text)
@@ -59,6 +60,8 @@ def send(
     """Raise EmailError with a reason the CLI can print; never include the token in it."""
     if token is None:
         raise EmailError(f"{TOKEN_ENV} is not set")
+    if not settings.recipients:
+        raise EmailError(f"no recipient: set {TO_ENV}")
     assert settings.from_address
     try:
         connect = smtp_factory or _smtp
