@@ -31,4 +31,4 @@ def test_send_one_email() -> None:
         f"<p>Test email from job-scout at {now:%Y-%m-%d %H:%M} UTC. Nothing to do.</p>",
         now,
     )
-    mailer.send(email, message, os.environ)
+    mailer.send(email, message, mailer.read_token(os.environ))

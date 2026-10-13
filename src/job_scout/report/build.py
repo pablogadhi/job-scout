@@ -124,7 +124,7 @@ def make_digest(
                 email, rendered.subject, rendered.text, rendered.html, now
             )
             try:
-                mailer.send(email, message, environ, smtp_factory)
+                mailer.send(email, message, mailer.read_token(environ), smtp_factory)
                 outcome.emailed = True
             except mailer.EmailError as exc:
                 outcome.emailed, outcome.email_error = False, str(exc)

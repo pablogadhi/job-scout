@@ -12,6 +12,8 @@ from datetime import datetime
 from email.message import EmailMessage
 from email.utils import format_datetime, make_msgid
 
+from pydantic import SecretStr
+
 from job_scout.config.settings import Email
 
 TOKEN_ENV = "JOB_SCOUT_SMTP_TOKEN"
@@ -42,22 +44,27 @@ def build_message(
     return message
 
 
+def read_token(environ: Mapping[str, str]) -> SecretStr | None:
+    """The SMTP token, wrapped so no repr, log line or traceback can show it."""
+    token = environ.get(TOKEN_ENV)
+    return SecretStr(token) if token else None
+
+
 def send(
     settings: Email,
     message: EmailMessage,
-    environ: Mapping[str, str],
+    token: SecretStr | None,
     smtp_factory: SmtpFactory | None = None,
 ) -> None:
     """Raise EmailError with a reason the CLI can print; never include the token in it."""
-    token = environ.get(TOKEN_ENV)
-    if not token:
+    if token is None:
         raise EmailError(f"{TOKEN_ENV} is not set")
     assert settings.from_address
     try:
         connect = smtp_factory or _smtp
         with connect(settings.smtp_host, settings.smtp_port, settings.timeout_seconds) as smtp:
             smtp.starttls(context=ssl.create_default_context())
-            smtp.login(settings.from_address, token)
+            smtp.login(settings.from_address, token.get_secret_value())
             smtp.send_message(message)
     except (smtplib.SMTPException, OSError) as exc:
         raise EmailError(f"{type(exc).__name__}: {exc}") from exc

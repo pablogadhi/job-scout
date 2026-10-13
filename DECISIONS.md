@@ -707,6 +707,15 @@ Email is built but off until your alias and token exist (P4-R4). 258 offline tes
 - **P4-B3 The backlog report's empty Top section said "Nothing new"**; it now says "No
   matches" (only the digest is about what's new).
 
+- **P4-B4 The live email test never saw the token:** `tests/conftest.py` clears every
+  `JOB_SCOUT_*` variable so your shell's settings can't leak into tests, and that included
+  `JOB_SCOUT_SMTP_TOKEN` (found when you ran the test). Secrets that aren't settings are now
+  kept (`KEEP_ENV`); offline tests pass their own environment.
+- **P4-B5 Secrets in pytest tracebacks:** that failure printed the `environ` argument, with
+  your `ANTHROPIC_API_KEY` truncated to `sk-...` but partly visible. The mailer no longer
+  takes the environment: `read_token()` wraps the token in Pydantic's `SecretStr`, which
+  prints as `**********` in any repr, log line or traceback.
+
 ### Answers to the Phase 1–3 review items
 
 - **P1-U3** User-Agent interpretation confirmed: keep `job-scout/0.1 (personal job
@@ -732,7 +741,9 @@ Email is built but off until your alias and token exist (P4-R4). 258 offline tes
   `error_max_structured_output_retries` (the CLI gave up producing valid JSON for 20
   postings). The split-and-retry recovered every posting. If it gets frequent, smaller
   CLI batches (`--postings-per-call 10`) are the lever; the API backend doesn't have it.
-- **P4-R4 Email:** once the alias and its token exist, set `digest.email.from_address`,
+- **P4-R4 Email:** my sandbox can't reach `smtp.protonmail.ch:587` (DNS fails: only proxied
+  HTTP(S) gets out), so the live email test must run on your side. Once the alias and its
+  token exist, set `digest.email.from_address`,
   `to_address` and `enabled: true` (or the matching `JOB_SCOUT_DIGEST__EMAIL__*` env vars),
   put the token in `.env` as `JOB_SCOUT_SMTP_TOKEN`, then run
   `uv run --env-file .env pytest -m live tests/test_live_email.py` (one email).

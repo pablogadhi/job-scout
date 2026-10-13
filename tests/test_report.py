@@ -288,3 +288,12 @@ def test_source_health_footer(
     assert health["findwork"].problem == "skipped: FINDWORK_API_KEY not set"
     assert with_key["findwork"].problem == "never fetched"
     assert health["remoteok"].problem == "never fetched"
+
+
+def test_token_never_shows_in_reprs() -> None:
+    from job_scout.report.mailer import read_token
+
+    token = read_token({TOKEN_ENV: "super-secret-token"})
+    assert token is not None and token.get_secret_value() == "super-secret-token"
+    assert "super-secret" not in repr(token) and "super-secret" not in str(token)
+    assert read_token({}) is None

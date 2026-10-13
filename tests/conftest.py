@@ -21,11 +21,15 @@ REPO_CONFIG = ROOT / "config"
 HTTP_FIXTURES = Path(__file__).resolve().parent / "fixtures" / "http"
 
 
+KEEP_ENV = {"JOB_SCOUT_SMTP_TOKEN"}
+
+
 @pytest.fixture(autouse=True)
 def _clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Tests must not see JOB_SCOUT_* vars from the developer's shell."""
+    """Tests must not see JOB_SCOUT_* settings from the developer's shell. Secrets that
+    aren't settings stay, for the opt-in live tests; offline tests pass their own env."""
     for var in list(os.environ):
-        if var.startswith("JOB_SCOUT_"):
+        if var.startswith("JOB_SCOUT_") and var not in KEEP_ENV:
             monkeypatch.delenv(var)
 
 
