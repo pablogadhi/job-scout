@@ -31,6 +31,8 @@ uv run --env-file .env job-scout backlog --dry-run  # plan the backlog; without 
 uv run --env-file .env job-scout digest --dry-run   # reports/digest-preview.html, nothing sent
 uv run --env-file .env job-scout export --sqlite    # CSV of every posting + DB snapshot
 uv run --env-file .env job-scout ats detect      # seed + watchlist -> company boards (resumable)
+uv run --env-file .env job-scout feedback serve  # the 👍/👎 page (needs JOB_SCOUT_FEEDBACK_SECRET)
+uv run --env-file .env job-scout feedback report # Claude's scores vs your votes
 uv run --env-file .env pytest -m live tests/test_live_email.py  # sends 1 real email
 uv run --env-file .env pytest -m live tests/test_live_scoring.py  # spends 1 Pro prompt + ~$0.01
 uv run --env-file .env job-scout calibrate --sample 50 --configs "api:claude-haiku-5-5:1,cli:claude-haiku-5-5:20"
@@ -79,9 +81,15 @@ uv run --env-file .env alembic revision --autogenerate -m "what changed"
   watchlist, top, unclear location, below threshold; source health), `render.py` (Jinja2
   templates in `templates/`, HTML + plain text), `build.py` (digest and backlog report:
   write, email, record in `digests`), `mailer.py` (SMTP), `export.py` (CSV, SQLite snapshot).
+- `src/job_scout/feedback/`: your votes. `links.py` (signed per-job links, secret from
+  `JOB_SCOUT_FEEDBACK_SECRET`), `store.py` (one `feedback` row per canonical job, with the
+  score you reacted to), `examples.py` (which judgments go into the scoring prompt),
+  `server.py` (the page: stdlib HTTP server, `FeedbackApp.handle` is socket-free for tests),
+  `report.py` (agreement stats).
 - `Dockerfile` + `deploy/`: the server setup (`deploy/README.md`). One image (Python deps from
   `uv.lock`, the pinned native `claude` binary); `compose.yaml` mounts `config/` read-only and
-  `/var/lib/job-scout`; `entrypoint.sh` migrates, then runs the command; `systemd/` has the
+  `/var/lib/job-scout`, and runs the always-on `feedback` page service from the same image;
+  `entrypoint.sh` migrates, then runs the command; `systemd/` has the
   08:15 timer, the run service (`TimeoutStartSec`, `OnFailure=`) and the failure-email
   service, which pipes the run's journal into `job-scout notify-failure`.
 - `tests/`: pytest; `conftest.py` clears `JOB_SCOUT_*` env vars and gives a writable copy of
@@ -111,6 +119,12 @@ uv run --env-file .env alembic revision --autogenerate -m "what changed"
   zone must match `schedule.daily_run_time`/`timezone`, data paths must live under
   `/var/lib/job-scout`, and `deploy/job-scout.env.example` must list every secret the code
   reads. Bump `CLAUDE_CODE_VERSION` in the Dockerfile only on purpose.
+- **Feedback:** the digest links to `<feedback.base_url>/f/<job_id>?v=…&s=<signature>`;
+  opening a link saves nothing, only the page's POST does. No links while `base_url` or
+  `JOB_SCOUT_FEEDBACK_SECRET` is unset. Judgments enter the system prompt as `<judgment>`
+  elements (`scoring/prompt.py`) without changing `profile_hash`, so votes never make scores
+  stale; `scoring_calls.feedback_job_ids` records which were sent. Posting-derived text in a
+  judgment is untrusted, like a posting.
 - **Pydantic for input, SQLAlchemy for storage.** Keep them separate (no SQLModel).
 - **Settings precedence:** CLI flag > env var > `settings.yaml` > built-in default.
   Env vars: `JOB_SCOUT_` prefix, `__` between levels (`JOB_SCOUT_SCORING__MODES__DAILY__CLI__MAX_CALLS`).

@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 from job_scout.config import AppConfig
 from job_scout.db.models import Job, PrefilterResult
 from job_scout.db.types import utcnow
+from job_scout.feedback.examples import select_examples
 from job_scout.groups import load_groups
 from job_scout.scoring.backends.base import CallRequest, Scorer
 from job_scout.scoring.prompt import PostingInput, render_posting, system_prompt, user_message
@@ -201,7 +202,10 @@ def run_calibration(
     max_chars = config.settings.scoring.description_max_chars
     groups = load_groups(session, job_ids)
     postings = [render_posting(g, max_chars) for g in groups]
-    system = system_prompt(config.profile)
+    examples = select_examples(
+        session, config.settings.feedback.prompt_examples, config.settings.digest.min_score
+    )
+    system = system_prompt(config.profile, examples)  # the same prompt a real run sends
     return Calibration(
         job_ids=[g.canonical.id for g in groups],
         titles={g.canonical.id: g.canonical.title for g in groups},

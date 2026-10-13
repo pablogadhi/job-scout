@@ -28,6 +28,7 @@ from job_scout.db.models import (
     StopReason,
 )
 from job_scout.db.types import utcnow
+from job_scout.feedback.examples import select_examples
 from job_scout.groups import load_groups
 from job_scout.scoring.backends.api import ApiScorer
 from job_scout.scoring.backends.base import CallRequest, CallResult, Scorer
@@ -105,7 +106,15 @@ class ScoringRunner:
         self.sleep = sleep
         self.clock = clock
         self.profile_hash = config.profile.sha256
-        self.system = system_prompt(config.profile)
+        # Your recent judgments go in as examples; the same set for every call of this run.
+        with session_factory() as session:
+            examples = select_examples(
+                session,
+                config.settings.feedback.prompt_examples,
+                config.settings.digest.min_score,
+            )
+        self.feedback_job_ids = [e.job_id for e in examples] or None
+        self.system = system_prompt(config.profile, examples)
         self.schema = output_json_schema()
 
     # --- entry point ---------------------------------------------------------------------
@@ -223,6 +232,7 @@ class ScoringRunner:
                     cost_usd_estimate=result.cost_usd,
                     duration_ms=result.duration_ms,
                     error=result.error if result.status != "ok" else None,
+                    feedback_job_ids=self.feedback_job_ids,
                 )
                 session.add(scoring_call)
                 session.flush()
@@ -349,6 +359,7 @@ class ScoringRunner:
                 postings_count=sum(len(c) for c in requests.values()),
                 status=CallStatus.RUNNING,
                 request_map={cid: [p.job_id for p in call] for cid, call in requests.items()},
+                feedback_job_ids=self.feedback_job_ids,
             )
             session.add(scoring_call)
             session.flush()

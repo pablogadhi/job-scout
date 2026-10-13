@@ -86,6 +86,11 @@ class DigestKind(enum.StrEnum):
     BACKLOG = "backlog"  # a backlog report; its jobs aren't repeated by later digests
 
 
+class Vote(enum.StrEnum):
+    UP = "up"
+    DOWN = "down"
+
+
 class AtsStatus(enum.StrEnum):
     PENDING = "pending"  # not detected yet
     OK = "ok"  # board found: polled daily
@@ -138,6 +143,7 @@ class Base(DeclarativeBase):
         DigestKind: _enum(DigestKind),
         AtsSeed: _enum(AtsSeed),
         AtsMethod: _enum(AtsMethod),
+        Vote: _enum(Vote),
     }
 
 
@@ -251,6 +257,8 @@ class ScoringCall(Base):
     cost_usd_estimate: Mapped[float | None] = mapped_column(Float)
     duration_ms: Mapped[int | None]
     error: Mapped[str | None] = mapped_column(Text)
+    # Jobs whose feedback was in the prompt as examples (None: no examples).
+    feedback_job_ids: Mapped[list[int] | None]
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
 
 
@@ -313,3 +321,22 @@ class AtsCompany(Base):
     seen_in_seed_at: Mapped[datetime | None]  # last seed download that listed it
     last_polled_at: Mapped[datetime | None]
     last_poll_error: Mapped[str | None] = mapped_column(Text)
+
+
+class Feedback(Base):
+    """Your thumbs up/down on a job group (from the digest's feedback page). One row per
+    canonical job: a new vote replaces the old one. The score you were reacting to is copied
+    in, so the judgment stays readable after a rescore or a profile change."""
+
+    __tablename__ = "feedback"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    job_id: Mapped[int] = mapped_column(ForeignKey("jobs.id", ondelete="CASCADE"), unique=True)
+    vote: Mapped[Vote]
+    reason: Mapped[str | None] = mapped_column(Text)
+    profile_hash: Mapped[str | None] = mapped_column(String(64))
+    overall_score: Mapped[int | None]
+    disqualified: Mapped[bool | None] = mapped_column(Boolean)
+    summary: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(default=utcnow, index=True)

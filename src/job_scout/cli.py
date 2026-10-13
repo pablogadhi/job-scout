@@ -44,6 +44,11 @@ from job_scout.db.models import (
     SourceRunKind,
 )
 from job_scout.db.types import utcnow
+from job_scout.feedback.examples import Example
+from job_scout.feedback.links import SecretError, read_secret
+from job_scout.feedback.report import feedback_stats
+from job_scout.feedback.server import FeedbackApp, make_server
+from job_scout.feedback.store import get_vote
 from job_scout.fetch.http import FetchError, HttpClient, Recorder
 from job_scout.fetch.runner import NOT_YET, SourceOutcome, run_fetch
 from job_scout.groups import group_of
@@ -80,8 +85,10 @@ err_console = Console(stderr=True)
 app = typer.Typer(no_args_is_help=True, add_completion=False, help=__doc__)
 sources_app = typer.Typer(no_args_is_help=True, help="Inspect job sources.")
 ats_app = typer.Typer(no_args_is_help=True, help="ATS company seed (remoteintech + watchlist).")
+feedback_app = typer.Typer(no_args_is_help=True, help="Thumbs up/down from the digest.")
 app.add_typer(sources_app, name="sources")
 app.add_typer(ats_app, name="ats")
+app.add_typer(feedback_app, name="feedback")
 
 
 @dataclass
@@ -882,6 +889,15 @@ def explain(ctx: typer.Context, job_id: int) -> None:
             if score.result:
                 console.print_json(json.dumps(score.result))
 
+        vote = get_vote(session, canonical.id)
+        if vote is not None:
+            thumb = "up" if vote.vote == "up" else "down"
+            reacted = f" to score {vote.overall_score}" if vote.overall_score is not None else ""
+            console.print(
+                f"\n[bold]Your feedback[/bold]\n  thumbs {thumb}{reacted} "
+                f"({vote.updated_at:%Y-%m-%d}){': ' + escape(vote.reason) if vote.reason else ''}"
+            )
+
 
 def _salary_text(job: Job, annual: float | None) -> str | None:
     if not (job.salary_min or job.salary_max):
@@ -1081,3 +1097,105 @@ def ats_detect(
     console.print(table)
     more = f"{len(unknown) - 30} more; " if len(unknown) > 30 else ""
     console.print(f"{more}full list with notes: {path}")
+
+
+@feedback_app.command("serve")
+def feedback_serve(ctx: typer.Context) -> None:
+    """Serve the page the digest's thumbs up/down links open (the compose `feedback` service).
+
+    Listens on feedback.host:feedback.port; needs JOB_SCOUT_FEEDBACK_SECRET.
+    """
+    config = _load(ctx)
+    settings = config.settings.feedback
+    try:
+        secret = read_secret(os.environ)
+    except SecretError as exc:
+        err_console.print(f"[red]{escape(str(exc))}[/red]")
+        raise typer.Exit(2) from exc
+    if not settings.base_url:
+        err_console.print(
+            "[yellow]feedback.base_url is not set: digests won't have feedback links[/yellow]"
+        )
+    server = make_server(FeedbackApp(config, _db(config), secret), settings.host, settings.port)
+    console.print(f"feedback page listening on http://{settings.host}:{settings.port}")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()
+
+
+def _judgment_rows(title: str, examples: list[Example]) -> Table:
+    table = Table(title=title, title_justify="left")
+    for column in ("job", "vote", "score", "posting", "your reason"):
+        table.add_column(column, overflow="fold", justify="right" if column == "score" else "left")
+    for e in examples:
+        score = "-" if e.overall_score is None else str(e.overall_score)
+        table.add_row(
+            str(e.job_id),
+            "👍" if e.vote == "up" else "👎",
+            score + (" dq" if e.disqualified else ""),
+            escape(f"{e.title} - {e.company or '?'}"),
+            escape(e.reason or ""),
+        )
+    return table
+
+
+@feedback_app.command("report")
+def feedback_report(
+    ctx: typer.Context,
+    since: Annotated[
+        datetime | None, typer.Option("--since", formats=["%Y-%m-%d"], help="Votes on/after.")
+    ] = None,
+    show_all: Annotated[
+        bool, typer.Option("--all", help="List every judgment, not only disagreements.")
+    ] = False,
+) -> None:
+    """How often Claude's scores agreed with your votes, and where they didn't."""
+    config = _load(ctx)
+    min_score = config.settings.digest.min_score
+    since_utc = since.replace(tzinfo=ZoneInfo(config.settings.schedule.timezone)) if since else None
+    with _db(config)() as session:
+        stats = feedback_stats(session, min_score, since_utc)
+    if not stats.judgments:
+        console.print("no feedback yet")
+        return
+
+    def avg(examples: list[Example]) -> str:
+        value = stats.mean_score(examples)
+        return "-" if value is None else f"{value:.0f}"
+
+    console.print(
+        f"{len(stats.judgments)} judgments: {len(stats.up)} 👍 (mean score {avg(stats.up)}), "
+        f"{len(stats.down)} 👎 (mean score {avg(stats.down)}); digest threshold {min_score}"
+    )
+    table = Table(title="Claude's score vs your vote", title_justify="left")
+    table.add_column("")
+    table.add_column(f"score >= {min_score}", justify="right")
+    table.add_column(f"below {min_score} or disqualified", justify="right")
+    table.add_row("👍", str(len(stats.up_agreed)), f"[yellow]{len(stats.up_missed)}[/yellow]")
+    table.add_row("👎", f"[yellow]{len(stats.down_wrong)}[/yellow]", str(len(stats.down_agreed)))
+    console.print(table)
+    if stats.agreement is not None:
+        console.print(f"agreement: {stats.agreement:.0%}")
+    notes = []
+    if stats.unscored:
+        notes.append(f"{len(stats.unscored)} voted before a score existed")
+    older = [
+        e for e in stats.judgments if e.profile_hash and e.profile_hash != config.profile.sha256
+    ]
+    if older:
+        notes.append(f"{len(older)} reacted to scores under an older profile.md")
+    if notes:
+        console.print(f"[dim]{'; '.join(notes)}[/dim]")
+    if stats.disagreements:
+        console.print(
+            _judgment_rows(
+                f"Disagreements ({len(stats.disagreements)}): patterns here may belong in "
+                "profile.md",
+                stats.disagreements,
+            )
+        )
+    if show_all:
+        console.print(_judgment_rows(f"All judgments ({len(stats.judgments)})", stats.judgments))

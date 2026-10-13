@@ -6,6 +6,7 @@ from pathlib import Path
 import yaml
 
 from job_scout.config import AppConfig
+from job_scout.feedback.links import SECRET_ENV
 from job_scout.report import mailer
 from tests.conftest import ROOT
 
@@ -50,6 +51,17 @@ def test_compose_mounts_the_configured_paths(app_config: AppConfig) -> None:
     assert "../config:/app/config:ro" in compose["volumes"]
 
 
+def test_feedback_page_service(app_config: AppConfig) -> None:
+    services = yaml.safe_load((DEPLOY / "compose.yaml").read_text())["services"]
+    page = services["feedback"]
+    assert page["command"] == ["feedback", "serve"]
+    assert page["restart"] == "unless-stopped"
+    assert page["volumes"] == services["job-scout"]["volumes"]
+    assert page["environment"]["JOB_SCOUT_FEEDBACK__HOST"] == "0.0.0.0"
+    port = app_config.settings.feedback.port
+    assert any(p.endswith(f":{port}") for p in page["ports"])
+
+
 def test_env_example_lists_every_secret() -> None:
     names = set(
         re.findall(
@@ -61,6 +73,8 @@ def test_env_example_lists_every_secret() -> None:
         "ANTHROPIC_API_KEY",
         mailer.TOKEN_ENV,
         mailer.TO_ENV,
+        SECRET_ENV,
+        "JOB_SCOUT_FEEDBACK__BASE_URL",
         "FINDWORK_API_KEY",
     }
     assert expected <= names

@@ -91,6 +91,10 @@
     {%- endfor %}
     &middot; posted {{ item.posted_at.date() if item.posted_at else "?" }} &middot; job #{{ item.job_id }}
   </div>
+  {%- if feedback %}
+  <div class="row feedback"><a href="{{ feedback.url(item.job_id, 'up') | http_url }}">👍 Good fit</a>
+    &middot; <a href="{{ feedback.url(item.job_id, 'down') | http_url }}">👎 Not for me</a></div>
+  {%- endif %}
 </div>
 {%- endmacro %}
 

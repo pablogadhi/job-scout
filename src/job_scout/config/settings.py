@@ -210,6 +210,30 @@ class Ats(StrictModel):
     max_detections_per_run: NonNegativeInt = 40
 
 
+class Feedback(StrictModel):
+    """Thumbs up/down from the digest (`job-scout feedback serve`) and judgments as examples.
+
+    The link-signing secret comes only from JOB_SCOUT_FEEDBACK_SECRET, never from this file.
+    """
+
+    # Where the digest's links point, e.g. http://jobscout.lan:8765. None: no links.
+    base_url: str | None = None
+    # The page's listening address. The compose service sets 0.0.0.0 inside the container.
+    host: str = "127.0.0.1"
+    port: int = Field(8765, ge=1, le=65535)
+    # Recent judgments added to the scoring prompt as examples (0: none).
+    prompt_examples: NonNegativeInt = 8
+
+    @field_validator("base_url")
+    @classmethod
+    def _http_base_url(cls, value: str | None) -> str | None:
+        if value is None or not value.strip():
+            return None
+        if not value.startswith(("http://", "https://")):
+            raise ValueError("base_url must start with http:// or https://")
+        return value.strip().rstrip("/")
+
+
 class Paths(StrictModel):
     database: Path = Path("/var/lib/job-scout/job-scout.db")
     reports: Path = Path("/var/lib/job-scout/reports")
@@ -227,6 +251,7 @@ class Settings(BaseSettings):
     scoring: Scoring = Scoring()
     digest: Digest = Digest()
     ats: Ats = Ats()
+    feedback: Feedback = Feedback()
     schedule: Schedule = Schedule()
     paths: Paths = Paths()
     # Full SQLAlchemy URL; overrides paths.database (e.g. to move to Postgres).

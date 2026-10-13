@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from job_scout.config import AppConfig
 from job_scout.db.models import Digest, DigestKind
+from job_scout.feedback.links import feedback_links
 from job_scout.report import mailer
 from job_scout.report.data import (
     Sections,
@@ -66,6 +67,7 @@ def _render(
         now=now,
         since=since,
         include_below=include_below,
+        feedback=feedback_links(config.settings.feedback, environ),
     )
 
 

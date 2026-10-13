@@ -20,6 +20,10 @@ Generated {{ generated_at }}, threshold {{ settings.min_score }} (watchlist {{ s
 {%- endif %}
   Apply: {{ item.apply_url }}
   Job #{{ item.job_id }}
+{%- if feedback %}
+  Good fit: {{ feedback.url(item.job_id, "up") }}
+  Not for me: {{ feedback.url(item.job_id, "down") }}
+{%- endif %}
 {%- endmacro %}
 {%- if sections.watchlist %}
 

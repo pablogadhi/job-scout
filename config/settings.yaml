@@ -104,6 +104,15 @@ ats:
   redetect_days: 30                 # re-detect each company's board this often
   max_detections_per_run: 40        # `run` caps detection work; `ats detect` has no cap
 
+feedback:
+  # Thumbs up/down links in the digest open a page served by `job-scout feedback serve` (the
+  # compose service `feedback`). Links are signed with JOB_SCOUT_FEEDBACK_SECRET (env only).
+  # No links while base_url or the secret is unset. Override: JOB_SCOUT_FEEDBACK__BASE_URL
+  base_url: null # e.g. http://jobscout.lan:8765 (reachable from where you read the digest)
+  host: 127.0.0.1 # listening address; the compose service sets 0.0.0.0 in the container
+  port: 8765
+  prompt_examples: 8 # recent judgments added to the scoring prompt as examples (0: none)
+
 schedule:
   timezone: America/Guatemala
   daily_run_time: "08:15"           # the server boots at 08:00; keep in sync with deploy/systemd/job-scout.timer

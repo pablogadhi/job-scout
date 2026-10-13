@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 from jinja2 import Environment, PackageLoader, StrictUndefined, select_autoescape
 
 from job_scout.config import AppConfig
+from job_scout.feedback.links import FeedbackLinks
 from job_scout.report.data import Sections, SourceHealth
 from job_scout.scoring.status import ScoringStatus
 
@@ -51,6 +52,7 @@ def render(
     now: datetime,
     since: datetime | None = None,
     include_below: bool = False,
+    feedback: FeedbackLinks | None = None,
 ) -> Rendered:
     tz = ZoneInfo(config.settings.schedule.timezone)
     context = {
@@ -63,6 +65,7 @@ def render(
         "generated_at": now.astimezone(tz).strftime("%Y-%m-%d %H:%M %Z"),
         "since": since.astimezone(tz).strftime("%Y-%m-%d %H:%M") if since else None,
         "include_below": include_below,
+        "feedback": feedback,
     }
     counts = f"{len(sections.top)} top, {len(sections.unclear)} unclear"
     if sections.watchlist:

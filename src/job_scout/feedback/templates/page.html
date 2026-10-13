@@ -1,0 +1,72 @@
+<!doctype html>
+{#- The feedback page. Job text is untrusted: autoescape is on and nothing is marked safe.
+    No scripts and no external assets; the Content-Security-Policy header forbids them. -#}
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>{{ title }}</title>
+<style>
+  :root { --bg: #f6f7f9; --card: #fff; --fg: #1d2330; --muted: #5b6473; --line: #d9dde3;
+          --accent: #1d5bd8; --ok-bg: #d5f2dc; --ok-fg: #135c26; --err: #9b1c1c; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #15181e; --card: #1e232b; --fg: #e6e9ef; --muted: #9aa3b2; --line: #333a45;
+            --accent: #7aa7ff; --ok-bg: #1f3d29; --ok-fg: #a6e3b5; --err: #ff9b9b; }
+  }
+  body { margin: 0; padding: 16px; background: var(--bg); color: var(--fg);
+         font: 16px/1.5 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  .wrap { max-width: 560px; margin: 0 auto; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+          padding: 16px; }
+  h1 { font-size: 19px; margin: 0 0 4px; overflow-wrap: anywhere; }
+  .muted { color: var(--muted); font-size: 14px; }
+  .notice { background: var(--ok-bg); color: var(--ok-fg); border-radius: 8px;
+            padding: 8px 12px; margin: 0 0 12px; }
+  .error { color: var(--err); }
+  a { color: var(--accent); }
+  fieldset { border: 0; padding: 0; margin: 16px 0 8px; display: flex; gap: 8px; }
+  fieldset label { flex: 1; border: 1px solid var(--line); border-radius: 8px; padding: 10px;
+                   text-align: center; cursor: pointer; font-size: 17px; }
+  fieldset input { margin-right: 6px; }
+  textarea { box-sizing: border-box; width: 100%; min-height: 96px; font: inherit;
+             background: var(--card); color: var(--fg); border: 1px solid var(--line);
+             border-radius: 8px; padding: 8px; }
+  button { margin-top: 12px; width: 100%; font: inherit; font-weight: 600; padding: 10px;
+           border: 0; border-radius: 8px; background: var(--accent); color: #fff; cursor: pointer; }
+</style>
+</head>
+<body>
+<div class="wrap">
+{%- if error %}
+<div class="card"><h1>{{ title }}</h1><p class="error">{{ error }}</p></div>
+{%- else %}
+{%- if saved %}<p class="notice">Saved. Thanks! You can change it below.</p>{% endif %}
+<div class="card">
+  <h1>{{ job_title }}</h1>
+  <div class="muted">{{ company }} &middot; job #{{ job_id }}
+    {%- if apply_url %} &middot; <a href="{{ apply_url | http_url }}" rel="noreferrer">posting</a>{% endif %}</div>
+  {%- if score is not none %}
+  <p><strong>Claude's score: {{ score }}</strong>{% if disqualified %} (disqualified){% endif %}
+    {%- if summary %}<br>{{ summary }}{% endif %}</p>
+  {%- else %}
+  <p class="muted">Not scored yet.</p>
+  {%- endif %}
+  {%- if previous %}
+  <p class="muted">You rated this {{ "👍" if previous.vote == "up" else "👎" }} on {{ previous.updated_at.strftime("%Y-%m-%d") }}.</p>
+  {%- endif %}
+  <form method="post" action="/f/{{ job_id }}">
+    <input type="hidden" name="s" value="{{ signature }}">
+    <fieldset>
+      <label><input type="radio" name="vote" value="up"{% if vote == "up" %} checked{% endif %} required>👍 Good fit</label>
+      <label><input type="radio" name="vote" value="down"{% if vote == "down" %} checked{% endif %}>👎 Not for me</label>
+    </fieldset>
+    <label for="reason" class="muted">Why? (optional, helps the scoring)</label>
+    <textarea id="reason" name="reason" maxlength="{{ max_reason }}">{{ reason }}</textarea>
+    <button type="submit">Save</button>
+  </form>
+</div>
+{%- endif %}
+</div>
+</body>
+</html>

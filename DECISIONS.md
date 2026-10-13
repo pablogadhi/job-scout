@@ -969,3 +969,85 @@ daemon) and `systemd-analyze verify` (read-only filesystem). 308 offline tests (
 - **P6-R3 CPU architecture:** the image builds for the server's own architecture (npm picks
   the matching `claude` binary). Building elsewhere for another architecture would need
   `docker buildx --platform`.
+
+---
+
+## Phase 8: Feedback loop (branch `phase-8-feedback`)
+
+**Acceptance:** built and tested offline. End to end on a throwaway copy of the local
+database: a signed link opened the page (200, Claude's score shown, 👎 preselected), an
+unsigned one got 403, Save stored the vote (303 back to the page, "Saved"), and
+`feedback report` listed it as a disagreement. Not yet seen: a real digest with links, the
+page on the server, and a scoring run with your judgments in the prompt (P8-R1, P8-R2).
+322 offline tests (14 new). Phase 7 (Tier 2 scrapers) is skipped for now (P8-U1).
+
+### P8 Your decisions
+
+- **P8-U1 Phase 7 skipped for now**, straight to the feedback loop. `phase-8-feedback`
+  starts from `phase-6-deploy`; there's no `phase-7-*` branch yet.
+- **P8-U2 Feedback through a page on the home server**, linked from each digest item.
+  LAN only; to reach it from outside later, a VPN into your network (Tailscale or
+  WireGuard) and a different `feedback.base_url`. Proton VPN can't do it: it has no way
+  in to your LAN, and its port forwarding gives random ports on P2P servers only.
+- **P8-U3 No `job-scout feedback <id> up|down` command:** you'd not use it.
+- **P8-U4 A `feedback report` command:** how often Claude agreed with your votes and the
+  disagreements with your reasons, to spot what belongs in `profile.md`.
+
+### P8 Decisions (Claude)
+
+- **P8-D1 Python's built-in HTTP server**, one request at a time (`feedback/server.py`):
+  no new dependency for a one-person LAN page. A 15-second socket timeout stops a stalled
+  client from holding it; request bodies are capped at 16 KB.
+- **P8-D2 Signed links, and opening one saves nothing.** A link is
+  `<base_url>/f/<job_id>?v=up|down&s=<signature>`: HMAC-SHA256 of the job id with
+  `JOB_SCOUT_FEEDBACK_SECRET` (env only, 32+ characters), so editing the number gives a
+  403. Opening it shows the job, Claude's score and summary, your vote preselected and a
+  reason box; only Save (a POST carrying the same signature) writes, because mail apps
+  sometimes open links on their own. Save redirects back to the page (Post/Redirect/Get).
+  Responses forbid scripts, framing and external assets (Content-Security-Policy), aren't
+  cached, and send no referrer; the request log leaves the signature out.
+- **P8-D3 One `feedback` row per job group** (canonical job), the latest vote wins. The row
+  copies the score you reacted to (score, disqualified, summary, profile hash), so the
+  judgment stays readable after a rescore or a profile change. A reason is capped at 1,000
+  characters. Votes on jobs never scored are kept, with no score.
+- **P8-D4 Judgments go into the system prompt** after the profile and the posting rules, as
+  a "recent judgments" section of `<judgment>` elements: title and company, the earlier
+  score and summary, your vote, and your reason. The instructions say they calibrate how
+  the rubric is applied, the profile's hard requirements still decide, and a posting isn't
+  scored up or down just for resembling an example. Titles, companies and summaries are
+  marked as untrusted posting data, can't open or close a `<judgment>` or `<posting>`
+  element, and are flattened to one line, so posting text can't forge a reason line.
+- **P8-D5 Which judgments:** up to `feedback.prompt_examples` (8) from the latest 200.
+  Disagreements first (👎 on a job that would have been in the digest, 👍 on one that
+  wouldn't, judged against `digest.min_score`), newest first; at most half of each vote
+  while the other vote has enough; listed oldest first. The same set for every call in a
+  run, so the API's prompt caching still works. About 100 tokens per judgment.
+- **P8-D6 Judgments don't change `profile_hash`:** a new vote doesn't make existing scores
+  stale or trigger re-scoring. Each `scoring_calls` row records which jobs' judgments were
+  in its prompt (`feedback_job_ids`). `rescore --top N` applies new feedback to older jobs
+  when you choose. `calibrate` sends the same judgments, so it measures the real prompt.
+- **P8-D7 Links on every item** of the digest and the backlog report, in the HTML and the
+  plain-text part, including the below-threshold list: a 👍 there is the most useful
+  signal. No links while `feedback.base_url` or the secret is unset; the digest still goes.
+- **P8-D8 Deployment:** a second compose service, `feedback`, from the same image
+  (`command: feedback serve`, `restart: unless-stopped`, so it comes back with Docker at
+  boot; `pull_policy: never`). It listens on 0.0.0.0:8765 in the container and publishes
+  8765 on the server. The setting's default host is 127.0.0.1, so running it on a laptop
+  doesn't expose it. `JOB_SCOUT_FEEDBACK__BASE_URL` goes in the server's env file (it's
+  that machine's address), not in `settings.yaml`.
+- **P8-D9 `feedback report`** counts the 2×2 of your vote against "Claude put it in the
+  digest", the agreement rate, mean scores per vote, how many votes reacted to an older
+  profile, and lists the disagreements with your reasons (`--all` lists every vote,
+  `--since` limits the period). `explain ID` shows your vote too.
+
+### P8 For you to review
+
+- **P8-R1 On the server:** generate `JOB_SCOUT_FEEDBACK_SECRET` (`openssl rand -hex 32`),
+  give the server a name in your DNS (e.g. `jobscout.lan`), set
+  `JOB_SCOUT_FEEDBACK__BASE_URL` in `/etc/job-scout/job-scout.env`, then
+  `docker compose build` and `docker compose up -d feedback` (`deploy/README.md`, "Feedback
+  page"). On your phone, Proton VPN's "Allow LAN connections" must be on at home.
+- **P8-R2 Look at the page** on your phone the first time and tell me if anything's off
+  (layout, wording, the 👍/👎 labels).
+- **P8-R3 Number of examples:** 8 to start. More examples cost about 100 tokens each per
+  call; fewer may teach too little. Revisit once `feedback report` has a few dozen votes.

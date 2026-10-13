@@ -26,7 +26,9 @@ sudo git clone <your remote> /opt/job-scout
 sudo mkdir -p /var/lib/job-scout && sudo chown 1000:1000 /var/lib/job-scout
 
 # 2. Secrets: fill in CLAUDE_CODE_OAUTH_TOKEN, ANTHROPIC_API_KEY, JOB_SCOUT_SMTP_TOKEN,
-#    JOB_SCOUT_DIGEST__EMAIL__TO_ADDRESS (and FINDWORK_API_KEY when you have one)
+#    JOB_SCOUT_DIGEST__EMAIL__TO_ADDRESS, the feedback page's JOB_SCOUT_FEEDBACK_SECRET
+#    (`openssl rand -hex 32`) and JOB_SCOUT_FEEDBACK__BASE_URL (see "Feedback page" below),
+#    and FINDWORK_API_KEY when you have one
 sudo install -d -m 700 /etc/job-scout
 sudo install -m 600 /opt/job-scout/deploy/job-scout.env.example /etc/job-scout/job-scout.env
 sudoedit /etc/job-scout/job-scout.env
@@ -59,6 +61,29 @@ sudo systemctl enable --now job-scout.timer
 systemctl list-timers job-scout.timer          # next run: tomorrow 08:15
 ```
 
+## Feedback page
+
+Each digest item gets 👍/👎 links to a small page served by the `feedback` compose service.
+The page shows the job and Claude's score with your vote preselected; nothing is saved
+until you press Save (add a reason if you like). Your recent judgments then go into the
+scoring prompt as examples, and `job-scout feedback report` shows how often Claude agreed.
+
+```sh
+# Pick a name for the server in your DNS (e.g. jobscout.lan -> the server's LAN IP), and
+# set JOB_SCOUT_FEEDBACK__BASE_URL=http://jobscout.lan:8765 in /etc/job-scout/job-scout.env.
+cd /opt/job-scout/deploy
+sudo docker compose up -d feedback        # restarts with Docker at boot
+sudo docker compose logs feedback         # "feedback page listening on http://0.0.0.0:8765"
+curl -s -o /dev/null -w '%{http_code}\n' http://jobscout.lan:8765/f/1   # 403: no signature
+```
+
+- It's plain HTTP on your LAN. The links are signed, so nobody can vote on other jobs by
+  editing a link; still, don't publish the port on the internet. From outside, use a VPN
+  into your network (Tailscale or WireGuard; Proton VPN can't reach your LAN), then point
+  `JOB_SCOUT_FEEDBACK__BASE_URL` at the address you'd use there.
+- If your phone runs Proton VPN at home, turn on its "Allow LAN connections" setting.
+- Changing the secret invalidates the links in earlier digests.
+
 ## Check it works (Phase 6 acceptance)
 
 ```sh
@@ -78,10 +103,13 @@ journalctl -u job-scout-failure.service -n 20 --no-pager
 - Logs: `journalctl -u job-scout.service` (each run), `journalctl -u job-scout-failure.service`.
 - Run a command: `cd /opt/job-scout/deploy && sudo docker compose run --rm -T job-scout <command>`,
   e.g. `status`, `digest --dry-run`, `export --sqlite` (files land in `/var/lib/job-scout`).
+- How Claude's scores compare with your votes:
+  `sudo docker compose run --rm -T job-scout feedback report` (`--all` lists every vote).
 - The initial backlog on the API (spends, about $1-2 with Haiku 5.5):
   `sudo docker compose run --rm -T job-scout backlog --backend api`.
-- Update: `cd /opt/job-scout && sudo git pull && cd deploy && sudo docker compose build`.
-  Database migrations run on the next command. Re-copy the units if `deploy/systemd`
+- Update: `cd /opt/job-scout && sudo git pull && cd deploy && sudo docker compose build`,
+  then `sudo docker compose up -d feedback` to restart the page on the new image. Database
+  migrations run on the next command. Re-copy the units if `deploy/systemd`
   changed, then `sudo systemctl daemon-reload`.
 - Changing the run time: edit `deploy/systemd/job-scout.timer` *and*
   `schedule.daily_run_time` in `config/settings.yaml` (a test checks they match).
