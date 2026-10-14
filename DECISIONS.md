@@ -1248,3 +1248,10 @@ features planned; Phase 7 (Tier 2 scrapers) and the Findwork key are still open.
   `git config core.hooksPath .githooks`.
   The sandbox can't write `.git/config`, so it isn't on yet. Skip it for one commit with
   `git commit --no-verify`.
+- **P9-U9 No references to this log in comments.** Removed every "(DECISIONS.md P4-U5)"
+  style reference from code, config, deploy files and tests (11 places). Where a reference
+  carried the reason, the comment now says it directly. Example: `postings_per_call: 1`
+  now says "the prompt is too short to cache". CLAUDE.md's working agreement now forbids
+  them. `config/filters.yaml` had one: it was made writable for that comment edit only,
+  then set back to read-only. The pre-filter fingerprint hashes the parsed rules, not
+  the file, so no verdicts went stale.

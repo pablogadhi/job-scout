@@ -24,8 +24,8 @@ services:
         GID: "${JOB_SCOUT_GID:-1000}"
     restart: "no"
 
-  # The page the digest's thumbs up/down links open (DECISIONS.md P8-U1). Same image; build
-  # it with the service above. Publishes feedback.port (8765 in the container) on the
+  # The page the digest's thumbs up/down links open. Same image; build it with the
+  # service above. Publishes feedback.port (8765 in the container) on the
   # server's LAN address; to pin one interface use e.g. "192.168.1.10:8765:8765".
   feedback:
     <<: *job-scout

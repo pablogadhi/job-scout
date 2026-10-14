@@ -3,7 +3,7 @@
 Rules run in order (title, remote, location, salary); the first failing rule decides and is
 recorded as the reason. Anything unclear passes through to Claude.
 
-Which text each rule reads (descriptions are never regex-matched; see DECISIONS.md P2-D2):
+Which text each rule reads (descriptions are never regex-matched: "hybrid cloud" isn't a job):
 - title rules:     title
 - remote rules:    title, location, the source's remote/workplace field
 - location rules:  title, location (the `^remote - us$`-style pattern needs the whole field)

@@ -9,7 +9,7 @@
 #          the endpoint comes from docs or a linked page and should be tested when building the fetcher.
 
 defaults:
-  user_agent: "job-scout/0.1 (personal job search)"   # no contact email, by decision (DECISIONS.md)
+  user_agent: "job-scout/0.1 (personal job search)"   # no contact email, on purpose
   respect_robots_txt: true
   min_interval_hours: 6        # never poll any source more often than this
   timeout_seconds: 30
@@ -34,7 +34,7 @@ sources:
     notes: >
       Highest-value source for this profile: every posting is a 4-day or reduced-hours role.
       Free, no key. 60 req/min per IP. OpenAPI spec at https://4dayweek.io/openapi.yaml.
-      Use posted_after on daily runs (at least 7 days, DECISIONS.md P4-D13); omit it on the
+      Use posted_after on daily runs (at least 7 days); omit it on the
       first backlog run.
     terms: Link back to 4dayweek.io.
 
@@ -523,7 +523,7 @@ skipped:
 # shapes checked 2026-10-12. SmartRecruiters removed 2026-10-12: api.smartrecruiters.com's
 # robots.txt disallows every bot (`User-agent: * / Disallow: /`); its companies end up as
 # unknown_ats. Ashby's API host answers robots.txt with HTTP 401, which RFC 9309 treats as
-# "unavailable" (allowed); polled since DECISIONS.md P5-U1.
+# "unavailable" (allowed), so it is polled.
 #
 # ATS detection, in order (stop at the first hit):
 #   1. careers_url host matches a `detect` pattern below.

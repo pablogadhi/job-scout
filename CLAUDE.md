@@ -11,6 +11,8 @@ Claude → daily digest. `PLAN.md` is the build brief (phases, data model, scori
 - **Log every decision in `DECISIONS.md`:** decisions Claude made alone, the user's
   decisions, config fixes, bugs found and fixed, and items left for review, under the
   current phase's section with an ID (`P2-D3`). Update it before each phase's commit.
+  Code, config, docs and tests never cite it: a comment states the reason itself, or
+  nothing.
 - **Test fixtures are always synthetic.** Never commit recorded responses or real posting
   text. Edit `tests/fixtures/make_http_fixtures.py` and regenerate; record live payloads only
   into the gitignored `data/recordings/` to study shapes.

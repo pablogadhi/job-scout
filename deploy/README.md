@@ -2,7 +2,7 @@
 
 One Docker image runs every command; systemd runs `job-scout run` daily at 08:15
 (Guatemala time). A failed or hung run emails you its log; the daily digest, sent even when
-there's nothing new, is the "it ran" signal (DECISIONS.md P6-U1). There is no external
+there's nothing new, is the "it ran" signal. There is no external
 monitor: if the server itself is down, you notice anyway (it's also your DNS and DHCP).
 
 ## What's where

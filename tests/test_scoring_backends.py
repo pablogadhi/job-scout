@@ -128,7 +128,7 @@ def test_cli_invocation(app_config: AppConfig, tmp_path: Path) -> None:
         (0, cli_json(stop_reason="max_tokens"), "", "truncated"),
         (0, cli_json(stop_reason="refusal"), "", "refusal"),
         (0, "not json", "", "error"),
-        # Malformed fields fail the call, not the whole run (P9-B1).
+        # Malformed fields fail the call, not the whole run.
         (0, cli_json(usage={"input_tokens": "lots"}), "", "invalid"),
         (0, cli_json(total_cost_usd="free"), "", "invalid"),
     ],

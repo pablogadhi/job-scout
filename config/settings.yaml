@@ -10,8 +10,7 @@ scoring:
 
   # Model for both backends. Full model ID so the CLI and API resolve the same model.
   # Override: --model <id>  or  JOB_SCOUT_MODEL=<id>
-  # Default since 2026-10-12 (DECISIONS.md P3-U6). claude-haiku-4-5 still works, with
-  # effort: null.
+  # Default since 2026-10-12. claude-haiku-4-5 still works, with effort: null.
   model: claude-haiku-5-5
   # Thinking effort: low | medium | high | xhigh | max, or null to not send it.
   # Haiku 4.5 rejects it (keep null); Haiku 5.5 defaults to medium.
@@ -35,7 +34,7 @@ scoring:
         max_input_tokens_per_call: 60000
         max_output_tokens_per_call: 12000
       api:
-        postings_per_call: 1 # one posting per request (caching inactive: DECISIONS.md P3-D13)
+        postings_per_call: 1 # one posting per request (the prompt is too short to cache)
         max_calls: 500
         use_batches_api: false
     backlog:
@@ -86,12 +85,12 @@ scoring:
         cache_read: 0.01
 
 digest:
-  min_score: 50 # 50 while testing (DECISIONS.md P4-U2); plan default 60
+  min_score: 50 # 50 while testing; plan default 60
   watchlist_min_score: 21 # watchlist jobs appear unless disqualified
   send_when_empty: true # still email a digest with no new matches (health footer)
   # The HTML digest is always written under paths.reports. Email is sent in addition when
-  # enabled: Proton SMTP submission from an alias (DECISIONS.md P4-U7). The SMTP token is
-  # read only from the JOB_SCOUT_SMTP_TOKEN environment variable, never from this file.
+  # enabled: Proton SMTP submission from an alias. The SMTP token is read only from the
+  # JOB_SCOUT_SMTP_TOKEN environment variable, never from this file.
   email:
     enabled: true
     smtp_host: smtp.protonmail.ch

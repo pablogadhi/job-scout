@@ -1,6 +1,6 @@
 """The failed-run email: systemd's OnFailure unit pipes the run's log into `notify-failure`.
 
-There's no external monitor (DECISIONS.md P6-U1): the daily digest is the heartbeat, and this
+There's no external monitor: the daily digest is the heartbeat, and this
 email reports a run that failed or hung (killed by TimeoutStartSec) within minutes.
 """
 
