@@ -1,6 +1,6 @@
 """Scored job groups for the digest and the backlog report, sorted into sections (PLAN.md §8).
 
-Only scores under the current profile (profile_hash) count. Sections, in order:
+Every job's score counts, whichever profile.md it was scored under. Sections, in order:
 - watchlist: a listing's company is on the watchlist, not disqualified, score >= watchlist_min
 - top: score >= digest.min_score and location eligibility pass (or fail, which can't reach
   min_score without being disqualified)
@@ -102,17 +102,13 @@ def watchlist_names(config: AppConfig) -> set[str]:
 
 
 def scored_items(
-    session: Session, profile_hash: str, watchlist: set[str], exclude: Iterable[int] = ()
+    session: Session, watchlist: set[str], exclude: Iterable[int] = ()
 ) -> list[ReportItem]:
-    """Every scored group under this profile, best first (ties: newest posting first)."""
+    """Every scored group, best first (ties: newest posting first)."""
     skip = set(exclude)
     scores = [
         s
-        for s in session.scalars(
-            select(Score).where(
-                Score.profile_hash == profile_hash, Score.status == ScoreStatus.SCORED
-            )
-        )
+        for s in session.scalars(select(Score).where(Score.status == ScoreStatus.SCORED))
         if s.job_id not in skip and s.result is not None
     ]
     groups = {g.canonical.id: g for g in load_groups(session, [s.job_id for s in scores])}

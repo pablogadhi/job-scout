@@ -45,13 +45,10 @@ def _cell(value: Any) -> Any:
     return value
 
 
-def export_csv(session: Session, profile_hash: str, path: Path) -> int:
+def export_csv(session: Session, path: Path) -> int:
     """Write the CSV; return the number of rows."""
     verdicts = {r.job_id: r for r in session.scalars(select(PrefilterResult))}
-    scores = {
-        s.job_id: s
-        for s in session.scalars(select(Score).where(Score.profile_hash == profile_hash))
-    }
+    scores = {s.job_id: s for s in session.scalars(select(Score))}
     path.parent.mkdir(parents=True, exist_ok=True)
     rows = 0
     with path.open("w", newline="", encoding="utf-8") as fh:

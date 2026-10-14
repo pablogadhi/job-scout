@@ -65,11 +65,10 @@ def vote(
     v: Vote,
     reason: str | None = None,
     *,
-    profile_hash: str = "p",
     at: datetime = NOW,
 ) -> None:
     with sf.begin() as session:
-        record_vote(session, job_id, v, reason, profile_hash, at)
+        record_vote(session, job_id, v, reason, at)
 
 
 def example(job_id: int, v: Vote, score: int | None, minutes: int) -> Example:
@@ -125,22 +124,17 @@ def test_vote_copies_the_score_and_replaces_earlier_votes(
 ) -> None:
     (job_id,) = seed_jobs(session_factory, 1)
     add_score(session_factory, job_id, "old", 40, summary="Old profile summary.")
-    vote(session_factory, job_id, Vote.UP, profile_hash="current")
+    vote(session_factory, job_id, Vote.UP)
     with session_factory() as session:
         row = session.scalars(select(Feedback)).one()
-        # No score under the current profile: the latest one under any profile.
         assert (row.overall_score, row.profile_hash) == (40, "old")
 
-    add_score(session_factory, job_id, "current", 82, summary="Current summary.")
+    with session_factory.begin() as session:  # `rescore` under a newer profile
+        score = session.scalars(select(Score).where(Score.job_id == job_id)).one()
+        score.result = result_for(job_id, score=82, summary="Current summary.")
+        score.overall_score, score.profile_hash = 82, "current"
     later = NOW + timedelta(hours=1)
-    vote(
-        session_factory,
-        job_id,
-        Vote.DOWN,
-        "  too much\non-call " + "x" * 2000,
-        at=later,
-        profile_hash="current",
-    )
+    vote(session_factory, job_id, Vote.DOWN, "  too much\non-call " + "x" * 2000, at=later)
     with session_factory() as session:
         row = session.scalars(select(Feedback)).one()
         assert row.vote is Vote.DOWN
@@ -218,10 +212,8 @@ def test_scoring_run_sends_examples_and_records_them(
 ) -> None:
     rated = seed_jobs(session_factory, 2, start=1)
     add_score(session_factory, rated[0], app_config.profile.sha256, 80)
-    vote(
-        session_factory, rated[0], Vote.DOWN, "Agency role.", profile_hash=app_config.profile.sha256
-    )
-    vote(session_factory, rated[1], Vote.UP, profile_hash=app_config.profile.sha256)
+    vote(session_factory, rated[0], Vote.DOWN, "Agency role.")
+    vote(session_factory, rated[1], Vote.UP)
     seed_jobs(session_factory, 2, start=10)
     scorer = FakeScorer()
     limits = Limits(
@@ -363,10 +355,10 @@ def test_feedback_report(app_config: AppConfig, session_factory: sessionmaker[Se
     current = app_config.profile.sha256
     for job_id, score in zip(ids, (80, 30, 85, 20), strict=True):
         add_score(session_factory, job_id, current, score)
-    vote(session_factory, ids[0], Vote.UP, profile_hash=current)  # agree
-    vote(session_factory, ids[1], Vote.UP, "Love the stack.", profile_hash=current)  # missed
-    vote(session_factory, ids[2], Vote.DOWN, "Agency role.", profile_hash=current)  # wrong
-    vote(session_factory, ids[3], Vote.DOWN, profile_hash=current)  # agree
+    vote(session_factory, ids[0], Vote.UP)  # agree
+    vote(session_factory, ids[1], Vote.UP, "Love the stack.")  # missed
+    vote(session_factory, ids[2], Vote.DOWN, "Agency role.")  # wrong
+    vote(session_factory, ids[3], Vote.DOWN)  # agree
 
     with session_factory() as session:
         stats = feedback_stats(session, min_score=50)

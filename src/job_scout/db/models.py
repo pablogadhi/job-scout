@@ -263,12 +263,15 @@ class ScoringCall(Base):
 
 
 class Score(Base):
+    """One per canonical job. Scored once; only `rescore` (or a newly linked copy) queues it
+    again, so editing profile.md never re-scores anything by itself."""
+
     __tablename__ = "scores"
-    __table_args__ = (UniqueConstraint("job_id", "profile_hash"),)
+    __table_args__ = (UniqueConstraint("job_id"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     job_id: Mapped[int] = mapped_column(ForeignKey("jobs.id", ondelete="CASCADE"))
-    profile_hash: Mapped[str] = mapped_column(String(64))
+    profile_hash: Mapped[str] = mapped_column(String(64))  # the profile.md it was scored under
     backend: Mapped[Backend | None]  # set once a backend has scored it
     model: Mapped[str | None] = mapped_column(String(100))
     result: Mapped[dict[str, Any] | None]

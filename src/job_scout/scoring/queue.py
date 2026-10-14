@@ -1,7 +1,8 @@
-"""Which job groups need a score under the current profile.
+"""Which job groups need a score.
 
-A score row per (canonical job, profile_hash). Pending rows don't belong to a backend, so
-a backlog can start on one backend and finish on the other.
+One score row per canonical job. A job is scored once: it's queued again only by `rescore`
+or when a copy is linked to its group, never because profile.md changed. Pending rows don't
+belong to a backend, so a backlog can start on one backend and finish on the other.
 """
 
 from __future__ import annotations
@@ -14,7 +15,6 @@ from sqlalchemy import (
     CursorResult,
     Result,
     Select,
-    and_,
     exists,
     func,
     insert,
@@ -47,13 +47,13 @@ def _eligible() -> Select[int]:
 
 
 def enqueue(session: Session, profile_hash: str) -> tuple[int, int]:
-    """Add pending scores for new eligible groups; re-queue groups that changed.
+    """Add pending scores for eligible groups that have none; re-queue groups that changed.
 
     A scored group is re-queued when a copy was linked to it after it was scored (e.g. the
     same job posted later for another country), because its combined locations changed.
-    Returns (new, requeued).
+    `profile_hash` is recorded on the new rows. Returns (new, requeued).
     """
-    has_score = exists().where(Score.job_id == Job.id, Score.profile_hash == profile_hash)
+    has_score = exists().where(Score.job_id == Job.id)
     new_ids = select(Job.id, literal(profile_hash)).where(Job.id.in_(_eligible()), ~has_score)
     new = _rowcount(session.execute(insert(Score).from_select(["job_id", "profile_hash"], new_ids)))
 
@@ -65,7 +65,6 @@ def enqueue(session: Session, profile_hash: str) -> tuple[int, int]:
         session.execute(
             update(Score)
             .where(
-                Score.profile_hash == profile_hash,
                 Score.status == ScoreStatus.SCORED,
                 Score.scored_at.is_not(None),
                 newer_copy,
@@ -89,14 +88,14 @@ def _in_flight() -> Select[int]:
     )
 
 
-def pending_query(profile_hash: str, order: str = "newest_first") -> Select[int]:
+def pending_query(order: str = "newest_first") -> Select[int]:
     """Canonical job ids to score, in scoring order; excludes jobs inside an unfinished batch."""
     newest = order == "newest_first"
     posted = Job.posted_at.desc() if newest else Job.posted_at.asc()
     seen = Job.first_seen_at.desc() if newest else Job.first_seen_at.asc()
     return (
         select(Job.id)
-        .join(Score, and_(Score.job_id == Job.id, Score.profile_hash == profile_hash))
+        .join(Score, Score.job_id == Job.id)
         .where(
             Score.status == ScoreStatus.PENDING,
             Job.id.in_(_eligible()),
@@ -106,11 +105,8 @@ def pending_query(profile_hash: str, order: str = "newest_first") -> Select[int]
     )
 
 
-def pending_count(session: Session, profile_hash: str) -> int:
-    return (
-        session.scalar(select(func.count()).select_from(pending_query(profile_hash).subquery()))
-        or 0
-    )
+def pending_count(session: Session) -> int:
+    return session.scalar(select(func.count()).select_from(pending_query().subquery())) or 0
 
 
 def requeue_for_rescore(
@@ -120,17 +116,16 @@ def requeue_for_rescore(
     top: int | None = None,
     since: datetime | None = None,
 ) -> int:
-    """Queue jobs for scoring under the current profile: the top N by their latest score
-    (any profile), and/or eligible jobs first seen since a date. Returns jobs queued."""
+    """Queue jobs to be scored again under the current profile: the top N by score, and/or
+    eligible jobs first seen since a date. Returns jobs queued."""
     ids: list[int] = []
     if top:
-        latest = (
-            select(Score.job_id, func.max(Score.overall_score).label("best"))
+        ids += session.scalars(
+            select(Score.job_id)
             .where(Score.status == ScoreStatus.SCORED)
-            .group_by(Score.job_id)
-            .subquery()
+            .order_by(Score.overall_score.desc())
+            .limit(top)
         )
-        ids += session.scalars(select(latest.c.job_id).order_by(latest.c.best.desc()).limit(top))
     if since:
         ids += session.scalars(_eligible().where(Job.first_seen_at >= since))
     return _set_pending(session, profile_hash, list(dict.fromkeys(ids)))
@@ -138,9 +133,7 @@ def requeue_for_rescore(
 
 def _set_pending(session: Session, profile_hash: str, job_ids: Sequence[int]) -> int:
     for job_id in job_ids:
-        score = session.scalars(
-            select(Score).where(Score.job_id == job_id, Score.profile_hash == profile_hash)
-        ).one_or_none()
+        score = session.scalars(select(Score).where(Score.job_id == job_id)).one_or_none()
         if score is None:
             session.add(Score(job_id=job_id, profile_hash=profile_hash))
         else:

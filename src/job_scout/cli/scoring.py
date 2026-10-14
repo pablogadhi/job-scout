@@ -111,7 +111,6 @@ def status(ctx: typer.Context) -> None:
     with open_db(config)() as session:
         st = scoring_status(
             session,
-            config.profile.sha256,
             settings.schedule.timezone,
             settings.scoring.cli.token_created,
             utcnow(),

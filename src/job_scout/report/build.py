@@ -53,7 +53,6 @@ def _render(
     scoring = config.settings.scoring
     status = scoring_status(
         session,
-        config.profile.sha256,
         config.settings.schedule.timezone,
         scoring.cli.token_created,
         now,
@@ -90,7 +89,6 @@ def make_digest(
     with session_factory() as session:
         items = scored_items(
             session,
-            config.profile.sha256,
             watchlist_names(config),
             exclude=reported_job_ids(session),
         )
@@ -159,13 +157,13 @@ def make_backlog_report(
     now: datetime,
     environ: Mapping[str, str],
 ) -> BacklogOutcome:
-    """Every scored group under the current profile, ranked, including below-threshold ones.
+    """Every scored group, ranked, including below-threshold ones.
 
     Its reported jobs (watchlist, top, unclear) are recorded, so later digests show only
     what's new.
     """
     with session_factory() as session:
-        items = scored_items(session, config.profile.sha256, watchlist_names(config))
+        items = scored_items(session, watchlist_names(config))
         sections = build_sections(items, config.settings.digest, include_below=True)
         rendered = _render(
             config,

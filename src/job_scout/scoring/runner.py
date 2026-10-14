@@ -128,7 +128,7 @@ class ScoringRunner:
             with self.sf() as session:
                 report.enqueued = enqueue(session, self.profile_hash)
                 plan = planner.plan(self._pending_postings(session))
-                report.pending_left = pending_count(session, self.profile_hash)
+                report.pending_left = pending_count(session)
                 session.rollback()
             report.planned_calls = [len(call) for call in plan]
             prices = self.config.settings.scoring.api.prices.get(self.scorer.model)
@@ -254,12 +254,7 @@ class ScoringRunner:
         result: CallResult,
     ) -> _Outcome:
         ids = [p.job_id for p in call]
-        scores = {
-            s.job_id: s
-            for s in session.scalars(
-                select(Score).where(Score.job_id.in_(ids), Score.profile_hash == self.profile_hash)
-            )
-        }
+        scores = {s.job_id: s for s in session.scalars(select(Score).where(Score.job_id.in_(ids)))}
         outcome = _Outcome()
         if result.status == "usage_limit":
             return outcome  # not the postings' fault: they stay pending, no attempt counted
@@ -300,6 +295,7 @@ class ScoringRunner:
         for job_id, parsed in valid.items():
             score = scores[job_id]
             score.status = ScoreStatus.SCORED
+            score.profile_hash = self.profile_hash  # the profile this result was made under
             score.result = parsed.model_dump()
             score.overall_score = parsed.overall_score
             score.disqualified = parsed.disqualified
@@ -367,10 +363,7 @@ class ScoringRunner:
             # Mark the jobs as in flight before submitting, so no other run picks them up.
             for call in requests.values():
                 for score in session.scalars(
-                    select(Score).where(
-                        Score.job_id.in_([p.job_id for p in call]),
-                        Score.profile_hash == self.profile_hash,
-                    )
+                    select(Score).where(Score.job_id.in_([p.job_id for p in call]))
                 ):
                     score.call_id = scoring_call.id
             call_id = scoring_call.id
@@ -457,12 +450,12 @@ class ScoringRunner:
     def _pending_postings(self, session: Session) -> list[PostingInput]:
         max_chars = self.config.settings.scoring.description_max_chars
         order = self.config.settings.scoring.order
-        ids = list(session.scalars(pending_query(self.profile_hash, order)))
+        ids = list(session.scalars(pending_query(order)))
         return [render_posting(g, max_chars) for g in load_groups(session, ids)]
 
     def _finish(self, report: RunReport) -> None:
         with self.sf.begin() as session:
-            report.pending_left = pending_count(session, self.profile_hash)
+            report.pending_left = pending_count(session)
             if report.stop_reason is None:
                 report.stop_reason = (
                     StopReason.DONE if report.pending_left == 0 else StopReason.MAX_CALLS

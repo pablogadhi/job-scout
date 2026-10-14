@@ -113,7 +113,7 @@ class FeedbackApp:
             if group is None or group.canonical.id != job_id:
                 return self._error(404, "That job isn't in the database.")
             job = group.canonical
-            score = current_score(session, job_id, self.config.profile.sha256)
+            score = current_score(session, job_id)
             result = ScoreResult.model_validate(score.result) if score and score.result else None
             previous = get_vote(session, job_id)
             context: dict[str, Any] = {
@@ -141,7 +141,7 @@ class FeedbackApp:
             group = group_of(session, job_id)
             if group is None or group.canonical.id != job_id:
                 return self._error(404, "That job isn't in the database.")
-            record_vote(session, job_id, vote, reason, self.config.profile.sha256, self.clock())
+            record_vote(session, job_id, vote, reason, self.clock())
         log.info("feedback: job %s %s%s", job_id, vote.value, " with a reason" if reason else "")
         # Post/Redirect/Get: reloading the page doesn't resubmit the form.
         location = f"/f/{job_id}?" + urlencode({"s": signature, "saved": "1"})

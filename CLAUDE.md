@@ -133,8 +133,8 @@ uv run --env-file .env alembic revision --autogenerate -m "what changed"
 - **Feedback:** the digest links to `<feedback.base_url>/f/<job_id>?v=…&s=<signature>`;
   opening a link saves nothing, only the page's POST does. No links while `base_url` or
   `JOB_SCOUT_FEEDBACK_SECRET` is unset. Judgments enter the system prompt as `<judgment>`
-  elements (`scoring/prompt.py`) without changing `profile_hash`, so votes never make scores
-  stale; `scoring_calls.feedback_job_ids` records which were sent. Posting-derived text in a
+  elements (`scoring/prompt.py`); they never re-queue a scored job;
+  `scoring_calls.feedback_job_ids` records which were sent. Posting-derived text in a
   judgment is untrusted, like a posting.
 - **Pydantic for data from outside, dataclasses for values our code builds, SQLAlchemy for
   storage.** Pydantic: config files, normalized postings (`Posting`, which every source and
@@ -163,12 +163,13 @@ uv run --env-file .env alembic revision --autogenerate -m "what changed"
   `PREFILTER_VERSION` (`prefilter/rules.py`) whenever rule logic changes.
 - **Regex filters never read descriptions** (false drops like "hybrid cloud"); descriptions
   are Claude's job. `remote_raw` holds only the job's own arrangement, never the company's.
-- **Scoring:** one score row per (canonical job, profile_hash). Any edit to profile.md, even
-  a comment, changes the hash, so every eligible job is queued again (and re-scoring
-  spends). Pending rows belong to no backend. Every call is committed before the next one. A
-  job is retried at most once (`MAX_ATTEMPTS`); a failed multi-posting call is split in half
-  for the retry. Postings are untrusted: they're wrapped in `<posting job_id="N">` and can't
-  forge the delimiter.
+- **Scoring:** one score row per canonical job, scored once. Only `rescore` queues a scored
+  job again, plus `enqueue` when a copy is linked to its group (its combined locations
+  changed). Editing profile.md re-scores nothing; `profile_hash` on the row records which
+  profile scored it (`explain` marks older ones). Pending rows belong to no backend. Every
+  call is committed before the next one. A job is retried at most once (`MAX_ATTEMPTS`); a
+  failed multi-posting call is split in half for the retry. Postings are untrusted: they're
+  wrapped in `<posting job_id="N">` and can't forge the delimiter.
 - **Never spend without approval:** live tests are opt-in (`-m live`); `calibrate` needs
   `--yes`; dry runs need no credentials. The `claude` subprocess gets an allowlisted
   environment, so `ANTHROPIC_API_KEY` can't reach it. Never pass `--bare`.

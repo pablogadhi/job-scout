@@ -2,6 +2,7 @@
 
 import json
 import re
+from dataclasses import replace
 from datetime import timedelta
 from types import SimpleNamespace
 from typing import Any
@@ -287,12 +288,29 @@ def test_rescore_queues_top_and_recent(
                 rank * 10
             )
         assert requeue_for_rescore(session, app_config.profile.sha256, top=2) == 2
-        assert pending_count(session, app_config.profile.sha256) == 2
+        assert pending_count(session) == 2
         top_two = {
             s.job_id
             for s in session.scalars(select(Score).where(Score.status == ScoreStatus.PENDING))
         }
     assert top_two == set(ids[-2:])
+
+
+def test_editing_the_profile_rescores_nothing(
+    app_config: AppConfig, session_factory: sessionmaker[Session]
+) -> None:
+    ids = seed_jobs(session_factory, 2)
+    runner(app_config, session_factory, FakeScorer()).run(options())
+    (leftover,) = seed_jobs(session_factory, 1, start=3)
+    with session_factory.begin() as session:  # pending since before an older profile edit
+        session.add(Score(job_id=leftover, profile_hash="old"))
+    edited = replace(app_config, profile=replace(app_config.profile, sha256="edited"))
+    scorer = FakeScorer()
+    report = runner(edited, session_factory, scorer).run(options())
+    assert report.enqueued == (0, 0) and report.scored == 1  # only the leftover pending job
+    by_job = scores(session_factory)
+    assert {by_job[i].profile_hash for i in ids} == {app_config.profile.sha256}  # kept
+    assert by_job[leftover].profile_hash == "edited"  # scored now, under the profile that scored it
 
 
 # --- Message Batches ---------------------------------------------------------------------

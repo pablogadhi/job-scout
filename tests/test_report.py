@@ -115,7 +115,7 @@ def test_sections(tmp_path: Path, session_factory: sessionmaker[Session]) -> Non
         },
     )
     with session_factory() as session:
-        items = scored_items(session, config.profile.sha256, {"canonical"})
+        items = scored_items(session, {"canonical"})
     assert [i.job_id for i in items] == [a, b, e, c, f, d]  # best first
     sections = build_sections(items, config.settings.digest, include_below=True)
     assert [i.job_id for i in sections.watchlist] == [f]
@@ -269,7 +269,7 @@ def test_export_csv_and_snapshot(
     score_jobs(session_factory, config, {first: {"score": 77}})
     path = tmp_path / "out" / "jobs.csv"
     with session_factory() as session:
-        assert export_csv(session, config.profile.sha256, path) == 2
+        assert export_csv(session, path) == 2
     rows = list(csv.DictReader(path.open()))
     assert rows[0]["score"] == "77" and rows[0]["prefilter"] == "passed"
     assert rows[0]["summary"] == "Synthetic posting that fits."

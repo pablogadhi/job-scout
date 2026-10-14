@@ -172,7 +172,7 @@ def export(
     stamp = f"{utcnow():%Y%m%dT%H%M%SZ}"
     with open_db(config)() as session:
         path = directory / f"jobs-{stamp}.csv"
-        rows = export_csv(session, config.profile.sha256, path)
+        rows = export_csv(session, path)
     console.print(f"{rows} postings -> {path}")
     if sqlite:
         try:

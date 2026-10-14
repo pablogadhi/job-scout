@@ -40,7 +40,7 @@ class ScoringStatus:
 
 
 def scoring_status(
-    session: Session, profile_hash: str, timezone: str, token_created: date | None, now: datetime
+    session: Session, timezone: str, token_created: date | None, now: datetime
 ) -> ScoringStatus:
     tz = ZoneInfo(timezone)
     local_midnight = datetime.combine(now.astimezone(tz).date(), time(), tzinfo=tz)
@@ -57,7 +57,7 @@ def scoring_status(
         )
 
     return ScoringStatus(
-        pending=pending_count(session, profile_hash),
+        pending=pending_count(session),
         batches_in_flight=session.scalar(
             select(func.count()).where(ScoringCall.status == CallStatus.SUBMITTED)
         )

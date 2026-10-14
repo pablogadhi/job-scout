@@ -1262,3 +1262,24 @@ features planned; Phase 7 (Tier 2 scrapers) and the Findwork key are still open.
   rule about read-only files is gone. The general rule stays: ask before changing what
   `config/` looks for. CLAUDE.md's scoring notes now say that any edit to `profile.md`,
   even a comment, changes `profile_hash` and queues every eligible job again.
+- **P9-U12 Score each job once; editing `profile.md` re-scores nothing.** Only `rescore`
+  queues a scored job again. You kept one automatic re-score: when a copy is linked to a
+  scored job's group (e.g. the same job posted later for another country), it's queued
+  again, because the combined locations can change where you're eligible.
+
+- **P9-D14 How it's built:**
+  - `scores` is unique per job instead of per (job, `profile_hash`).
+  - `profile_hash` stays on the row as a record of the profile that scored it. It's set
+    when the score is written, and `explain` still marks scores from an older profile.
+  - The queue, the reports, the CSV export, `status` and the feedback page no longer
+    filter by profile.
+  - `rescore` overwrites the job's row; the old result isn't kept.
+  - The migration (`cae2ac4fd837`) collapses existing rows to one per job: the latest
+    real score, or else the newest pending row. Downgrading restores the old constraint
+    but not the deleted rows.
+  - On a scratch copy of your local database it removed the 1,120 pending rows left over
+    from before the Phase 3 profile edit, and kept all 190 scores and the 1,380 pending
+    jobs under the current profile.
+  - New tests: a profile edit re-scores nothing, and a leftover pending row is scored
+    and stamped with the current profile. A migration test covers the three
+    collapse cases.

@@ -1,13 +1,19 @@
 from datetime import UTC, datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
+from alembic import command
 from alembic.autogenerate import compare_metadata
+from alembic.config import Config
 from alembic.migration import MigrationContext
 from sqlalchemy import Engine, inspect, text
 from sqlalchemy.exc import StatementError
 from sqlalchemy.orm import Session, sessionmaker
 
+from job_scout.db import make_engine, make_session_factory
 from job_scout.db.models import Base, Job, Score, ScoreStatus, Source
+from tests.conftest import ROOT
+from tests.scoring_helpers import seed_jobs
 
 
 def test_migration_creates_all_tables(engine: Engine) -> None:
@@ -72,3 +78,44 @@ def test_foreign_keys_enforced(session_factory: sessionmaker[Session]) -> None:
         session.add(_job(source_id="no-such-source"))
         with pytest.raises(Exception, match="FOREIGN KEY"):
             session.commit()
+
+
+def test_one_score_per_job_migration_keeps_the_best_row(tmp_path: Path) -> None:
+    """Rows from older profiles collapse to one per job: the latest real score, else the
+    newest pending row."""
+    url = f"sqlite:///{tmp_path / 'old.db'}"
+    cfg = Config(str(ROOT / "alembic.ini"))
+    cfg.set_main_option("sqlalchemy.url", url)
+    cfg.attributes["configure_logger"] = False
+    command.upgrade(cfg, "ddc39a2e53b6")  # one score per (job, profile_hash)
+    engine = make_engine(url)
+    sf = make_session_factory(engine)
+    a, b, c = seed_jobs(sf, 3)
+    t0 = datetime(2026, 10, 1, tzinfo=UTC)
+    with sf.begin() as session:
+        session.add_all(
+            [
+                Score(job_id=a, profile_hash="h1", status=ScoreStatus.SCORED, scored_at=t0),
+                Score(job_id=a, profile_hash="h2", status=ScoreStatus.PENDING),
+                Score(job_id=b, profile_hash="h1", status=ScoreStatus.SCORED, scored_at=t0),
+                Score(
+                    job_id=b,
+                    profile_hash="h2",
+                    status=ScoreStatus.SCORED,
+                    scored_at=t0 + timedelta(days=1),
+                ),
+                Score(job_id=c, profile_hash="h1", status=ScoreStatus.PENDING),
+                Score(job_id=c, profile_hash="h2", status=ScoreStatus.PENDING),
+            ]
+        )
+    engine.dispose()
+    command.upgrade(cfg, "head")
+    engine = make_engine(url)
+    with make_session_factory(engine)() as session:
+        kept = {s.job_id: (s.profile_hash, s.status) for s in session.query(Score)}
+    engine.dispose()
+    assert kept == {
+        a: ("h1", ScoreStatus.SCORED),  # a real score beats a pending row
+        b: ("h2", ScoreStatus.SCORED),  # the latest score
+        c: ("h2", ScoreStatus.PENDING),  # no score: the newest pending row
+    }
