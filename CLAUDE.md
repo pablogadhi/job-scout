@@ -41,6 +41,7 @@ uv run pytest                                   # offline tests (live ones exclu
 uv run pytest -m live                           # opt-in: real network / real Claude backend
 uv run ruff check . && uv run ruff format .
 pyright                                         # type check src/ and tests/: 0 errors expected
+git config core.hooksPath .githooks             # once per clone: ruff + pyright before each commit
 uv run --env-file .env alembic revision --autogenerate -m "what changed"
 ```
 

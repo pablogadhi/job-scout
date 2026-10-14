@@ -1230,3 +1230,20 @@ features planned; Phase 7 (Tier 2 scrapers) and the Findwork key are still open.
     responses; `test_ats.web()` and `detector()` take a `Mapping`. The live scoring test
     passes `Backend` members. One test asserts the `ApiLimits` type before reading
     `use_batches_api`.
+- **P9-U8 Pyright in the pre-commit checks.** There were no pre-commit checks yet, so
+  this adds them.
+
+- **P9-D13 A plain git hook, not the pre-commit framework:** `.githooks/pre-commit` runs
+  `uv run ruff check .`, `uv run ruff format --check .` and `pyright`. It installs
+  nothing; the framework would be one more tool to install. Ruff comes from the project
+  environment (the version in `uv.lock`); pyright from your PATH (Mason, currently
+  1.1.413). If pyright is missing, the hook stops with a message instead of skipping.
+  It checks the working tree rather than only the staged files, which is simpler and the
+  same thing for normal commits. Tests aren't part of it (about 15 seconds); say if you
+  want them.
+
+### P9 For you to do
+
+- **P9-R2 Turn the hook on** (once per clone): `git config core.hooksPath .githooks`.
+  The sandbox can't write `.git/config`, so it isn't on yet. Skip it for one commit with
+  `git commit --no-verify`.

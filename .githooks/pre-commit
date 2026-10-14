@@ -1,0 +1,14 @@
+#!/bin/sh
+# Checks before every commit: lint, formatting, types. Enabled once per clone with
+#   git config core.hooksPath .githooks
+# They check the working tree, not just what's staged. Skip once with `git commit --no-verify`.
+set -e
+
+uv run ruff check .
+uv run ruff format --check .
+
+if ! command -v pyright >/dev/null 2>&1; then
+    echo "pre-commit: pyright isn't on PATH (install it, or commit with --no-verify)" >&2
+    exit 1
+fi
+pyright  # src/ and tests/, per [tool.pyright] in pyproject.toml
