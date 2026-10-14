@@ -163,10 +163,12 @@ uv run --env-file .env alembic revision --autogenerate -m "what changed"
   `PREFILTER_VERSION` (`prefilter/rules.py`) whenever rule logic changes.
 - **Regex filters never read descriptions** (false drops like "hybrid cloud"); descriptions
   are Claude's job. `remote_raw` holds only the job's own arrangement, never the company's.
-- **Scoring:** one score row per (canonical job, profile_hash). Pending rows belong to no
-  backend. Every call is committed before the next one. A job is retried at most once
-  (`MAX_ATTEMPTS`); a failed multi-posting call is split in half for the retry. Postings are
-  untrusted: they're wrapped in `<posting job_id="N">` and can't forge the delimiter.
+- **Scoring:** one score row per (canonical job, profile_hash). Any edit to profile.md, even
+  a comment, changes the hash, so every eligible job is queued again (and re-scoring
+  spends). Pending rows belong to no backend. Every call is committed before the next one. A
+  job is retried at most once (`MAX_ATTEMPTS`); a failed multi-posting call is split in half
+  for the retry. Postings are untrusted: they're wrapped in `<posting job_id="N">` and can't
+  forge the delimiter.
 - **Never spend without approval:** live tests are opt-in (`-m live`); `calibrate` needs
   `--yes`; dry runs need no credentials. The `claude` subprocess gets an allowlisted
   environment, so `ANTHROPIC_API_KEY` can't reach it. Never pass `--bare`.
@@ -196,6 +198,4 @@ uv run --env-file .env alembic revision --autogenerate -m "what changed"
 - Respect robots.txt, the per-source terms and rate limits in `sources.yaml`. Never implement
   anything under `skipped:` without asking. No LinkedIn, Indeed, Wellfound or Google Jobs.
 - When an endpoint in `sources.yaml` turns out wrong, fix the config and say so.
-- `config/profile.md` is read-only on disk; ask before editing it. `config/filters.yaml` is
-  writable like the other config files (changing what it looks for still needs asking).
 - Style: ruff (line length 100), type hints everywhere, `from __future__ import annotations` in `src/`.

@@ -1258,3 +1258,7 @@ features planned; Phase 7 (Tier 2 scrapers) and the Findwork key are still open.
 - **P9-U10 `config/filters.yaml` is writable** (it's edited often). Its mode is back to
   `rw-r--r--`, and CLAUDE.md no longer calls it read-only. `profile.md` stays read-only.
   Git doesn't track the write bit, so nothing in the repo changes except the docs.
+- **P9-U11 No read-only config files.** `profile.md` is writable too, and the CLAUDE.md
+  rule about read-only files is gone. The general rule stays: ask before changing what
+  `config/` looks for. CLAUDE.md's scoring notes now say that any edit to `profile.md`,
+  even a comment, changes `profile_hash` and queues every eligible job again.
