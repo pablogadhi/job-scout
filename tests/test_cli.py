@@ -256,8 +256,8 @@ def _pipeline_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setattr(
         "job_scout.scoring.backends.cli.ENV_ALLOWLIST", ("PATH", "FAKE_CLAUDE_LOG", "FAKE_RESULT")
     )
-    monkeypatch.setattr("job_scout.cli._fetch", lambda *a, **k: [])
-    monkeypatch.setattr("job_scout.cli.refresh_ats", lambda *a, **k: RefreshReport())
+    monkeypatch.setattr("job_scout.cli.sources.fetch_sources", lambda *a, **k: [])
+    monkeypatch.setattr("job_scout.cli.ats.refresh_ats", lambda *a, **k: RefreshReport())
     reports = tmp_path / "reports"
     monkeypatch.setenv("JOB_SCOUT_PATHS__REPORTS", str(reports))
     monkeypatch.setenv("JOB_SCOUT_DIGEST__EMAIL__ENABLED", "false")  # whatever settings.yaml says

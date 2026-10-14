@@ -500,7 +500,7 @@ def test_ats_detect_command(
     def client(defaults: object, **kwargs: object) -> HttpClient:
         return HttpClient(app_config.sources.defaults, transport=web(pages), sleep=lambda _s: None)
 
-    monkeypatch.setattr("job_scout.cli.HttpClient", client)
+    monkeypatch.setattr("job_scout.cli.ats.HttpClient", client)
     monkeypatch.setenv("JOB_SCOUT_PATHS__REPORTS", str(tmp_path / "reports"))
     result = CliRunner().invoke(
         app, ["--config-dir", str(REPO_CONFIG), "ats", "detect"], env={"COLUMNS": "200"}

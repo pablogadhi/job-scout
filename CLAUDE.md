@@ -48,7 +48,11 @@ uv run --env-file .env alembic revision --autogenerate -m "what changed"
 
 ## Layout
 
-- `src/job_scout/cli.py`: typer app. Every command loads and validates all of `config/` first.
+- `src/job_scout/cli/`: typer app. Every command loads and validates all of `config/` first.
+  One module per area (`sources`, `jobs`, `scoring`, `digest`, `pipeline`, `ats`,
+  `feedback`) holds plain command functions and their printing; `__init__.py` registers
+  them in `--help` order. `common.py`: consoles, `load()`, `open_db()`, `fail()`, shared
+  options. Tests patch a helper in the module that defines it (`job_scout.cli.ats.HttpClient`).
 - `src/job_scout/config/`: Pydantic models for the four config files. `extra="forbid"`
   everywhere, so typos fail at startup with exit code 2. `profile.md` is validated for its
   `## Output format` JSON block and hashed (SHA-256 of the raw bytes = `profile_hash`).

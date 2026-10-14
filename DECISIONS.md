@@ -1074,3 +1074,41 @@ page on the server, and a scoring run with your judgments in the prompt (P8-R1, 
   company. A fresh server database needs only `ats detect`.
 - **P8-R3 Number of examples:** 8 to start. More examples cost about 100 tokens each per
   call; fewer may teach too little. Revisit once `feedback report` has a few dozen votes.
+
+---
+
+## Phase 9: Questions and refactors (branch `phase-9-refactor`)
+
+**Scope:** your questions about the code and the refactors that come out of them. No new
+features planned; Phase 7 (Tier 2 scrapers) and the Findwork key are still open.
+
+### P9 Your decisions
+
+- **P9-U1 Phase 9 is for code questions and refactors**, on its own branch from
+  `phase-8-feedback`.
+- **P9-U2 Keep the `src/job_scout/` layout.** Moving the subpackages directly into `src/`
+  would make `config`, `db`, `log` and the rest top-level packages (name collisions in
+  site-packages, imports without the `job_scout.` anchor). The flat layout (`job_scout/`
+  at the repo root) was the alternative; not needed.
+- **P9-U3 Split the 1,200-line `cli.py`** so each command is easy to find. Behaviour,
+  flags, help text and exit codes unchanged.
+
+### P9 Decisions (Claude)
+
+- **P9-D1 `cli/` package, one module per area.** `sources` (fetch, sources check), `jobs`
+  (filter, explain, export), `scoring` (score, rescore, status, calibrate), `digest`
+  (digest, notify-failure), `pipeline` (run, backlog), `ats` (ats detect, the weekly
+  upkeep), `feedback` (serve, report), `common` (consoles, config and DB loading, shared
+  options). Commands are plain functions; `__init__.py` registers them in the old order,
+  so it reads as a table of contents and `--help` is byte-identical (checked by diffing
+  all 20 help screens before and after). The entry point `job_scout.cli:app` is
+  unchanged. Helpers used across modules lost their leading underscore; three tests now
+  patch helpers in the module that defines them.
+- **P9-D2 Small cleanups that came with the split:** `fail()` replaces about ten copies
+  of "print a red error, raise `typer.Exit`"; `exit_if_all_failed()` and `send_digest()`
+  remove the code `run` duplicated from `fetch` and `digest`; `run`'s inner ATS upkeep
+  is now `cli.ats.upkeep()`; `run_scoring()`'s batching flags default to None; in
+  `notify-failure` the journal text was named `log`, shadowing the module logger, and is
+  now `journal`. One visible difference: errors raised through `fail()` are now always
+  escaped and soft-wrapped (the unknown-source-id and `--record` messages weren't), which
+  only matters for text containing Rich markup or wider than the terminal.
