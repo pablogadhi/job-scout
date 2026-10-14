@@ -1244,6 +1244,7 @@ features planned; Phase 7 (Tier 2 scrapers) and the Findwork key are still open.
 
 ### P9 For you to do
 
-- **P9-R2 Turn the hook on** (once per clone): `git config core.hooksPath .githooks`.
+- ~~**P9-R2 Turn the hook on**~~ Done on your machine. On another clone, run it once there:
+  `git config core.hooksPath .githooks`.
   The sandbox can't write `.git/config`, so it isn't on yet. Skip it for one commit with
   `git commit --no-verify`.
