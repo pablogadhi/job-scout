@@ -1255,3 +1255,6 @@ features planned; Phase 7 (Tier 2 scrapers) and the Findwork key are still open.
   them. `config/filters.yaml` had one: it was made writable for that comment edit only,
   then set back to read-only. The pre-filter fingerprint hashes the parsed rules, not
   the file, so no verdicts went stale.
+- **P9-U10 `config/filters.yaml` is writable** (it's edited often). Its mode is back to
+  `rw-r--r--`, and CLAUDE.md no longer calls it read-only. `profile.md` stays read-only.
+  Git doesn't track the write bit, so nothing in the repo changes except the docs.

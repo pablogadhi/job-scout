@@ -196,6 +196,6 @@ uv run --env-file .env alembic revision --autogenerate -m "what changed"
 - Respect robots.txt, the per-source terms and rate limits in `sources.yaml`. Never implement
   anything under `skipped:` without asking. No LinkedIn, Indeed, Wellfound or Google Jobs.
 - When an endpoint in `sources.yaml` turns out wrong, fix the config and say so.
-- `config/filters.yaml` and `config/profile.md` are read-only on disk; ask before
-  editing them.
+- `config/profile.md` is read-only on disk; ask before editing it. `config/filters.yaml` is
+  writable like the other config files (changing what it looks for still needs asking).
 - Style: ruff (line length 100), type hints everywhere, `from __future__ import annotations` in `src/`.
