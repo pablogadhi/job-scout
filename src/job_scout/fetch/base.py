@@ -36,7 +36,7 @@ class FetchContext:
     budget: RequestBudget
     now: datetime
     last_success_at: datetime | None = None
-    env: Mapping[str, str] = field(default_factory=dict)
+    environ: Mapping[str, str] = field(default_factory=dict)
     skipped_items: int = 0
     # ats_seed sources only: the company boards to poll, and each one's outcome
     # (slug -> None for success, else the error), which the runner stores.

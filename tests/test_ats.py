@@ -1,6 +1,8 @@
 """ATS seed, board detection, board polling and `ats detect` (synthetic data, no network)."""
 
 import csv
+import io
+import tarfile
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -87,12 +89,12 @@ def test_parse_seed_and_filter(app_config: AppConfig) -> None:
     assert len(companies) == 7  # broken.md (no frontmatter) and README.md skipped
     quetzal = next(c for c in companies if c.slug == "quetzal-labs")
     assert quetzal == SeedCompany(
-        "quetzal-labs",
-        "Quetzal Labs",
-        "https://quetzal-labs.example/",
-        "https://boards.greenhouse.io/quetzallabs",
-        "worldwide",
-        "fully-remote",
+        slug="quetzal-labs",
+        name="Quetzal Labs",
+        website="https://quetzal-labs.example/",
+        careers_url="https://boards.greenhouse.io/quetzallabs",
+        region="worldwide",
+        remote_policy="fully-remote",
     )
     source = app_config.sources.get("remoteintech")
     kept = keep(companies, source.seed_regions, source.seed_remote_policies)
@@ -117,6 +119,25 @@ def test_seed_urls_are_cleaned(raw: str, clean: str) -> None:
     text = f"---\ntitle: Acme\nslug: acme\ncareers_url: {raw}\nregion: worldwide\n---\n"
     parsed = parse_company("acme.md", text)
     assert parsed is not None and parsed.careers_url == clean
+
+
+def test_malformed_seed_file_is_skipped(caplog: pytest.LogCaptureFixture) -> None:
+    files = {
+        "good.md": "---\ntitle: Good Co\nslug: Good-Co\ncareers_url: https://good.example/jobs\n---\n",
+        "blank-title.md": "---\ntitle: '  '\nregion: worldwide\n---\n",
+        "listed.md": "---\ntitle: Listed\ncareers_url: [https://a.example, https://b.example]\n---\n",
+    }
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode="w:gz") as tar:
+        for name, text in files.items():
+            data = text.encode()
+            info = tarfile.TarInfo(f"remote-jobs-abc/src/companies/{name}")
+            info.size = len(data)
+            tar.addfile(info, io.BytesIO(data))
+    companies = {c.slug: c for c in parse_seed(buffer.getvalue())}
+    assert set(companies) == {"good-co", "blank-title"}
+    assert companies["blank-title"].name == "blank-title"  # falls back to the slug
+    assert "listed.md" in caplog.text  # a list where a URL belongs: logged and skipped
 
 
 # --- detection -----------------------------------------------------------------------------
@@ -308,11 +329,7 @@ def test_seed_changes_and_watchlist_removal(
     with session_factory.begin() as session:
         changes = upsert_seed(
             session,
-            [
-                SeedCompany(
-                    "acme", "Acme", None, "https://acme.example/jobs", "worldwide", "fully-remote"
-                )
-            ],
+            [company("acme", name="Acme", careers_url="https://acme.example/jobs")],
             NOW,
         )
     assert (changes.added, changes.updated, changes.dropped) == (0, 1, 1)

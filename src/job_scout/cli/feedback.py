@@ -12,6 +12,7 @@ from rich.markup import escape
 from rich.table import Table
 
 from job_scout.cli.common import console, err_console, fail, load, open_db
+from job_scout.db.models import Vote
 from job_scout.feedback.examples import Example
 from job_scout.feedback.links import SecretError, read_secret
 from job_scout.feedback.report import feedback_stats
@@ -109,7 +110,7 @@ def _judgment_rows(title: str, examples: list[Example]) -> Table:
         score = "-" if e.overall_score is None else str(e.overall_score)
         table.add_row(
             str(e.job_id),
-            "👍" if e.vote == "up" else "👎",
+            "👍" if e.vote == Vote.UP else "👎",
             score + (" dq" if e.disqualified else ""),
             escape(f"{e.title} - {e.company or '?'}"),
             escape(e.reason or ""),

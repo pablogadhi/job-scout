@@ -128,7 +128,7 @@ class FeedbackApp:
                 "disqualified": bool(result and result.disqualified),
                 "summary": result.summary if result else None,
                 "previous": previous,
-                "vote": vote if vote in ("up", "down") else (previous.vote if previous else ""),
+                "vote": vote if vote in set(Vote) else (previous.vote if previous else ""),
                 "reason": (previous.reason if previous else None) or "",
                 "signature": signature,
                 "max_reason": MAX_REASON_CHARS,

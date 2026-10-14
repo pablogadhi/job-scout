@@ -9,7 +9,7 @@ from datetime import datetime
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
-from job_scout.db.models import Job, SalaryPeriod
+from job_scout.db.models import Job
 from job_scout.fetch.models import Posting
 from job_scout.fetch.normalize import dedupe_key, normalize_company, normalize_title
 
@@ -66,8 +66,7 @@ def store_postings(
             continue
         job = Job(
             source_id=source_id,
-            **posting.model_dump(exclude={"salary_period"}),
-            salary_period=SalaryPeriod(posting.salary_period) if posting.salary_period else None,
+            **posting.model_dump(),
             company_normalized=normalize_company(posting.company),
             title_normalized=normalize_title(posting.title),
             first_seen_at=now,

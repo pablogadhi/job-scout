@@ -56,6 +56,7 @@ uv run --env-file .env alembic revision --autogenerate -m "what changed"
 - `src/job_scout/config/`: Pydantic models for the four config files. `extra="forbid"`
   everywhere, so typos fail at startup with exit code 2. `profile.md` is validated for its
   `## Output format` JSON block and hashed (SHA-256 of the raw bytes = `profile_hash`).
+  `secrets.py`: `secret(environ, name)`, the one way to read a secret.
 - `src/job_scout/db/`: SQLAlchemy 2.0 typed ORM models (`models.py`), engine with SQLite
   pragmas (`__init__.py`), `UTCDateTime` type (`types.py`). `groups.py`: duplicate groups
   (canonical job + linked copies) and their combined locations. Anything that judges a job
@@ -131,7 +132,16 @@ uv run --env-file .env alembic revision --autogenerate -m "what changed"
   elements (`scoring/prompt.py`) without changing `profile_hash`, so votes never make scores
   stale; `scoring_calls.feedback_job_ids` records which were sent. Posting-derived text in a
   judgment is untrusted, like a posting.
-- **Pydantic for input, SQLAlchemy for storage.** Keep them separate (no SQLModel).
+- **Pydantic for data from outside, dataclasses for values our code builds, SQLAlchemy for
+  storage.** Pydantic: config files, normalized postings (`Posting`, which every source and
+  ATS mapper builds; third-party payloads aren't modelled per source), the remoteintech seed
+  (`SeedCompany`), Claude's replies (`ScoreResult`, the CLI's JSON envelope). Dataclasses:
+  boards, groups, outcomes, reports (frozen for values, mutable for accumulators). Keep
+  Pydantic and SQLAlchemy separate (no SQLModel).
+- **One definition per set of allowed values.** The StrEnums in `db/models.py` (`Backend`,
+  `ScoringMode`, `SalaryPeriod`, `Vote`, statuses) are used by settings and `Posting` too;
+  compare against members (`Vote.UP`), not string literals. A `Literal` alias is defined
+  once and imported (`PrefilterMode` in `config/sources.py`).
 - **Settings precedence:** CLI flag > env var > `settings.yaml` > built-in default.
   Env vars: `JOB_SCOUT_` prefix, `__` between levels (`JOB_SCOUT_SCORING__MODES__DAILY__CLI__MAX_CALLS`).
   Short aliases `JOB_SCOUT_BACKEND` and `JOB_SCOUT_MODEL` win over the long forms. Flags reach
@@ -176,7 +186,9 @@ uv run --env-file .env alembic revision --autogenerate -m "what changed"
   the first copy. Postings missing a key field (e.g. no company) never merge.
 - **Secrets:** `CLAUDE_CODE_OAUTH_TOKEN` (cli backend) and `ANTHROPIC_API_KEY` (api backend)
   come from the environment, never from files in git. The API key must never reach the
-  `claude` subprocess.
+  `claude` subprocess. Read every secret with `config.secrets.secret()` (a `SecretStr`, or
+  None when unset or blank) and call `get_secret_value()` only where it's handed over.
+  The environment mapping is called `environ` everywhere.
 - Respect robots.txt, the per-source terms and rate limits in `sources.yaml`. Never implement
   anything under `skipped:` without asking. No LinkedIn, Indeed, Wellfound or Google Jobs.
 - When an endpoint in `sources.yaml` turns out wrong, fix the config and say so.

@@ -13,6 +13,7 @@ from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
 from job_scout.ats.fetcher import AtsFetcher
+from job_scout.config.secrets import secret
 from job_scout.fetch.base import (
     FeedEntry,
     FetchContext,
@@ -209,10 +210,10 @@ FINDWORK_MAX_PAGES = 5
 
 
 def _findwork_pages(ctx: FetchContext, url: str) -> Iterator[Any]:
-    key = ctx.env.get(ctx.source.auth_env or "")
-    if not key:
+    key = secret(ctx.environ, ctx.source.auth_env or "")
+    if key is None:
         raise FetchError(f"{ctx.source.auth_env} is not set")
-    headers = {"Authorization": f"Token {key}"}
+    headers = {"Authorization": f"Token {key.get_secret_value()}"}
     next_url: str | None = url
     for _ in range(FINDWORK_MAX_PAGES):
         if not next_url:

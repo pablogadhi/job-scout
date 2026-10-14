@@ -11,6 +11,7 @@ from pydantic import Field, PositiveFloat, PositiveInt, field_validator, model_v
 from job_scout.config.settings import StrictModel
 
 Method = Literal["api", "rss", "scrape", "ats_seed"]
+PrefilterMode = Literal["full", "remote_mention_only"]
 Checked = date | Literal["unverified"]
 
 
@@ -44,7 +45,7 @@ class SourceConfig(StrictModel):
     min_request_interval_seconds: PositiveFloat | None = None
     # full: all filters.yaml rules. remote_mention_only: free-text posts (HN comments) with
     # no real title only need to mention "remote"; Claude parses the rest.
-    prefilter: Literal["full", "remote_mention_only"] = "full"
+    prefilter: PrefilterMode = "full"
     # method ats_seed only: which seed companies to keep (empty keeps all).
     seed_regions: list[str] = []
     seed_remote_policies: list[str] = []

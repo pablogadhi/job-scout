@@ -138,7 +138,7 @@ def test_sources_that_cannot_run_are_skipped(
                 session_factory,
                 http,
                 source_ids=["findwork", "remoteintech", "nodesk"],
-                env={},
+                environ={},
             )
         )
     assert outcomes["findwork"].reason == "FINDWORK_API_KEY is not set"

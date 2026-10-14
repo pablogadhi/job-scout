@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 
 from job_scout.config import AppConfig
 from job_scout.db.groups import load_groups
-from job_scout.db.models import Job, PrefilterResult
+from job_scout.db.models import Backend, Job, PrefilterResult
 from job_scout.db.types import utcnow
 from job_scout.feedback.examples import select_examples
 from job_scout.scoring.backends.base import CallRequest, Scorer
@@ -33,7 +33,7 @@ from job_scout.scoring.schema import ScoreResult, output_json_schema
 class ConfigSpec:
     """'backend:model:postings_per_call[:effort]', e.g. 'api:claude-haiku-5-5:1:low'."""
 
-    backend: str
+    backend: Backend
     model: str
     size: int
     effort: str | None = None
@@ -41,9 +41,11 @@ class ConfigSpec:
     @classmethod
     def parse(cls, text: str) -> ConfigSpec:
         parts = text.strip().split(":")
-        if len(parts) not in (3, 4) or parts[0] not in ("api", "cli") or not parts[2].isdigit():
+        if len(parts) not in (3, 4) or parts[0] not in set(Backend) or not parts[2].isdigit():
             raise ValueError(f"{text!r}: expected backend:model:postings_per_call[:effort]")
-        return cls(parts[0], parts[1], int(parts[2]), parts[3] if len(parts) == 4 else None)
+        return cls(
+            Backend(parts[0]), parts[1], int(parts[2]), parts[3] if len(parts) == 4 else None
+        )
 
     @property
     def name(self) -> str:
@@ -59,6 +61,26 @@ class Configuration:
 
 
 @dataclass
+class CallDetail:
+    """One calibration call, saved in the report so failures can be inspected later."""
+
+    postings: int
+    status: str
+    error: str | None
+    returned: int | None  # results in the reply; None when it had no results list
+    input_tokens: int | None
+    output_tokens: int | None
+    cost_usd: float | None
+    seconds: float
+    extra: dict[str, Any]
+    valid: int = 0
+    rejected: int = 0
+    first_rejection: str | None = None
+    unknown_ids: list[int] = field(default_factory=list)
+    missing_ids: list[int] = field(default_factory=list)
+
+
+@dataclass
 class ConfigResult:
     name: str
     scores: dict[int, int] = field(default_factory=dict)
@@ -69,7 +91,7 @@ class ConfigResult:
     seconds: float = 0.0
     input_tokens: int = 0
     output_tokens: int = 0  # includes thinking tokens
-    calls_detail: list[dict[str, Any]] = field(default_factory=list)  # one entry per call
+    calls_detail: list[CallDetail] = field(default_factory=list)
 
 
 @dataclass
@@ -151,22 +173,17 @@ def _score_with(
             if reply.status == "ok" and isinstance(reply.payload, dict)
             else None
         )
-        detail: dict[str, Any] = {
-            "postings": len(chunk),
-            "status": reply.status,
-            "error": reply.error,
-            "returned": len(items) if isinstance(items, list) else None,
-            "valid": 0,
-            "rejected": 0,
-            "first_rejection": None,
-            "unknown_ids": [],
-            "missing_ids": [],
-            "input_tokens": reply.input_tokens,
-            "output_tokens": reply.output_tokens,
-            "cost_usd": reply.cost_usd,
-            "seconds": round(time.monotonic() - call_started, 1),
-            "extra": reply.extra,
-        }
+        detail = CallDetail(
+            postings=len(chunk),
+            status=reply.status,
+            error=reply.error,
+            returned=len(items) if isinstance(items, list) else None,
+            input_tokens=reply.input_tokens,
+            output_tokens=reply.output_tokens,
+            cost_usd=reply.cost_usd,
+            seconds=round(time.monotonic() - call_started, 1),
+            extra=reply.extra,
+        )
         result.calls_detail.append(detail)
         if not isinstance(items, list):
             result.failed_calls += 1
@@ -178,16 +195,16 @@ def _score_with(
             try:
                 parsed = ScoreResult.model_validate(item)
             except ValidationError as exc:
-                detail["rejected"] += 1
-                detail["first_rejection"] = detail["first_rejection"] or str(exc)[:500]
+                detail.rejected += 1
+                detail.first_rejection = detail.first_rejection or str(exc)[:500]
                 continue
             if parsed.job_id not in wanted:
-                detail["unknown_ids"].append(parsed.job_id)
+                detail.unknown_ids.append(parsed.job_id)
             elif parsed.job_id not in result.scores:
-                detail["valid"] += 1
+                detail.valid += 1
                 result.scores[parsed.job_id] = parsed.overall_score
                 result.summaries[parsed.job_id] = parsed.summary
-        detail["missing_ids"] = sorted(wanted - result.scores.keys())
+        detail.missing_ids = sorted(wanted - result.scores.keys())
     result.seconds = round(time.monotonic() - started, 1)
     return result
 

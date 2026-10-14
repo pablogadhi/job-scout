@@ -93,7 +93,7 @@ def _salary(minimum: Any, maximum: Any, currency: Any, period: str | None) -> Sa
 # `content` is HTML with its entities escaped (html_to_text does both passes).
 
 
-def _greenhouse(job: dict[str, Any], board: Board) -> Posting:
+def _map_greenhouse(job: dict[str, Any], board: Board) -> Posting:
     content = job.get("content")
     description = html_to_text(html.unescape(content) if content else None)  # always escaped
     offices = [o.get("name") for o in job.get("offices") or []]
@@ -124,7 +124,7 @@ _LEVER_PERIODS = {
 }
 
 
-def _lever(job: dict[str, Any], board: Board) -> Posting:
+def _map_lever(job: dict[str, Any], board: Board) -> Posting:
     categories = job.get("categories") or {}
     lists = [
         f"{item.get('text', '')}\n{html_to_text(item.get('content')) or ''}"
@@ -192,7 +192,7 @@ def _ashby_salary(job: dict[str, Any]) -> Salary | None:
     return None
 
 
-def _ashby(job: dict[str, Any], board: Board) -> Posting | None:
+def _map_ashby(job: dict[str, Any], board: Board) -> Posting | None:
     if job.get("isListed") is False:
         return None
     country = ((job.get("address") or {}).get("postalAddress") or {}).get("addressCountry")
@@ -223,7 +223,7 @@ def _ashby(job: dict[str, Any], board: Board) -> Posting | None:
 # GET apply.workable.com/api/v1/widget/accounts/{account}?details=true -> {"jobs": [...]}
 
 
-def _workable(job: dict[str, Any], board: Board) -> Posting:
+def _map_workable(job: dict[str, Any], board: Board) -> Posting:
     locations = [
         ", ".join(p for p in (loc.get("city"), loc.get("region"), loc.get("country")) if p)
         for loc in job.get("locations") or []
@@ -257,7 +257,7 @@ _RECRUITEE_PERIODS = {
 }
 
 
-def _recruitee(job: dict[str, Any], board: Board) -> Posting | None:
+def _map_recruitee(job: dict[str, Any], board: Board) -> Posting | None:
     if job.get("status", "published") != "published":
         return None
     workplace = _join(
@@ -322,13 +322,13 @@ PLATFORMS: dict[str, Platform] = {
             rf"boards-api\.greenhouse\.io/v1/boards/{_TOKEN}",
         ),
         _list("jobs"),
-        _greenhouse,
+        _map_greenhouse,
     ),
     "lever": Platform(
         "lever",
         _patterns(rf"jobs\.lever\.co/{_TOKEN}", rf"api\.lever\.co/v0/postings/{_TOKEN}"),
         _list(None),
-        _lever,
+        _map_lever,
     ),
     "ashby": Platform(
         "ashby",
@@ -336,7 +336,7 @@ PLATFORMS: dict[str, Platform] = {
             rf"jobs\.ashbyhq\.com/{_TOKEN}", rf"api\.ashbyhq\.com/posting-api/job-board/{_TOKEN}"
         ),
         _list("jobs"),
-        _ashby,
+        _map_ashby,
     ),
     "workable": Platform(
         "workable",
@@ -345,12 +345,12 @@ PLATFORMS: dict[str, Platform] = {
             r"//([A-Za-z0-9-]+)\.workable\.com",
         ),
         _list("jobs"),
-        _workable,
+        _map_workable,
     ),
     "recruitee": Platform(
         "recruitee",
         _patterns(r"//([A-Za-z0-9-]+)\.recruitee\.com"),
         _list("offers"),
-        _recruitee,
+        _map_recruitee,
     ),
 }

@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from job_scout.ats.store import boards as ats_boards
 from job_scout.ats.store import record_polls
 from job_scout.config import AppConfig, SourceConfig
+from job_scout.config.secrets import secret
 from job_scout.db.models import Source, SourceRun, SourceRunKind, SourceRunStatus
 from job_scout.db.types import utcnow
 from job_scout.fetch.base import FetchContext
@@ -62,7 +63,7 @@ def _skip_reason(
     state: Source,
     *,
     config: AppConfig,
-    env: Mapping[str, str],
+    environ: Mapping[str, str],
     now: datetime,
     respect_interval: bool,
 ) -> str | None:
@@ -70,7 +71,7 @@ def _skip_reason(
         return f"{NOT_YET[source.method]} not implemented yet"
     if source.id not in FETCHERS:
         return "no fetcher registered"
-    if source.auth_env and not env.get(source.auth_env):
+    if source.auth_env and secret(environ, source.auth_env) is None:
         return f"{source.auth_env} is not set"
     if source.method == "ats_seed" and not ats_boards(session, config.sources.ats_platforms):
         return "no company boards yet: run `job-scout ats detect`"
@@ -105,14 +106,16 @@ def run_fetch(
     tier: int | None = None,
     force: bool = False,
     probe: bool = False,
-    env: Mapping[str, str] | None = None,
+    environ: Mapping[str, str] | None = None,
 ) -> list[SourceOutcome]:
     """Fetch each selected source and store its postings (or, with probe, only count them)."""
-    env = env if env is not None else {}
+    environ = environ if environ is not None else {}
     outcomes: list[SourceOutcome] = []
     for source in select_sources(config, source_ids, tier):
         outcomes.append(
-            _run_one(config, session_factory, http, source, force=force, probe=probe, env=env)
+            _run_one(
+                config, session_factory, http, source, force=force, probe=probe, environ=environ
+            )
         )
     return outcomes
 
@@ -125,7 +128,7 @@ def _run_one(
     *,
     force: bool,
     probe: bool,
-    env: Mapping[str, str],
+    environ: Mapping[str, str],
 ) -> SourceOutcome:
     now = utcnow()
     with session_factory.begin() as session:
@@ -136,7 +139,7 @@ def _run_one(
             source,
             state,
             config=config,
-            env=env,
+            environ=environ,
             now=now,
             respect_interval=not (force or probe),
         )
@@ -155,7 +158,7 @@ def _run_one(
         budget=budget,
         now=now,
         last_success_at=last_success_at,
-        env=env,
+        environ=environ,
         boards=boards,
     )
     outcome = SourceOutcome(source.id, "ok")

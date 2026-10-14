@@ -63,9 +63,9 @@ def open_db(config: AppConfig) -> sessionmaker[Session]:
 
 
 def scoring_overrides(backend: Backend | None, model: str | None) -> dict[str, Any]:
-    scoring: dict[str, str] = {}
+    scoring: dict[str, Any] = {}
     if backend is not None:
-        scoring["backend"] = backend.value
+        scoring["backend"] = backend
     if model is not None:
         scoring["model"] = model
     return {"scoring": scoring} if scoring else {}

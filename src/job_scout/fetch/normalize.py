@@ -124,7 +124,7 @@ class Salary:
     min: float | None
     max: float | None
     currency: str | None
-    period: str | None  # hour | day | week | month | year, or None when unclear
+    period: str | None  # a SalaryPeriod value, or None when unclear (Posting validates it)
 
 
 _CURRENCY_SYMBOLS = {"$": "USD", "€": "EUR", "£": "GBP", "R$": "BRL", "C$": "CAD", "A$": "AUD"}

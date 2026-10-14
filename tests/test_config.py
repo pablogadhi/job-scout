@@ -137,3 +137,13 @@ def test_missing_file_fails(config_dir: Path) -> None:
     (config_dir / "filters.yaml").unlink()
     with pytest.raises(ConfigError, match=r"filters\.yaml"):
         load_config(config_dir)
+
+
+def test_secret_reads_wraps_and_strips() -> None:
+    from job_scout.config.secrets import secret
+
+    assert secret({}, "X") is None
+    assert secret({"X": "   "}, "X") is None  # blank counts as unset
+    value = secret({"X": " s3cr3t-value\n"}, "X")
+    assert value is not None and value.get_secret_value() == "s3cr3t-value"
+    assert "s3cr3t" not in repr(value) and "s3cr3t" not in str(value)

@@ -15,7 +15,8 @@ from sqlalchemy import select
 from job_scout.ats.store import counts as ats_counts
 from job_scout.cli.common import SourceOpt, TierOpt, console, fail, load, open_db
 from job_scout.config import AppConfig, SourceConfig
-from job_scout.db.models import Source, SourceRun, SourceRunKind
+from job_scout.config.secrets import secret
+from job_scout.db.models import AtsStatus, Source, SourceRun, SourceRunKind, SourceRunStatus
 from job_scout.db.types import utcnow
 from job_scout.fetch.http import HttpClient, Recorder
 from job_scout.fetch.runner import NOT_YET, SourceOutcome, run_fetch
@@ -103,7 +104,7 @@ def check(
             f"[yellow]{checked}[/yellow]" if checked == "unverified" else checked,
             _age(state.last_success_at if state else None, now),
             str(state.last_item_count) if state and state.last_item_count is not None else "",
-            str(last_run.items_new) if last_run and last_run.status == "ok" else "",
+            str(last_run.items_new) if last_run and last_run.status == SourceRunStatus.OK else "",
             _health(source, state, last_run),
         )
     console.print(table)
@@ -118,10 +119,10 @@ def check(
     with session_factory() as session:
         boards = ats_counts(session)
     if boards:
-        ok = {ats: n for (status, ats), n in boards.items() if status == "ok"}
-        others = {status: 0 for status, _ in boards if status != "ok"}
+        ok = {ats: n for (status, ats), n in boards.items() if status == AtsStatus.OK}
+        others = {status: 0 for status, _ in boards if status != AtsStatus.OK}
         for (status, _), n in boards.items():
-            if status != "ok":
+            if status != AtsStatus.OK:
                 others[status] += n
         console.print(
             f"company boards: {sum(ok.values())} polled "
@@ -158,7 +159,7 @@ def fetch_sources(
             tier=tier,
             force=force,
             probe=probe,
-            env=os.environ,
+            environ=os.environ,
         )
 
 
@@ -200,7 +201,7 @@ def _age(when: datetime | None, now: datetime) -> str:
 def _health(source: SourceConfig, state: Source | None, last_run: SourceRun | None) -> str:
     if source.method in NOT_YET:
         return f"[dim]{NOT_YET[source.method]}[/dim]"
-    if source.auth_env and not os.environ.get(source.auth_env):
+    if source.auth_env and secret(os.environ, source.auth_env) is None:
         return f"[yellow]needs {source.auth_env}[/yellow]"
     if state is None or state.last_run_at is None:
         return "[dim]never run[/dim]"

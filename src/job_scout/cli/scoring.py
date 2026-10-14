@@ -26,7 +26,7 @@ from job_scout.cli.common import (
     scoring_overrides,
 )
 from job_scout.config import AppConfig
-from job_scout.db.models import Backend, ScoringMode
+from job_scout.db.models import Backend, ScoringMode, StopReason
 from job_scout.db.types import utcnow
 from job_scout.scoring.backends import PlanOnlyScorer, make_scorer
 from job_scout.scoring.calibrate import (
@@ -162,16 +162,16 @@ def calibrate(
             specs = [ConfigSpec.parse(x) for x in configs.split(",") if x.strip()]
         else:
             cli_sizes = [int(x) for x in sizes.split(",") if x.strip()]
-            specs = [ConfigSpec("api", scoring.model, 1, scoring.effort)] + [
-                ConfigSpec("cli", scoring.model, n, scoring.effort) for n in cli_sizes
+            specs = [ConfigSpec(Backend.API, scoring.model, 1, scoring.effort)] + [
+                ConfigSpec(Backend.CLI, scoring.model, n, scoring.effort) for n in cli_sizes
             ]
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
     if len(specs) < 2:
         raise typer.BadParameter("need a reference and at least one candidate")
     calls = estimate_calls(sample, {s.name: s.size for s in specs})
-    api_calls = sum(calls[s.name] for s in specs if s.backend == "api")
-    cli_calls = sum(calls[s.name] for s in specs if s.backend == "cli")
+    api_calls = sum(calls[s.name] for s in specs if s.backend == Backend.API)
+    cli_calls = sum(calls[s.name] for s in specs if s.backend == Backend.CLI)
     console.print(
         f"{sample} job groups: {api_calls} API requests (billed) and "
         f"{cli_calls} CLI prompts (Pro usage)"
@@ -200,11 +200,11 @@ def calibrate(
         result = run_calibration(config, session, ids, reference, candidates)
     for configuration in (result.reference, *result.candidates):
         for n, call in enumerate(configuration.calls_detail, 1):
-            if call["status"] != "ok" or call["valid"] < call["postings"]:
+            if call.status != "ok" or call.valid < call.postings:
                 console.print(
-                    f"[yellow]{escape(configuration.name)} call {n}: {call['status']}, "
-                    f"{call['valid']}/{call['postings']} valid, {call['rejected']} rejected: "
-                    f"{escape(str(call['error'] or call['first_rejection'] or ''))[:300]}[/yellow]"
+                    f"[yellow]{escape(configuration.name)} call {n}: {call.status}, "
+                    f"{call.valid}/{call.postings} valid, {call.rejected} rejected: "
+                    f"{escape(str(call.error or call.first_rejection or ''))[:300]}[/yellow]"
                 )
     path = save(result, config.settings.paths.reports)
     for candidate in result.candidates:
@@ -253,7 +253,7 @@ def run_scoring(
     try:
         # A dry run only plans, so it needs no credentials.
         scorer = (
-            PlanOnlyScorer(Backend(scoring.backend), scoring.model)
+            PlanOnlyScorer(scoring.backend, scoring.model)
             if dry_run
             else make_scorer(scoring, scoring.backend, os.environ)
         )
@@ -291,12 +291,12 @@ def run_scoring(
         )
         return report
     stop = report.stop_reason.value if report.stop_reason else "?"
-    color = "green" if stop == "done" else "yellow"
+    color = "green" if report.stop_reason == StopReason.DONE else "yellow"
     console.print(
         f"run #{report.run_id}: {report.calls_made} calls, {report.scored} scored, "
         f"{report.failed} failed, {report.pending_left} still pending, "
         f"est. ${report.cost_usd:.4f}"
-        f"{' (API-equivalent, not billed on Pro)' if scoring.backend == 'cli' else ''}; "
+        f"{' (API-equivalent, not billed on Pro)' if scoring.backend == Backend.CLI else ''}; "
         f"stop reason: [{color}]{stop}[/{color}]"
     )
     if report.batch_id:
@@ -314,7 +314,7 @@ def _limits(
     scoring = config.settings.scoring
     try:
         limits = scoring.limits(
-            mode.value,
+            mode,
             postings_per_call=postings_per_call,
             max_calls=max_calls,
             max_input_tokens_per_call=max_input_tokens,

@@ -34,8 +34,8 @@ from pydantic_settings import (
     YamlConfigSettingsSource,
 )
 
-Backend = Literal["cli", "api"]
-Mode = Literal["daily", "backlog"]
+from job_scout.db.models import Backend, ScoringMode
+
 LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR"]
 
 ENV_PREFIX = "JOB_SCOUT_"
@@ -128,7 +128,7 @@ Effort = Literal["low", "medium", "high", "xhigh", "max"]
 
 
 class Scoring(StrictModel):
-    backend: Backend = "cli"
+    backend: Backend = Backend.CLI
     model: str = "claude-haiku-5-5"
     # None: don't send it (Haiku 4.5 rejects it; Haiku 5.5 then defaults to medium).
     effort: Effort | None = None
@@ -139,7 +139,7 @@ class Scoring(StrictModel):
     api: ApiOptions = ApiOptions()
 
     def limits(
-        self, mode: Mode, backend: Backend | None = None, **overrides: Any
+        self, mode: ScoringMode, backend: Backend | None = None, **overrides: Any
     ) -> CliLimits | ApiLimits:
         """Batching limits for a mode and backend, with per-run flag overrides applied.
 

@@ -18,6 +18,8 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
+
 from job_scout.config.settings import CliOptions
 from job_scout.db.models import Backend
 from job_scout.scoring.backends.base import CallRequest, CallResult
@@ -117,58 +119,89 @@ class CliScorer:
         return parse_output(proc.returncode, proc.stdout, proc.stderr, duration_ms)
 
 
+class _Usage(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    input_tokens: int | None = None
+    cache_creation_input_tokens: int | None = None
+    cache_read_input_tokens: int | None = None
+    output_tokens: int | None = None
+
+    @property
+    def total_input(self) -> int | None:
+        parts = (self.input_tokens, self.cache_creation_input_tokens, self.cache_read_input_tokens)
+        values = [v for v in parts if v is not None]
+        return sum(values) if values else None
+
+
+class _CliReply(BaseModel):
+    """The `--output-format json` reply. Every field is optional and unknown ones are
+    ignored: the CLI adds fields between releases."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    result: str | None = None
+    is_error: bool = False
+    subtype: str | None = None
+    stop_reason: str | None = None
+    session_id: str | None = None
+    num_turns: int | None = None
+    total_cost_usd: float | None = None
+    structured_output: Any = None
+    usage: _Usage | None = None
+    model_usage: dict[str, Any] | None = Field(None, alias="modelUsage")
+
+
 def parse_output(returncode: int, stdout: str, stderr: str, duration_ms: int) -> CallResult:
-    data: dict[str, Any] | None = None
+    reply: _CliReply | None = None
+    invalid: str | None = None
     try:
         parsed = json.loads(stdout) if stdout.strip() else None
-        data = parsed if isinstance(parsed, dict) else None
+        if isinstance(parsed, dict):
+            reply = _CliReply.model_validate(parsed)
     except json.JSONDecodeError:
-        data = None
+        pass
+    except ValidationError as exc:
+        invalid = "; ".join(f"{'.'.join(map(str, e['loc']))}: {e['msg']}" for e in exc.errors())
     text = " ".join(
         filter(
-            None, [str((data or {}).get("result") or ""), stdout if data is None else "", stderr]
+            None, [(reply.result or "") if reply else "", stdout if reply is None else "", stderr]
         )
     )
 
-    usage = (data or {}).get("usage") or {}
-    common = {
-        "input_tokens": _tokens(
-            usage, "input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"
-        ),
-        "output_tokens": usage.get("output_tokens"),
-        "cost_usd": (data or {}).get("total_cost_usd"),
+    usage = reply.usage if reply and reply.usage else _Usage()
+    common: dict[str, Any] = {
+        "input_tokens": usage.total_input,
+        "output_tokens": usage.output_tokens,
+        "cost_usd": reply.total_cost_usd if reply else None,
         "duration_ms": duration_ms,
         "exit_code": returncode,
         "extra": {
-            "session_id": (data or {}).get("session_id"),
-            "subtype": (data or {}).get("subtype"),
-            "stop_reason": (data or {}).get("stop_reason"),
-            "num_turns": (data or {}).get("num_turns"),
+            "session_id": reply.session_id if reply else None,
+            "subtype": reply.subtype if reply else None,
+            "stop_reason": reply.stop_reason if reply else None,
+            "num_turns": reply.num_turns if reply else None,
             # Per-model token usage: shows whether the CLI also ran other models.
-            "model_usage": (data or {}).get("modelUsage"),
+            "model_usage": reply.model_usage if reply else None,
         },
     }
     if _USAGE_LIMIT.search(text):
         return CallResult("usage_limit", error=_short(text), **common)
-    if returncode != 0 or data is None or data.get("is_error"):
+    if invalid and returncode == 0:
+        return CallResult("invalid", error=_short(f"unexpected CLI reply: {invalid}"), **common)
+    if returncode != 0 or reply is None or reply.is_error:
         # `subtype` names the failure (e.g. error_max_turns) when `result` is empty.
-        subtype = (data or {}).get("subtype")
+        subtype = reply.subtype if reply else None
         reason = " ".join(filter(None, [subtype if subtype != "success" else None, text]))
         error = _short(reason, 1_500) or f"exit code {returncode}"
         return CallResult("error", error=f"{error} (exit code {returncode})", **common)
-    if data.get("stop_reason") == "refusal":
+    if reply.stop_reason == "refusal":
         return CallResult("refusal", error=_short(text), **common)
-    if data.get("stop_reason") == "max_tokens":
+    if reply.stop_reason == "max_tokens":
         return CallResult("truncated", error="output hit the token limit", **common)
-    output = data.get("structured_output")
-    if output is None:
+    if reply.structured_output is None:
         return CallResult("invalid", error="no structured_output in CLI response", **common)
-    return CallResult("ok", payload=output, **common)
-
-
-def _tokens(usage: Mapping[str, Any], *keys: str) -> int | None:
-    values = [int(v) for k in keys if (v := usage.get(k)) is not None]
-    return sum(values) if values else None
+    return CallResult("ok", payload=reply.structured_output, **common)
 
 
 def _short(text: str, limit: int = 500) -> str:

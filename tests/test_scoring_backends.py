@@ -128,6 +128,9 @@ def test_cli_invocation(app_config: AppConfig, tmp_path: Path) -> None:
         (0, cli_json(stop_reason="max_tokens"), "", "truncated"),
         (0, cli_json(stop_reason="refusal"), "", "refusal"),
         (0, "not json", "", "error"),
+        # Malformed fields fail the call, not the whole run (P9-B1).
+        (0, cli_json(usage={"input_tokens": "lots"}), "", "invalid"),
+        (0, cli_json(total_cost_usd="free"), "", "invalid"),
     ],
 )
 def test_parse_cli_output(returncode: int, stdout: str, stderr: str, status: str) -> None:
@@ -309,3 +312,11 @@ def test_batch_submit_poll_results(app_config: AppConfig) -> None:
     assert results["c0"].cost_usd == pytest.approx((3000 + 450 * 5) / 1e6 * 0.5)  # batch price
     assert results["c1"].status == "error"
     assert results["c2"].extra == {"retry_free": True}
+
+
+def test_cli_reply_with_extra_and_missing_fields() -> None:
+    stdout = json.dumps({"structured_output": {"results": []}, "new_field_in_v3": True})
+    result = parse_output(0, stdout, "", 10)
+    assert result.status == "ok" and result.input_tokens is None and result.cost_usd is None
+    bad = parse_output(0, cli_json(usage={"input_tokens": "lots"}), "", 10)
+    assert bad.error is not None and "usage.input_tokens" in bad.error

@@ -41,7 +41,7 @@ def fetch(
     http: HttpClient,
     source_id: str,
     *,
-    env: dict[str, str] | None = None,
+    environ: dict[str, str] | None = None,
     last_success_at: datetime | None = None,
 ) -> list[Posting]:
     source = app_config.sources.get(source_id)
@@ -51,7 +51,7 @@ def fetch(
         budget=RequestBudget(),
         now=NOW,
         last_success_at=last_success_at,
-        env=env or {},
+        environ=environ or {},
         boards=fixture_boards(app_config) if source.method == "ats_seed" else [],
     )
     with http:
@@ -279,7 +279,7 @@ def test_findwork_sends_token_and_follows_pages(
         )
 
     http = make_http({"https://findwork.dev/api/jobs/": handler})
-    postings = fetch(app_config, http, "findwork", env={"FINDWORK_API_KEY": "secret"})
+    postings = fetch(app_config, http, "findwork", environ={"FINDWORK_API_KEY": "secret"})
     assert [p.source_job_id for p in postings] == ["7", "8"]
     assert seen_auth == ["Token secret", "Token secret"]
     assert postings[0].remote_raw == "remote"

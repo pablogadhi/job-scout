@@ -15,6 +15,7 @@ from urllib.parse import urlencode
 
 from pydantic import SecretStr
 
+from job_scout.config.secrets import secret
 from job_scout.config.settings import Feedback as FeedbackSettings
 
 SECRET_ENV = "JOB_SCOUT_FEEDBACK_SECRET"
@@ -27,12 +28,12 @@ class SecretError(RuntimeError):
 
 def read_secret(environ: Mapping[str, str]) -> SecretStr:
     """Raise SecretError if the secret is unset or too short to sign with."""
-    value = environ.get(SECRET_ENV, "").strip()
-    if not value:
+    value = secret(environ, SECRET_ENV)
+    if value is None:
         raise SecretError(f"{SECRET_ENV} is not set (generate one with `openssl rand -hex 32`)")
-    if len(value) < MIN_SECRET_CHARS:
+    if len(value.get_secret_value()) < MIN_SECRET_CHARS:
         raise SecretError(f"{SECRET_ENV} is too short: use at least {MIN_SECRET_CHARS} characters")
-    return SecretStr(value)
+    return value
 
 
 def sign(secret: SecretStr, job_id: int) -> str:

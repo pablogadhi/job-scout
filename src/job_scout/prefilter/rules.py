@@ -21,14 +21,15 @@ import hashlib
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Literal, Protocol
+from typing import Protocol
 
 from job_scout.config.filters import FiltersConfig
+from job_scout.config.sources import PrefilterMode
+from job_scout.db.models import SalaryPeriod
 
 # Bump when the rule logic changes, so stored results are re-evaluated.
 PREFILTER_VERSION = 1
 
-PrefilterMode = Literal["full", "remote_mention_only"]
 
 _REMOTE_MENTION = re.compile(r"\bremote\b", re.IGNORECASE)
 
@@ -43,7 +44,7 @@ class JobLike(Protocol):
     salary_min: float | None
     salary_max: float | None
     salary_currency: str | None
-    salary_period: str | None
+    salary_period: SalaryPeriod | None
 
 
 @dataclass(frozen=True)
@@ -77,11 +78,6 @@ def _first_match(
     return None
 
 
-def _period_value(period: str) -> str:
-    # The ORM hands back a SalaryPeriod enum; Postings carry plain strings.
-    return getattr(period, "value", period)
-
-
 class Prefilter:
     def __init__(self, filters: FiltersConfig, modes: Mapping[str, PrefilterMode]) -> None:
         self.filters = filters
@@ -92,12 +88,12 @@ class Prefilter:
         self.location_allow = _compile(filters.location.allow_any)
         self.location_exclude = _compile(filters.location.exclude_any)
         salary = filters.salary
-        self.per_year = {
-            "hour": salary.hours_per_year,
-            "day": salary.hours_per_year / 8,
-            "week": salary.hours_per_year / 40,
-            "month": salary.months_per_year,
-            "year": 1,
+        self.per_year: dict[SalaryPeriod, float] = {
+            SalaryPeriod.HOUR: salary.hours_per_year,
+            SalaryPeriod.DAY: salary.hours_per_year / 8,
+            SalaryPeriod.WEEK: salary.hours_per_year / 40,
+            SalaryPeriod.MONTH: salary.months_per_year,
+            SalaryPeriod.YEAR: 1,
         }
 
     @property
@@ -117,7 +113,7 @@ class Prefilter:
         top = job.salary_max or job.salary_min
         if not top or not job.salary_period or job.salary_currency != self.filters.salary.currency:
             return None
-        return top * self.per_year[_period_value(job.salary_period)]
+        return top * self.per_year[job.salary_period]
 
     def evaluate(self, job: JobLike) -> Verdict:
         if self.modes.get(job.source_id, "full") == "remote_mention_only":

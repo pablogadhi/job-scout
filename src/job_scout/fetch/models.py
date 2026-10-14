@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator
 
+from job_scout.db.models import SalaryPeriod
 from job_scout.fetch.normalize import Salary
 
 
@@ -22,7 +23,7 @@ class Posting(BaseModel):
     salary_min: float | None = None
     salary_max: float | None = None
     salary_currency: str | None = Field(None, pattern=r"^[A-Z]{3}$")
-    salary_period: Literal["hour", "day", "week", "month", "year"] | None = None
+    salary_period: SalaryPeriod | None = None
     description_text: str | None = None
     tags: list[str] = []
     posted_at: AwareDatetime | None = None
@@ -46,8 +47,9 @@ class Posting(BaseModel):
     def with_salary(self, salary: Salary | None) -> Posting:
         if salary is None:
             return self
-        return self.model_copy(
-            update={
+        return Posting.model_validate(
+            {
+                **self.model_dump(),
                 "salary_min": salary.min,
                 "salary_max": salary.max,
                 "salary_currency": salary.currency,

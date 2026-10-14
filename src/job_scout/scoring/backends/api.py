@@ -16,6 +16,7 @@ from typing import Any
 
 import anthropic
 
+from job_scout.config.secrets import secret
 from job_scout.config.settings import ApiOptions, ModelPrices
 from job_scout.db.models import Backend
 from job_scout.scoring.backends.base import CallRequest, CallResult
@@ -93,10 +94,12 @@ class ApiScorer:
         self.effort = effort
         self.prices = options.prices.get(model)
         if client is None:
-            key = (environ or {}).get("ANTHROPIC_API_KEY")
-            if not key:
+            key = secret(environ or {}, "ANTHROPIC_API_KEY")
+            if key is None:
                 raise RuntimeError("ANTHROPIC_API_KEY is not set (needed by the api backend)")
-            client = anthropic.Anthropic(api_key=key, max_retries=options.max_retries)
+            client = anthropic.Anthropic(
+                api_key=key.get_secret_value(), max_retries=options.max_retries
+            )
         self.client: anthropic.Anthropic = client
 
     def params(self, request: CallRequest) -> dict[str, Any]:

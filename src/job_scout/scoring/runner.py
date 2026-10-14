@@ -20,6 +20,7 @@ from job_scout.config import AppConfig
 from job_scout.config.settings import ModelPrices
 from job_scout.db.groups import load_groups
 from job_scout.db.models import (
+    Backend,
     CallStatus,
     Run,
     Score,
@@ -131,7 +132,7 @@ class ScoringRunner:
                 session.rollback()
             report.planned_calls = [len(call) for call in plan]
             prices = self.config.settings.scoring.api.prices.get(self.scorer.model)
-            if self.scorer.backend == "api" and prices is not None:
+            if self.scorer.backend == Backend.API and prices is not None:
                 discount = self.config.settings.scoring.api.batch_discount
                 factor = discount if options.use_batches_api else 1.0
                 report.estimated_cost_usd = sum(self._estimate(c, prices, factor) for c in plan)
@@ -173,7 +174,7 @@ class ScoringRunner:
         self, report: RunReport, options: RunOptions, queue: deque[list[PostingInput]]
     ) -> None:
         max_spend = self.config.settings.scoring.api.max_spend_usd_per_run
-        is_api = self.scorer.backend == "api"
+        is_api = self.scorer.backend == Backend.API
         while queue:
             if report.calls_made >= options.limits.max_calls:
                 report.stop_reason = StopReason.MAX_CALLS

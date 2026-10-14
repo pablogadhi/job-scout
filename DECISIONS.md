@@ -1120,3 +1120,49 @@ features planned; Phase 7 (Tier 2 scrapers) and the Findwork key are still open.
   page and `explain` all load groups, so it sits next to the models it queries rather than
   in one stage's package. Imports only; no logic changed. The package root now holds
   `__init__.py`, `log.py` and the subpackages.
+- **P9-U5 Consistency pass.** You asked why fetched postings use Pydantic but ATS boards
+  don't, agreed to make the seed a Pydantic model, and asked for an audit of the whole
+  project for inconsistencies of that kind. (ATS board postings do use Pydantic: every
+  ATS mapper builds the same `Posting`. `Board` is a dataclass because our code builds it
+  from our own rows.) The rule is now written in CLAUDE.md: Pydantic for data from
+  outside, dataclasses for values our code builds, SQLAlchemy for storage.
+- **P9-D4 The remoteintech seed is a Pydantic model.** `SeedCompany` (frozen,
+  `extra="forbid"`) validates each company file's frontmatter. A file with the wrong type
+  in a field (a list where a URL belongs) is logged and skipped like malformed YAML,
+  instead of being turned into a string. Checked against the real seed downloaded to a
+  scratch directory: the old and new parsers return the same 884 companies, field for
+  field, with no warnings.
+- **P9-D5 The claude CLI's JSON reply is validated** (`_CliReply` in
+  `scoring/backends/cli.py`; every field optional, unknown fields ignored because the CLI
+  adds some between releases). See P9-B1.
+- **P9-D6 One definition per set of allowed values.** Settings use the `Backend` and
+  `ScoringMode` enums instead of their own Literals, which had the same name as the enum.
+  That removes the `Backend(scoring.backend)` and `.value` conversions. `Posting.salary_period`
+  is a `SalaryPeriod`, which removes two workarounds: the pre-filter's `_period_value()` ("the
+  ORM hands back an enum; Postings carry plain strings") and the conversion in
+  `fetch/store.py`. `Posting.with_salary` now validates (it used `model_copy`, which
+  doesn't). `PrefilterMode` is defined once, in `config/sources.py`. Calibrate's
+  `ConfigSpec.backend` is a `Backend`.
+- **P9-D7 Enum members instead of string literals** wherever a DB enum exists (source run
+  and board status, votes, backend, stop reason). In-memory statuses without a DB enum
+  (`SourceOutcome.status`, `CallStatusName`) stay typed Literals.
+- **P9-D8 One way to read secrets:** `config/secrets.secret(environ, name)` returns a
+  `SecretStr` (stripped; blank counts as unset) for the feedback secret, the SMTP token,
+  `ANTHROPIC_API_KEY` and `FINDWORK_API_KEY`, and for the "is it set" checks in fetching
+  and `sources check`. Before, the API key and the Findwork key were plain strings, and
+  the SMTP token wasn't stripped.
+- **P9-D9 Calibrate's per-call record is a `CallDetail` dataclass**, replacing a dict with
+  14 string keys. The saved JSON has the same keys.
+- **P9-D10 Naming:** the fetch package's `env` is now `environ`, like everywhere else; the
+  ATS mappers are `_map_greenhouse` etc., like the source mappers. Left alone:
+  `Calibration.diff_stats()` still returns a dict, because the CLI prints it as is and
+  changing it would change the output.
+
+### P9 Bugs found and fixed
+
+- **P9-B1 A malformed claude CLI reply could end the whole scoring run.** A non-numeric
+  token count made `int()` raise, and a string `total_cost_usd` broke the runner's cost
+  sum. Either one stopped the run with stop reason `error`, instead of failing one call
+  (which is retried once, split in half). Now that call is `invalid`, and its error
+  names the bad field. Not seen in practice (the CLI version is pinned), found in the P9-U5
+  audit.

@@ -10,9 +10,10 @@ import logging
 import re
 import tarfile
 from collections.abc import Iterable, Sequence
-from dataclasses import dataclass
+from typing import Any
 
 import yaml
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 log = logging.getLogger(__name__)
 
@@ -20,16 +21,6 @@ _COMPANY_FILE = re.compile(r"(?:^|/)src/companies/[^/]+\.md$")
 _FRONTMATTER = re.compile(r"\A---\s*\n(.*?)\n---\s*(?:\n|\Z)", re.S)
 MAX_FILE_BYTES = 256 * 1024
 MAX_FILES = 10_000
-
-
-@dataclass(frozen=True)
-class SeedCompany:
-    slug: str
-    name: str
-    website: str | None
-    careers_url: str | None
-    region: str | None
-    remote_policy: str | None
 
 
 def _text(value: object) -> str | None:
@@ -46,6 +37,34 @@ def _url(value: object) -> str | None:
     return text.rstrip(".,;)]") or None
 
 
+class SeedCompany(BaseModel):
+    """One company file's frontmatter, validated: the files are hand-written by many people."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    slug: str = Field(min_length=1)
+    name: str = Field(min_length=1)
+    website: str | None = None
+    careers_url: str | None = None
+    region: str | None = None
+    remote_policy: str | None = None
+
+    @field_validator("slug", mode="before")
+    @classmethod
+    def _slug(cls, value: Any) -> Any:
+        return value.strip().lower() if isinstance(value, str) else value
+
+    @field_validator("name", "region", "remote_policy", mode="before")
+    @classmethod
+    def _plain(cls, value: Any) -> Any:
+        return _text(value) if isinstance(value, str | int | float) else value
+
+    @field_validator("website", "careers_url", mode="before")
+    @classmethod
+    def _link(cls, value: Any) -> Any:
+        return _url(value) if isinstance(value, str) else value
+
+
 def parse_company(filename: str, text: str) -> SeedCompany | None:
     match = _FRONTMATTER.match(text)
     if not match:
@@ -53,15 +72,16 @@ def parse_company(filename: str, text: str) -> SeedCompany | None:
     data = yaml.safe_load(match.group(1))
     if not isinstance(data, dict):
         return None
-    slug = _text(data.get("slug")) or filename.rsplit("/", 1)[-1].removesuffix(".md")
-    name = _text(data.get("title")) or slug
+    slug, title = data.get("slug"), data.get("title")
+    if not (isinstance(slug, str) and slug.strip()):
+        slug = filename.rsplit("/", 1)[-1].removesuffix(".md")
     return SeedCompany(
-        slug=slug.lower(),
-        name=name,
-        website=_url(data.get("website")),
-        careers_url=_url(data.get("careers_url")),
-        region=_text(data.get("region")),
-        remote_policy=_text(data.get("remote_policy")),
+        slug=slug,
+        name=slug if title is None or (isinstance(title, str) and not title.strip()) else title,
+        website=data.get("website"),
+        careers_url=data.get("careers_url"),
+        region=data.get("region"),
+        remote_policy=data.get("remote_policy"),
     )
 
 
@@ -80,7 +100,7 @@ def parse_seed(tarball: bytes) -> list[SeedCompany]:
                 continue
             try:
                 company = parse_company(member.name, handle.read().decode("utf-8"))
-            except (UnicodeDecodeError, yaml.YAMLError) as exc:
+            except (UnicodeDecodeError, yaml.YAMLError, ValidationError) as exc:
                 log.warning("seed: skipped %s: %s", member.name, exc)
                 continue
             if company is None:

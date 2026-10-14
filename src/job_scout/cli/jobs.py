@@ -150,10 +150,9 @@ def explain(ctx: typer.Context, job_id: int) -> None:
 
         vote = get_vote(session, canonical.id)
         if vote is not None:
-            thumb = "up" if vote.vote == "up" else "down"
             reacted = f" to score {vote.overall_score}" if vote.overall_score is not None else ""
             console.print(
-                f"\n[bold]Your feedback[/bold]\n  thumbs {thumb}{reacted} "
+                f"\n[bold]Your feedback[/bold]\n  thumbs {vote.vote}{reacted} "
                 f"({vote.updated_at:%Y-%m-%d}){': ' + escape(vote.reason) if vote.reason else ''}"
             )
 
