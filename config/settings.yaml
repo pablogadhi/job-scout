@@ -57,7 +57,9 @@ scoring:
     timeout_seconds: 600
     # Auth: CLAUDE_CODE_OAUTH_TOKEN from `claude setup-token` (valid one year).
     # The subprocess gets an allowlisted environment: ANTHROPIC_* never reaches it.
-    token_created: null # YYYY-MM-DD; `status` and the digest warn 30 days before expiry
+    # YYYY-MM-DD; `status` and the digest warn 30 days before expiry. Usually set per
+    # machine with JOB_SCOUT_SCORING__CLI__TOKEN_CREATED.
+    token_created: null
 
   api:
     # Auth: ANTHROPIC_API_KEY, only ever passed to the API backend.
@@ -105,9 +107,9 @@ ats:
 
 feedback:
   # Thumbs up/down links in the digest open a page served by `job-scout feedback serve` (the
-  # compose service `feedback`). Links are signed with JOB_SCOUT_FEEDBACK_SECRET (env only).
-  # No links while base_url or the secret is unset. Override: JOB_SCOUT_FEEDBACK__BASE_URL
-  base_url: null # e.g. http://jobscout.lan:8765 (reachable from where you read the digest)
+  # compose service `feedback`). Two env vars, no settings here: the page's address as seen
+  # from where you read the digest, JOB_SCOUT_FEEDBACK__BASE_URL (e.g. http://jobscout.lan:8765),
+  # and the link-signing secret, JOB_SCOUT_FEEDBACK_SECRET. No links while either is unset.
   host: 127.0.0.1 # listening address; the compose service sets 0.0.0.0 in the container
   port: 8765
   prompt_examples: 8 # recent judgments added to the scoring prompt as examples (0: none)

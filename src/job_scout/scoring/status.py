@@ -19,7 +19,10 @@ TOKEN_WARN_BEFORE = timedelta(days=30)
 def token_warning(created: date | None, today: date) -> str | None:
     """A warning when CLAUDE_CODE_OAUTH_TOKEN expires within 30 days (or has expired)."""
     if created is None:
-        return "CLAUDE_CODE_OAUTH_TOKEN creation date unknown: set scoring.cli.token_created"
+        return (
+            "CLAUDE_CODE_OAUTH_TOKEN creation date unknown: set "
+            "JOB_SCOUT_SCORING__CLI__TOKEN_CREATED (scoring.cli.token_created)"
+        )
     expires = created + TOKEN_VALIDITY
     if today >= expires:
         return f"CLAUDE_CODE_OAUTH_TOKEN expired on {expires}: run `claude setup-token`"

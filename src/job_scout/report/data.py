@@ -20,6 +20,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from job_scout.config import AppConfig
+from job_scout.config.secrets import secret
 from job_scout.config.settings import Digest as DigestSettings
 from job_scout.db.groups import Group, load_groups
 from job_scout.db.models import Digest, Score, ScoreStatus, Source
@@ -204,7 +205,7 @@ def source_health(
                 consecutive_zero_runs=row.consecutive_zero_runs if row else 0,
                 missing_env=(
                     source.auth_env
-                    if source.auth_env and not environ.get(source.auth_env)
+                    if source.auth_env and secret(environ, source.auth_env) is None
                     else None
                 ),
             )

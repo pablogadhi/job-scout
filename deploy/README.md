@@ -33,8 +33,8 @@ sudo install -d -m 700 /etc/job-scout
 sudo install -m 600 /opt/job-scout/deploy/job-scout.env.example /etc/job-scout/job-scout.env
 sudoedit /etc/job-scout/job-scout.env
 
-# 3. In /opt/job-scout/config/settings.yaml, set scoring.cli.token_created to the date you
-#    ran `claude setup-token`, so the digest warns 30 days before the token expires.
+# 3. In the same file, set JOB_SCOUT_SCORING__CLI__TOKEN_CREATED to the date you ran
+#    `claude setup-token` (YYYY-MM-DD), so the digest warns 30 days before the token expires.
 
 # 4. Optional: keep your local history (scores, what digests already reported). On your
 #    laptop: `uv run --env-file .env job-scout export --sqlite`, then copy the snapshot:

@@ -1283,3 +1283,18 @@ features planned; Phase 7 (Tier 2 scrapers) and the Findwork key are still open.
   - New tests: a profile edit re-scores nothing, and a leftover pending row is scored
     and stamped with the current profile. A migration test covers the three
     collapse cases.
+- **P9-U13 The feedback page's address is an env var only.** `base_url` is gone from
+  `settings.yaml`; it's set with `JOB_SCOUT_FEEDBACK__BASE_URL` because it differs per
+  machine (`jobscout.lan` on the server, `127.0.0.1` locally), like the email recipient.
+  The setting still exists in the model, so the env var keeps working. The same goes for
+  the token date: `JOB_SCOUT_SCORING__CLI__TOKEN_CREATED` is now in
+  `deploy/job-scout.env.example`. The deploy README sets it there instead of editing
+  `settings.yaml`, which keeps the server checkout clean for `git pull`.
+- **P9-U14 `.env.example` lists every env var.** It was missing `JOB_SCOUT_CONFIG_DIR`,
+  `JOB_SCOUT_SCORING__EFFORT`, `JOB_SCOUT_SCORING__CLI__TOKEN_CREATED`,
+  `JOB_SCOUT_FEEDBACK__HOST` and compose's `JOB_SCOUT_UID`, `JOB_SCOUT_GID` and
+  `JOB_SCOUT_FEEDBACK_PORT`. Those last three are marked as read by `docker compose`, not by
+  job-scout. A new test (`test_dotenv_example_lists_every_env_var`) collects every env var
+  name in `src/`, `config/`, `deploy/` and the Dockerfile and fails on any that's missing.
+- **P9-B4 `sources check`'s health line didn't use `secret()`** (`report/data.py`): a blank
+  `FINDWORK_API_KEY` counted as set there but as unset when fetching. Left over from P9-D8.

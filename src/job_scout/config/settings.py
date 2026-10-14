@@ -216,7 +216,8 @@ class Feedback(StrictModel):
     The link-signing secret comes only from JOB_SCOUT_FEEDBACK_SECRET, never from this file.
     """
 
-    # Where the digest's links point, e.g. http://jobscout.lan:8765. None: no links.
+    # Where the digest's links point, e.g. http://jobscout.lan:8765. None: no links. It differs
+    # per machine, so it's set with JOB_SCOUT_FEEDBACK__BASE_URL rather than in settings.yaml.
     base_url: str | None = None
     # The page's listening address. The compose service sets 0.0.0.0 inside the container.
     host: str = "127.0.0.1"

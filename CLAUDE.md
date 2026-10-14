@@ -128,10 +128,13 @@ uv run --env-file .env alembic revision --autogenerate -m "what changed"
   never stored in settings or logged. Tests that load the repo config turn email off.
 - **Deploy files are tested for consistency** (`tests/test_deploy.py`): the timer's time and
   zone must match `schedule.daily_run_time`/`timezone`, data paths must live under
-  `/var/lib/job-scout`, and `deploy/job-scout.env.example` must list every secret the code
-  reads. Bump `CLAUDE_CODE_VERSION` in the Dockerfile only on purpose.
+  `/var/lib/job-scout`, `deploy/job-scout.env.example` must list every secret the code
+  reads, and `.env.example` every env var named in `src/`, `config/`, `deploy/` or the
+  Dockerfile (add new ones there). Bump `CLAUDE_CODE_VERSION` in the Dockerfile only on
+  purpose.
 - **Feedback:** the digest links to `<feedback.base_url>/f/<job_id>?v=…&s=<signature>`;
-  opening a link saves nothing, only the page's POST does. No links while `base_url` or
+  opening a link saves nothing, only the page's POST does. No links while
+  `JOB_SCOUT_FEEDBACK__BASE_URL` (env only: it differs per machine) or
   `JOB_SCOUT_FEEDBACK_SECRET` is unset. Judgments enter the system prompt as `<judgment>`
   elements (`scoring/prompt.py`); they never re-queue a scored job;
   `scoring_calls.feedback_job_ids` records which were sent. Posting-derived text in a

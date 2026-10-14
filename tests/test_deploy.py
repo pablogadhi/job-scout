@@ -75,9 +75,31 @@ def test_env_example_lists_every_secret() -> None:
         mailer.TO_ENV,
         SECRET_ENV,
         "JOB_SCOUT_FEEDBACK__BASE_URL",
+        "JOB_SCOUT_SCORING__CLI__TOKEN_CREATED",
         "FINDWORK_API_KEY",
     }
     assert expected <= names
+
+
+# Names that look like our env vars: JOB_SCOUT_*, or *_API_KEY / *_TOKEN / *_SECRET. In
+# Python only quoted ones count for the latter (CHARS_PER_TOKEN is a constant, not a var).
+_PREFIXED = re.compile(r"\bJOB_SCOUT_[A-Z0-9_]*[A-Z0-9]\b")
+_SECRET_LIKE = r"[A-Z][A-Z0-9_]*_(?:API_KEY|TOKEN|SECRET)"
+_QUOTED_SECRET = re.compile(rf"[\"']({_SECRET_LIKE})[\"']")
+_BARE_SECRET = re.compile(rf"\b({_SECRET_LIKE})\b")
+
+
+def test_dotenv_example_lists_every_env_var() -> None:
+    """Every env var named in the code, config or deploy files is in .env.example."""
+    used: set[str] = set()
+    for path in [*(ROOT / "src").rglob("*.py"), ROOT / "Dockerfile"]:
+        text = path.read_text(encoding="utf-8")
+        used |= set(_PREFIXED.findall(text)) | set(_QUOTED_SECRET.findall(text))
+    for path in [*(ROOT / "config").glob("*"), *(p for p in DEPLOY.rglob("*") if p.is_file())]:
+        text = path.read_text(encoding="utf-8")
+        used |= set(_PREFIXED.findall(text)) | set(_BARE_SECRET.findall(text))
+    listed = set(re.findall(r"^#?\s*([A-Z][A-Z0-9_]+)=", (ROOT / ".env.example").read_text(), re.M))
+    assert used - listed == set()
 
 
 def test_secrets_never_enter_the_image() -> None:
