@@ -26,7 +26,7 @@ from job_scout.cli.common import (
 from job_scout.config import AppConfig
 from job_scout.db.models import ScoringMode
 from job_scout.db.types import utcnow
-from job_scout.prefilter_run import run_prefilter
+from job_scout.prefilter.runner import run_prefilter
 from job_scout.report.build import make_backlog_report
 from job_scout.scoring.runner import RunReport
 

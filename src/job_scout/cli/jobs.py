@@ -12,11 +12,11 @@ from rich.table import Table
 from sqlalchemy import select
 
 from job_scout.cli.common import console, fail, load, open_db
+from job_scout.db.groups import group_of
 from job_scout.db.models import Job, PrefilterResult, Score
 from job_scout.db.types import utcnow
 from job_scout.feedback.store import get_vote
-from job_scout.groups import group_of
-from job_scout.prefilter_run import (
+from job_scout.prefilter.runner import (
     build_prefilter,
     drop_reasons,
     run_prefilter,

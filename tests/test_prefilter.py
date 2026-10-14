@@ -5,7 +5,7 @@ from dataclasses import dataclass, replace
 import pytest
 
 from job_scout.config import AppConfig
-from job_scout.prefilter import Prefilter
+from job_scout.prefilter.rules import Prefilter
 
 
 @dataclass(frozen=True)

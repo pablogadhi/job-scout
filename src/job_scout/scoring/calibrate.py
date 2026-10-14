@@ -19,10 +19,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from job_scout.config import AppConfig
+from job_scout.db.groups import load_groups
 from job_scout.db.models import Job, PrefilterResult
 from job_scout.db.types import utcnow
 from job_scout.feedback.examples import select_examples
-from job_scout.groups import load_groups
 from job_scout.scoring.backends.base import CallRequest, Scorer
 from job_scout.scoring.prompt import PostingInput, render_posting, system_prompt, user_message
 from job_scout.scoring.runner import max_output_tokens

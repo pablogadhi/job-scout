@@ -21,10 +21,10 @@ from sqlalchemy.orm import Session
 
 from job_scout.config import AppConfig
 from job_scout.config.settings import Digest as DigestSettings
+from job_scout.db.groups import Group, load_groups
 from job_scout.db.models import Digest, Score, ScoreStatus, Source
 from job_scout.fetch.normalize import normalize_company
 from job_scout.fetch.runner import NOT_YET
-from job_scout.groups import Group, load_groups
 from job_scout.scoring.prompt import salary_line
 from job_scout.scoring.schema import ScoreResult
 

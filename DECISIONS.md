@@ -1112,3 +1112,11 @@ features planned; Phase 7 (Tier 2 scrapers) and the Findwork key are still open.
   now `journal`. One visible difference: errors raised through `fail()` are now always
   escaped and soft-wrapped (the unknown-source-id and `--record` messages weren't), which
   only matters for text containing Rich markup or wider than the terminal.
+- **P9-U4 No domain modules at the package root.** Only something general like `log.py`
+  stays there.
+- **P9-D3 `prefilter.py` → `prefilter/rules.py`, `prefilter_run.py` →
+  `prefilter/runner.py`** (the same split as `scoring/`: pure pieces next to `runner.py`).
+  **`groups.py` → `db/groups.py`:** the pre-filter, scoring, the reports, the feedback
+  page and `explain` all load groups, so it sits next to the models it queries rather than
+  in one stage's package. Imports only; no logic changed. The package root now holds
+  `__init__.py`, `log.py` and the subpackages.

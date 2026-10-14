@@ -7,13 +7,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from job_scout.config import AppConfig
+from job_scout.db.groups import group_of
 from job_scout.db.models import Job, PrefilterResult, Source
 from job_scout.fetch.http import HttpClient
 from job_scout.fetch.models import Posting
 from job_scout.fetch.runner import run_fetch
 from job_scout.fetch.store import store_postings
-from job_scout.groups import group_of
-from job_scout.prefilter_run import drop_reasons, run_prefilter, source_report
+from job_scout.prefilter.runner import drop_reasons, run_prefilter, source_report
 
 T0 = datetime(2026, 10, 12, 12, 0, tzinfo=UTC)
 KEY = ["company_normalized", "title_normalized"]

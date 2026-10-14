@@ -7,10 +7,10 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from job_scout.config import AppConfig, load_config
 from job_scout.config.settings import CliLimits
+from job_scout.db.groups import load_groups
 from job_scout.db.models import Job, Source
 from job_scout.fetch.models import Posting
 from job_scout.fetch.store import store_postings
-from job_scout.groups import load_groups
 from job_scout.scoring.planner import BatchPlanner, Limits
 from job_scout.scoring.prompt import PostingInput, render_posting, system_prompt, user_message
 from job_scout.scoring.schema import (

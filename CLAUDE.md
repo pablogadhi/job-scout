@@ -57,7 +57,9 @@ uv run --env-file .env alembic revision --autogenerate -m "what changed"
   everywhere, so typos fail at startup with exit code 2. `profile.md` is validated for its
   `## Output format` JSON block and hashed (SHA-256 of the raw bytes = `profile_hash`).
 - `src/job_scout/db/`: SQLAlchemy 2.0 typed ORM models (`models.py`), engine with SQLite
-  pragmas (`__init__.py`), `UTCDateTime` type (`types.py`).
+  pragmas (`__init__.py`), `UTCDateTime` type (`types.py`). `groups.py`: duplicate groups
+  (canonical job + linked copies) and their combined locations. Anything that judges a job
+  (pre-filter, scoring) works on groups.
 - `src/job_scout/migrations/`: Alembic (`script_location = job_scout:migrations`).
 - `src/job_scout/fetch/`: the only package that touches the network.
   - `http.py`: `HttpClient`, the single gateway for requests. It handles the User-Agent,
@@ -68,10 +70,8 @@ uv run --env-file .env alembic revision --autogenerate -m "what changed"
   - `sources.py`: per-source mappers and the `FETCHERS` registry. `hn.py`: HN Who is hiring.
   - `normalize.py`: pure helpers (HTML to text, salary parsing, company/title normalization).
   - `store.py`: dedupe and insert. `runner.py`: per-source orchestration and health.
-- `src/job_scout/groups.py`: duplicate groups (canonical job + linked copies) and their
-  combined locations. Anything that judges a job (pre-filter, scoring) works on groups.
-- `src/job_scout/prefilter.py`: pure filters.yaml rules (`Prefilter`), no I/O.
-  `prefilter_run.py`: applies them to stored groups, report and samples.
+- `src/job_scout/prefilter/`: `rules.py` (pure filters.yaml rules, `Prefilter`, no I/O),
+  `runner.py` (applies them to stored groups, report and samples).
 - `src/job_scout/scoring/`: `schema.py` (ScoreResult mirrors profile.md's output format;
   drift fails at startup), `prompt.py` (the one prompt builder), `planner.py` (packs calls),
   `queue.py` (what needs a score), `runner.py` (a scoring run, both backends, Batches API),
@@ -146,7 +146,7 @@ uv run --env-file .env alembic revision --autogenerate -m "what changed"
   group passes if any copy passes. A verdict is stale (re-evaluated by `filter`) when the
   rules change (`Prefilter.fingerprint`: filters.yaml, per-source `prefilter` modes,
   `PREFILTER_VERSION`) or a copy was linked after it was evaluated. Bump
-  `PREFILTER_VERSION` whenever rule logic changes.
+  `PREFILTER_VERSION` (`prefilter/rules.py`) whenever rule logic changes.
 - **Regex filters never read descriptions** (false drops like "hybrid cloud"); descriptions
   are Claude's job. `remote_raw` holds only the job's own arrangement, never the company's.
 - **Scoring:** one score row per (canonical job, profile_hash). Pending rows belong to no

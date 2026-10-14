@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from job_scout.config import AppConfig
 from job_scout.config.settings import ModelPrices
+from job_scout.db.groups import load_groups
 from job_scout.db.models import (
     CallStatus,
     Run,
@@ -29,7 +30,6 @@ from job_scout.db.models import (
 )
 from job_scout.db.types import utcnow
 from job_scout.feedback.examples import select_examples
-from job_scout.groups import load_groups
 from job_scout.scoring.backends.api import ApiScorer
 from job_scout.scoring.backends.base import CallRequest, CallResult, Scorer
 from job_scout.scoring.planner import BatchPlanner, Limits

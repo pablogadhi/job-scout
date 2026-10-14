@@ -12,9 +12,9 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from job_scout.config.profile import Profile
+from job_scout.db.groups import Group
 from job_scout.db.models import Vote
 from job_scout.feedback.examples import Example
-from job_scout.groups import Group
 
 CHARS_PER_TOKEN = 4  # rough estimate used for batching budgets
 OUTPUT_TOKENS_PER_POSTING = 450

@@ -9,10 +9,10 @@ from sqlalchemy import Select, case, exists, func, or_, select
 from sqlalchemy.orm import Session, aliased, sessionmaker
 
 from job_scout.config import AppConfig
+from job_scout.db.groups import load_groups
 from job_scout.db.models import Job, PrefilterResult
 from job_scout.db.types import utcnow
-from job_scout.groups import load_groups
-from job_scout.prefilter import Prefilter
+from job_scout.prefilter.rules import Prefilter
 
 BATCH = 500
 

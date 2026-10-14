@@ -24,11 +24,11 @@ from pydantic import SecretStr
 from sqlalchemy.orm import Session, sessionmaker
 
 from job_scout.config import AppConfig
+from job_scout.db.groups import group_of
 from job_scout.db.models import Vote
 from job_scout.db.types import utcnow
 from job_scout.feedback.links import verify
 from job_scout.feedback.store import MAX_REASON_CHARS, current_score, get_vote, record_vote
-from job_scout.groups import group_of
 from job_scout.report.render import http_url
 from job_scout.scoring.schema import ScoreResult
 
