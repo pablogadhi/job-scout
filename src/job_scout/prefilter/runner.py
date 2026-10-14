@@ -21,7 +21,7 @@ def build_prefilter(config: AppConfig) -> Prefilter:
     return Prefilter(config.filters, {s.id: s.prefilter for s in config.sources.sources})
 
 
-def pending_query(fingerprint: str, rerun: bool = False) -> Select[tuple[int]]:
+def pending_query(fingerprint: str, rerun: bool = False) -> Select[int]:
     """Canonical jobs whose group needs a (new) verdict.
 
     A verdict goes stale when the rules change (fingerprint) or when a copy was linked to

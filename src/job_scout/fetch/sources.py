@@ -28,6 +28,7 @@ from job_scout.fetch.http import FetchError
 from job_scout.fetch.models import Posting
 from job_scout.fetch.normalize import (
     Salary,
+    as_float,
     fix_mojibake,
     html_to_text,
     iso_to_utc,
@@ -113,12 +114,14 @@ def _map_fourdayweek(item: dict[str, Any]) -> Posting:
 def _map_remoteok(item: dict[str, Any]) -> Posting | None:
     if "legal" in item or "id" not in item:
         return None  # first element is API metadata
-    text = {k: fix_mojibake(v) if isinstance(v, str) else v for k, v in item.items()}
+    text: dict[str, Any] = {
+        k: fix_mojibake(v) if isinstance(v, str) else v for k, v in item.items()
+    }
     salary = None
     if text.get("salary_max") or text.get("salary_min"):
         salary = Salary(
-            min=text.get("salary_min") or None,
-            max=text.get("salary_max") or text.get("salary_min"),
+            min=as_float(text.get("salary_min")) or None,
+            max=as_float(text.get("salary_max")) or as_float(text.get("salary_min")),
             currency="USD",
             period="year",
         )
@@ -198,7 +201,7 @@ def _map_workingnomads(item: dict[str, Any]) -> Posting | None:
         company=item.get("company_name"),
         location_raw=item.get("location"),
         description_text=description,
-        tags=(item.get("tags") or "").split(","),
+        tags=str(item.get("tags") or "").split(","),
         posted_at=iso_to_utc(item.get("pub_date")),
         raw=item,
     ).with_salary(labelled_salary(description))

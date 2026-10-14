@@ -50,11 +50,12 @@ def select_sources(
 
 
 def requests_last_24h(session: Session, source_id: str, now: datetime) -> int:
-    return session.scalar(
+    used = session.scalar(
         select(func.coalesce(func.sum(SourceRun.requests_made), 0)).where(
             SourceRun.source_id == source_id, SourceRun.started_at >= now - timedelta(hours=24)
         )
     )
+    return used or 0
 
 
 def _skip_reason(

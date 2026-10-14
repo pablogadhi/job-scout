@@ -21,30 +21,16 @@ import hashlib
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Protocol
 
 from job_scout.config.filters import FiltersConfig
 from job_scout.config.sources import PrefilterMode
-from job_scout.db.models import SalaryPeriod
+from job_scout.db.models import Job, SalaryPeriod
 
 # Bump when the rule logic changes, so stored results are re-evaluated.
 PREFILTER_VERSION = 1
 
 
 _REMOTE_MENTION = re.compile(r"\bremote\b", re.IGNORECASE)
-
-
-class JobLike(Protocol):
-    id: int
-    source_id: str
-    title: str
-    location_raw: str | None
-    remote_raw: str | None
-    description_text: str | None
-    salary_min: float | None
-    salary_max: float | None
-    salary_currency: str | None
-    salary_period: SalaryPeriod | None
 
 
 @dataclass(frozen=True)
@@ -108,14 +94,14 @@ class Prefilter:
         )
         return hashlib.sha256(payload.encode()).hexdigest()
 
-    def annual_salary(self, job: JobLike) -> float | None:
+    def annual_salary(self, job: Job) -> float | None:
         """Top of the stated range per year, in filters.salary.currency; None if unknown."""
         top = job.salary_max or job.salary_min
         if not top or not job.salary_period or job.salary_currency != self.filters.salary.currency:
             return None
         return top * self.per_year[job.salary_period]
 
-    def evaluate(self, job: JobLike) -> Verdict:
+    def evaluate(self, job: Job) -> Verdict:
         if self.modes.get(job.source_id, "full") == "remote_mention_only":
             text = " ".join(filter(None, [job.title, job.description_text]))
             if _REMOTE_MENTION.search(text):
@@ -159,7 +145,7 @@ class Prefilter:
             notes.append("salary unlisted")
         return Verdict(True, "; ".join(notes))
 
-    def evaluate_group(self, jobs: Sequence[JobLike]) -> Verdict:
+    def evaluate_group(self, jobs: Sequence[Job]) -> Verdict:
         """Pass if any copy passes. jobs[0] is the canonical job."""
         verdicts = [(job, self.evaluate(job)) for job in jobs]
         size = f" [{len(jobs)} copies]" if len(jobs) > 1 else ""

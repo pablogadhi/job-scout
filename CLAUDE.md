@@ -40,6 +40,7 @@ uv run --env-file .env job-scout calibrate --sample 50 --configs "api:claude-hai
 uv run pytest                                   # offline tests (live ones excluded)
 uv run pytest -m live                           # opt-in: real network / real Claude backend
 uv run ruff check . && uv run ruff format .
+pyright src                                     # type check, 0 errors (not a project dependency)
 uv run --env-file .env alembic revision --autogenerate -m "what changed"
 ```
 

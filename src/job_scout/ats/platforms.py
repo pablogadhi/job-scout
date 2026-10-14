@@ -16,7 +16,7 @@ from urllib.parse import quote
 
 from job_scout.fetch.base import labelled_salary
 from job_scout.fetch.models import Posting
-from job_scout.fetch.normalize import Salary, html_to_text, iso_to_utc
+from job_scout.fetch.normalize import Salary, as_float, html_to_text, iso_to_utc
 
 _TOKEN = r"([A-Za-z0-9][A-Za-z0-9_.-]*)"
 # Path segments that look like a token but aren't one (e.g. apply.workable.com/j/<job>).
@@ -74,15 +74,8 @@ def _with_salary(posting: Posting, salary: Salary | None) -> Posting:
     return posting.with_salary(salary or labelled_salary(posting.description_text))
 
 
-def _amount(value: Any) -> float | None:
-    try:
-        return float(value) if value not in (None, "") else None
-    except (TypeError, ValueError):
-        return None
-
-
 def _salary(minimum: Any, maximum: Any, currency: Any, period: str | None) -> Salary | None:
-    low, high = _amount(minimum), _amount(maximum)
+    low, high = as_float(minimum), as_float(maximum)
     if not (low or high) or not currency or period is None:
         return None
     return Salary(min=low, max=high, currency=str(currency).upper(), period=period)

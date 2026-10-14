@@ -142,7 +142,8 @@ class HttpClient:
         robots = host.robots if self.defaults.respect_robots_txt else None
         if robots is not None and not robots.can_fetch(self.defaults.user_agent, full_url):
             raise RobotsDisallowed(f"robots.txt disallows {full_url}")
-        for attempt in range(RATE_LIMIT_RETRIES + 1):
+        attempt = 0
+        while True:
             budget.spend(full_url)
             self._wait(host, source)
             log.debug("GET %s", full_url)
@@ -169,6 +170,7 @@ class HttpClient:
                 host.slowdown,
             )
             self.sleep(delay)
+            attempt += 1
         if self.recorder:
             self.recorder.record(source.id, full_url, response)
         if response.status_code >= 400:

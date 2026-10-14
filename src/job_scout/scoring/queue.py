@@ -8,8 +8,21 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from datetime import datetime
+from typing import Any, cast
 
-from sqlalchemy import Select, and_, exists, func, insert, literal, or_, select, update
+from sqlalchemy import (
+    CursorResult,
+    Result,
+    Select,
+    and_,
+    exists,
+    func,
+    insert,
+    literal,
+    or_,
+    select,
+    update,
+)
 from sqlalchemy.orm import Session, aliased
 
 from job_scout.db.models import (
@@ -24,7 +37,7 @@ from job_scout.db.models import (
 MAX_ATTEMPTS = 2  # a job is retried once after a failed call, then marked score_failed
 
 
-def _eligible() -> Select[tuple[int]]:
+def _eligible() -> Select[int]:
     """Canonical jobs whose group passed the pre-filter."""
     return (
         select(Job.id)
@@ -42,34 +55,41 @@ def enqueue(session: Session, profile_hash: str) -> tuple[int, int]:
     """
     has_score = exists().where(Score.job_id == Job.id, Score.profile_hash == profile_hash)
     new_ids = select(Job.id, literal(profile_hash)).where(Job.id.in_(_eligible()), ~has_score)
-    new = session.execute(insert(Score).from_select(["job_id", "profile_hash"], new_ids)).rowcount
+    new = _rowcount(session.execute(insert(Score).from_select(["job_id", "profile_hash"], new_ids)))
 
     copy = aliased(Job)
     newer_copy = exists().where(
         copy.duplicate_of == Score.job_id, copy.first_seen_at > Score.scored_at
     )
-    requeued = session.execute(
-        update(Score)
-        .where(
-            Score.profile_hash == profile_hash,
-            Score.status == ScoreStatus.SCORED,
-            Score.scored_at.is_not(None),
-            newer_copy,
+    requeued = _rowcount(
+        session.execute(
+            update(Score)
+            .where(
+                Score.profile_hash == profile_hash,
+                Score.status == ScoreStatus.SCORED,
+                Score.scored_at.is_not(None),
+                newer_copy,
+            )
+            .values(status=ScoreStatus.PENDING, attempts=0)
+            .execution_options(synchronize_session=False)
         )
-        .values(status=ScoreStatus.PENDING, attempts=0)
-        .execution_options(synchronize_session=False)
-    ).rowcount
-    return new or 0, requeued or 0
+    )
+    return new, requeued
 
 
-def _in_flight() -> Select[tuple[int]]:
+def _rowcount(result: Result[Any]) -> int:
+    """Rows an INSERT/UPDATE touched (DML results are CursorResults at runtime)."""
+    return cast("CursorResult[Any]", result).rowcount or 0
+
+
+def _in_flight() -> Select[int]:
     """Calls whose results haven't been ingested (a submitted batch)."""
     return select(ScoringCall.id).where(
         ScoringCall.status.in_([CallStatus.SUBMITTED, CallStatus.RUNNING])
     )
 
 
-def pending_query(profile_hash: str, order: str = "newest_first") -> Select[tuple[int]]:
+def pending_query(profile_hash: str, order: str = "newest_first") -> Select[int]:
     """Canonical job ids to score, in scoring order; excludes jobs inside an unfinished batch."""
     newest = order == "newest_first"
     posted = Job.posted_at.desc() if newest else Job.posted_at.asc()

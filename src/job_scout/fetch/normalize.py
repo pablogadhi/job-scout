@@ -7,6 +7,7 @@ import re
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import Any
 
 from selectolax.lexbor import LexborHTMLParser
 
@@ -158,6 +159,14 @@ def _amount(number: str, multiplier: str | None) -> float:
     elif multiplier and multiplier.lower() == "m":
         value *= 1_000_000
     return value
+
+
+def as_float(value: Any) -> float | None:
+    """A salary amount from a JSON field (number or numeric string), or None."""
+    try:
+        return float(value) if value not in (None, "") else None
+    except (TypeError, ValueError):
+        return None
 
 
 def parse_salary(text: str | None) -> Salary | None:

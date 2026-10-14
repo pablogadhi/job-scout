@@ -112,7 +112,7 @@ class ApiOptions(StrictModel):
     max_retries: NonNegativeInt = 3
     batch_poll_seconds: PositiveInt = 60
     batch_max_wait_minutes: PositiveInt = 120
-    batch_discount: float = Field(0.5, gt=0, le=1)
+    batch_discount: float = Field(default=0.5, gt=0, le=1)
     # Added to max_tokens on every request: room for thinking on models that think by
     # default (Claude Haiku 5.5), which counts toward max_tokens. Unused tokens cost nothing.
     thinking_headroom_tokens: NonNegativeInt = 8_000
@@ -181,8 +181,8 @@ class Email(StrictModel):
 class Digest(StrictModel):
     """The HTML file is always written (paths.reports); email is optional."""
 
-    min_score: int = Field(60, ge=0, le=100)
-    watchlist_min_score: int = Field(21, ge=0, le=100)
+    min_score: int = Field(default=60, ge=0, le=100)
+    watchlist_min_score: int = Field(default=21, ge=0, le=100)
     send_when_empty: bool = True  # email a digest with no new matches (its health footer)
     email: Email = Email()
 
@@ -220,7 +220,7 @@ class Feedback(StrictModel):
     base_url: str | None = None
     # The page's listening address. The compose service sets 0.0.0.0 inside the container.
     host: str = "127.0.0.1"
-    port: int = Field(8765, ge=1, le=65535)
+    port: int = Field(default=8765, ge=1, le=65535)
     # Recent judgments added to the scoring prompt as examples (0: none).
     prompt_examples: NonNegativeInt = 8
 

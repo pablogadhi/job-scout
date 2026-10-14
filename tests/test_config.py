@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from job_scout.config import ConfigError, load_config, load_settings_only
+from job_scout.db.models import Backend, ScoringMode
 from tests.conftest import REPO_CONFIG, edit
 
 
@@ -97,11 +98,11 @@ def test_database_url(config_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None
 
 def test_limits_with_flag_overrides() -> None:
     scoring = load_settings_only(REPO_CONFIG).scoring
-    limits = scoring.limits("backlog", "cli", postings_per_call=60, max_calls=None)
+    limits = scoring.limits(ScoringMode.BACKLOG, Backend.CLI, postings_per_call=60, max_calls=None)
     assert (limits.postings_per_call, limits.max_calls) == (60, 25)
-    assert scoring.limits("backlog", "api").use_batches_api is True
+    assert scoring.limits(ScoringMode.BACKLOG, Backend.API).use_batches_api is True
     with pytest.raises(ValueError, match="max_input_tokens_per_call"):
-        scoring.limits("daily", "api", max_input_tokens_per_call=1000)
+        scoring.limits(ScoringMode.DAILY, Backend.API, max_input_tokens_per_call=1000)
 
 
 # --- typos and bad values fail loudly ---

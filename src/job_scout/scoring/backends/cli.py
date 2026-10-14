@@ -20,7 +20,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from job_scout.config.settings import CliOptions
+from job_scout.config.settings import CliOptions, Effort
 from job_scout.db.models import Backend
 from job_scout.scoring.backends.base import CallRequest, CallResult
 
@@ -69,11 +69,11 @@ class CliScorer:
         model: str,
         environ: Mapping[str, str] | None = None,
         run: Runner = subprocess.run,
-        effort: str | None = None,
+        effort: Effort | None = None,
     ) -> None:
         self.options = options
         self.model = model
-        self.effort = effort
+        self.effort: Effort | None = effort  # annotated: pyright would widen it to str
         self.env = subprocess_env(os.environ if environ is None else environ)
         self.run = run
 
@@ -149,7 +149,7 @@ class _CliReply(BaseModel):
     total_cost_usd: float | None = None
     structured_output: Any = None
     usage: _Usage | None = None
-    model_usage: dict[str, Any] | None = Field(None, alias="modelUsage")
+    model_usage: dict[str, Any] | None = Field(default=None, alias="modelUsage")
 
 
 def parse_output(returncode: int, stdout: str, stderr: str, duration_ms: int) -> CallResult:

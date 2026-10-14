@@ -1166,3 +1166,45 @@ features planned; Phase 7 (Tier 2 scrapers) and the Findwork key are still open.
   (which is retried once, split in half). Now that call is `invalid`, and its error
   names the bad field. Not seen in practice (the CLI version is pinned), found in the P9-U5
   audit.
+- **P9-U6 Fix the type checker's errors.** `pyright src` reported 62 errors. It now
+  reports 0.
+- **P9-D11 What the 62 were, and the fixes.** None changed behaviour on today's data:
+  - 24 in `migrations/env.py`: the kwargs passed to Alembic were typed `object`; now `Any`.
+  - 14 "argument missing": Pydantic `Field(None, …)` with a positional default, which type
+    checkers don't read as a default. Every such field now uses `Field(default=…)`.
+  - 10 in SQLAlchemy queries: `Select[tuple[int]]` is the 2.0 spelling; 2.1 uses
+    `Select[int]`. The two `.rowcount` reads go through a small `_rowcount()` helper,
+    since only a DML result has that attribute.
+  - 5 "possibly unbound" in `HttpClient.get`: the retry `for` loop became `while True`.
+    Same retries, and the checker can now see that `response` is always set.
+  - 4 in the API backend: `params()` is typed with the SDK's own TypedDicts, and batch
+    results are narrowed on `result.type`, which also removed a `getattr`.
+  - 2 for the pre-filter: `JobLike` was a Protocol only so the tests could pass a fake,
+    and ORM columns don't match a Protocol. The rules now take `Job`, and
+    `tests/test_prefilter.py` builds unsaved `Job`s.
+  - The rest: Remote OK's salary amounts go through `as_float()` (moved from the ATS
+    mappers into `fetch/normalize.py`); `requests_last_24h` returns `or 0`; `effort` is
+    annotated `Effort` in both backends (pyright widened it to `str`).
+
+  Fixing these exposed 5 more, all fixed: Remote OK's fields and Working Nomads' tags
+  were untyped. Tests now use the enums for `Scoring.limits()`. Pyright on `tests/`
+  still reports 36 errors, all from before today: `Optional` values used inside asserts,
+  and test doubles that don't match the code's types. Left for you to decide (P9-R1).
+  `pyright src` is in CLAUDE.md's commands. Pyright isn't a project dependency; you
+  have it through Neovim (Mason).
+
+### P9 Bugs found and fixed (continued)
+
+- **P9-B2 A non-numeric salary could have been stored in a number column.**
+  `Posting.with_salary` used `model_copy`, which skips validation. So a Remote OK salary
+  like "competitive" would have reached the `salary_min` Float column as text (SQLite
+  accepts that). `with_salary` now validates (P9-D6), and Remote OK's amounts go through
+  `as_float()`, so such a posting is kept without a salary. Not seen in practice.
+- **P9-B3 `calibrate --configs` accepted any effort** (`api:model:1:extreme` would have
+  reached the API and failed there). It's now checked against the allowed values when
+  parsed, with a test.
+
+### P9 For you to review
+
+- **P9-R1 The 36 pyright errors in `tests/`:** fix them too (mostly adding
+  `assert x is not None` before using a value), or only check `src/`?

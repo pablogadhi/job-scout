@@ -12,13 +12,14 @@ import time
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, get_args
 
 from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from job_scout.config import AppConfig
+from job_scout.config.settings import Effort
 from job_scout.db.groups import load_groups
 from job_scout.db.models import Backend, Job, PrefilterResult
 from job_scout.db.types import utcnow
@@ -28,6 +29,8 @@ from job_scout.scoring.prompt import PostingInput, render_posting, system_prompt
 from job_scout.scoring.runner import max_output_tokens
 from job_scout.scoring.schema import ScoreResult, output_json_schema
 
+_EFFORTS: dict[str, Effort] = {e: e for e in get_args(Effort)}
+
 
 @dataclass(frozen=True)
 class ConfigSpec:
@@ -36,16 +39,17 @@ class ConfigSpec:
     backend: Backend
     model: str
     size: int
-    effort: str | None = None
+    effort: Effort | None = None
 
     @classmethod
     def parse(cls, text: str) -> ConfigSpec:
         parts = text.strip().split(":")
         if len(parts) not in (3, 4) or parts[0] not in set(Backend) or not parts[2].isdigit():
             raise ValueError(f"{text!r}: expected backend:model:postings_per_call[:effort]")
-        return cls(
-            Backend(parts[0]), parts[1], int(parts[2]), parts[3] if len(parts) == 4 else None
-        )
+        effort = _EFFORTS.get(parts[3]) if len(parts) == 4 else None
+        if len(parts) == 4 and effort is None:
+            raise ValueError(f"{text!r}: effort must be one of {', '.join(_EFFORTS)}")
+        return cls(Backend(parts[0]), parts[1], int(parts[2]), effort)
 
     @property
     def name(self) -> str:

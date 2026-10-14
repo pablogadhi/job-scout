@@ -22,7 +22,7 @@ class Posting(BaseModel):
     remote_raw: str | None = None
     salary_min: float | None = None
     salary_max: float | None = None
-    salary_currency: str | None = Field(None, pattern=r"^[A-Z]{3}$")
+    salary_currency: str | None = Field(default=None, pattern=r"^[A-Z]{3}$")
     salary_period: SalaryPeriod | None = None
     description_text: str | None = None
     tags: list[str] = []

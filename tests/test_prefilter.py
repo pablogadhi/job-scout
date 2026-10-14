@@ -1,25 +1,29 @@
 """The pre-filter rules on their own, with the real filters.yaml and synthetic jobs."""
 
-from dataclasses import dataclass, replace
+from typing import Any
 
 import pytest
 
 from job_scout.config import AppConfig
+from job_scout.db.models import Job, SalaryPeriod
 from job_scout.prefilter.rules import Prefilter
 
 
-@dataclass(frozen=True)
-class FakeJob:
-    title: str = "Senior Backend Engineer"
-    location_raw: str | None = None
-    remote_raw: str | None = None
-    description_text: str | None = None
-    salary_min: float | None = None
-    salary_max: float | None = None
-    salary_currency: str | None = None
-    salary_period: str | None = None
-    source_id: str = "board"
-    id: int = 1
+def FakeJob(**fields: Any) -> Job:
+    """An unsaved Job with only the fields the rules read."""
+    defaults: dict[str, Any] = {
+        "id": 1,
+        "source_id": "board",
+        "title": "Senior Backend Engineer",
+        "location_raw": None,
+        "remote_raw": None,
+        "description_text": None,
+        "salary_min": None,
+        "salary_max": None,
+        "salary_currency": None,
+        "salary_period": None,
+    }
+    return Job(**{**defaults, **fields})
 
 
 @pytest.fixture
@@ -47,12 +51,18 @@ def prefilter(app_config: AppConfig) -> Prefilter:
         (FakeJob(location_raw="Remote; must reside in the U.S."), "location:"),
         (FakeJob(location_raw="Remote, U.S. citizenship required"), "location:"),
         (FakeJob(title="Backend Engineer (Security Clearance)"), "location:"),
-        (FakeJob(salary_max=50, salary_currency="USD", salary_period="hour"), "salary:"),
-        (FakeJob(salary_max=9_000, salary_currency="USD", salary_period="month"), "salary:"),
-        (FakeJob(salary_max=110_000, salary_currency="USD", salary_period="year"), "salary:"),
+        (FakeJob(salary_max=50, salary_currency="USD", salary_period=SalaryPeriod.HOUR), "salary:"),
+        (
+            FakeJob(salary_max=9_000, salary_currency="USD", salary_period=SalaryPeriod.MONTH),
+            "salary:",
+        ),
+        (
+            FakeJob(salary_max=110_000, salary_currency="USD", salary_period=SalaryPeriod.YEAR),
+            "salary:",
+        ),
     ],
 )
-def test_drops(prefilter: Prefilter, job: FakeJob, reason_start: str) -> None:
+def test_drops(prefilter: Prefilter, job: Job, reason_start: str) -> None:
     verdict = prefilter.evaluate(job)
     assert not verdict.passed
     assert verdict.reason.startswith(reason_start), verdict.reason
@@ -60,7 +70,7 @@ def test_drops(prefilter: Prefilter, job: FakeJob, reason_start: str) -> None:
 
 def test_drop_reason_names_the_matched_text(prefilter: Prefilter) -> None:
     verdict = prefilter.evaluate(
-        FakeJob(salary_max=50, salary_currency="USD", salary_period="hour")
+        FakeJob(salary_max=50, salary_currency="USD", salary_period=SalaryPeriod.HOUR)
     )
     assert verdict.reason == "salary: top of range 104,000 USD/yr < 120,000 USD/yr"
     verdict = prefilter.evaluate(FakeJob(location_raw="region: USA Only"))
@@ -88,11 +98,11 @@ def test_drop_reason_names_the_matched_text(prefilter: Prefilter) -> None:
         (FakeJob(title="Backend Engineer, join us only if you love Python"), "location unclear"),
         (FakeJob(location_raw="Guatemala,México"), "location allowed ('Guatemala' in location)"),
         (
-            FakeJob(salary_max=11_000, salary_currency="USD", salary_period="month"),
+            FakeJob(salary_max=11_000, salary_currency="USD", salary_period=SalaryPeriod.MONTH),
             "salary meets floor (132,000 USD/yr)",
         ),
         (
-            FakeJob(salary_max=90_000, salary_currency="EUR", salary_period="year"),
+            FakeJob(salary_max=90_000, salary_currency="EUR", salary_period=SalaryPeriod.YEAR),
             "salary not comparable",
         ),
         (
@@ -102,7 +112,7 @@ def test_drop_reason_names_the_matched_text(prefilter: Prefilter) -> None:
         (FakeJob(), "salary unlisted"),
     ],
 )
-def test_passes(prefilter: Prefilter, job: FakeJob, note: str) -> None:
+def test_passes(prefilter: Prefilter, job: Job, note: str) -> None:
     verdict = prefilter.evaluate(job)
     assert verdict.passed, verdict.reason
     assert note in verdict.reason
@@ -144,9 +154,13 @@ def test_clear_non_fits_still_dropped(prefilter: Prefilter, title: str) -> None:
 def test_remote_mention_only_mode(prefilter: Prefilter) -> None:
     hn = FakeJob(source_id="hn", title="Acme | Staff PM | Full-time")
     assert not prefilter.evaluate(hn).passed
-    assert prefilter.evaluate(replace(hn, description_text="We are fully REMOTE.")).passed
+    assert prefilter.evaluate(
+        FakeJob(source_id="hn", title=hn.title, description_text="We are fully REMOTE.")
+    ).passed
     # Only the remote mention matters: titles and locations are left to Claude.
-    assert prefilter.evaluate(replace(hn, title="Acme | Designer | REMOTE (US only)")).passed
+    assert prefilter.evaluate(
+        FakeJob(source_id="hn", title="Acme | Designer | REMOTE (US only)")
+    ).passed
 
 
 def test_group_passes_via_any_copy(prefilter: Prefilter) -> None:

@@ -8,6 +8,7 @@ JOB_SCOUT_PATHS__DATABASE). The config directory is JOB_SCOUT_CONFIG_DIR, defaul
 import os
 from logging.config import fileConfig
 from pathlib import Path
+from typing import Any
 
 from alembic import context
 
@@ -28,7 +29,7 @@ def _database_url() -> str:
     return load_settings_only(config_dir).db_url
 
 
-def _configure(**kwargs: object) -> None:
+def _configure(**kwargs: Any) -> None:
     url = kwargs.pop("url", None) or _database_url()
     context.configure(
         target_metadata=target_metadata,

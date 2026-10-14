@@ -15,9 +15,11 @@ from collections.abc import Iterator, Mapping
 from typing import Any
 
 import anthropic
+from anthropic.types import OutputConfigParam, TextBlockParam
+from anthropic.types.message_create_params import MessageCreateParamsNonStreaming
 
 from job_scout.config.secrets import secret
-from job_scout.config.settings import ApiOptions, ModelPrices
+from job_scout.config.settings import ApiOptions, Effort, ModelPrices
 from job_scout.db.models import Backend
 from job_scout.scoring.backends.base import CallRequest, CallResult
 
@@ -87,11 +89,11 @@ class ApiScorer:
         model: str,
         client: anthropic.Anthropic | None = None,
         environ: Mapping[str, str] | None = None,
-        effort: str | None = None,
+        effort: Effort | None = None,
     ) -> None:
         self.options = options
         self.model = model
-        self.effort = effort
+        self.effort: Effort | None = effort  # annotated: pyright would widen it to str
         self.prices = options.prices.get(model)
         if client is None:
             key = secret(environ or {}, "ANTHROPIC_API_KEY")
@@ -102,11 +104,11 @@ class ApiScorer:
             )
         self.client: anthropic.Anthropic = client
 
-    def params(self, request: CallRequest) -> dict[str, Any]:
-        system: dict[str, Any] = {"type": "text", "text": request.system}
+    def params(self, request: CallRequest) -> MessageCreateParamsNonStreaming:
+        system: TextBlockParam = {"type": "text", "text": request.system}
         if self.options.prompt_caching:
             system["cache_control"] = {"type": "ephemeral"}
-        output_config: dict[str, Any] = {
+        output_config: OutputConfigParam = {
             "format": {"type": "json_schema", "schema": request.schema}
         }
         if self.effort:
@@ -152,17 +154,21 @@ class ApiScorer:
     def batch_results(self, batch_id: str) -> Iterator[tuple[str, CallResult]]:
         """(custom_id, result) for every request, in any order."""
         for item in self.client.messages.batches.results(batch_id):
-            kind = item.result.type
-            if kind == "succeeded":
+            result = item.result
+            if result.type == "succeeded":
                 yield (
                     item.custom_id,
-                    interpret(item.result.message, self.prices, self.options.batch_discount),
+                    interpret(result.message, self.prices, self.options.batch_discount),
                 )
-            elif kind == "errored":
-                error = getattr(item.result, "error", None)
-                yield item.custom_id, CallResult("error", error=f"batch request errored: {error}")
+            elif result.type == "errored":
+                yield (
+                    item.custom_id,
+                    CallResult("error", error=f"batch request errored: {result.error}"),
+                )
             else:  # canceled / expired: not the posting's fault, nothing was billed
                 yield (
                     item.custom_id,
-                    CallResult("error", error=f"batch request {kind}", extra={"retry_free": True}),
+                    CallResult(
+                        "error", error=f"batch request {result.type}", extra={"retry_free": True}
+                    ),
                 )

@@ -42,7 +42,7 @@ class LocationFilter(StrictModel):
 
 
 class SalaryFilter(StrictModel):
-    currency: str = Field("USD", pattern=r"^[A-Z]{3}$")
+    currency: str = Field(default="USD", pattern=r"^[A-Z]{3}$")
     min_annual: PositiveInt
     hours_per_year: PositiveInt = 2080
     months_per_year: PositiveInt = 12

@@ -10,7 +10,7 @@ from typer.testing import CliRunner
 from job_scout.ats.refresh import RefreshReport
 from job_scout.cli import app
 from job_scout.db import make_engine, make_session_factory
-from job_scout.db.models import Job, Source
+from job_scout.db.models import Backend, Job, Source
 from job_scout.fetch.models import Posting
 from job_scout.fetch.store import store_postings
 from job_scout.scoring.calibrate import ConfigSpec
@@ -237,9 +237,11 @@ def test_calibrate_compares_models() -> None:
 
 def test_config_spec() -> None:
     spec = ConfigSpec.parse("cli:claude-haiku-5-5:20:low")
-    assert spec == ConfigSpec("cli", "claude-haiku-5-5", 20, "low")
+    assert spec == ConfigSpec(Backend.CLI, "claude-haiku-5-5", 20, "low")
     assert spec.name == "cli claude-haiku-5-5 x20 effort=low"
     assert ConfigSpec.parse("api:claude-haiku-4-5:1").effort is None
+    with pytest.raises(ValueError, match="effort must be one of low, medium"):
+        ConfigSpec.parse("api:claude-haiku-5-5:1:extreme")
 
 
 @pytest.mark.usefixtures("db_url")

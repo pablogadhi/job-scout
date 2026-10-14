@@ -39,7 +39,7 @@ class SourceConfig(StrictModel):
     alt_api: str | None = None
     auth: str | None = None
     # Env var holding the API key; the source is skipped (not failed) while it is unset.
-    auth_env: str | None = Field(None, pattern=r"^[A-Z][A-Z0-9_]*$")
+    auth_env: str | None = Field(default=None, pattern=r"^[A-Z][A-Z0-9_]*$")
     # Enforced limits; free-text limits in `notes` are documentation only.
     max_requests_per_day: PositiveInt | None = None  # rolling 24 hours
     min_request_interval_seconds: PositiveFloat | None = None

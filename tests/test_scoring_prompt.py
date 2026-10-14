@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from job_scout.config import AppConfig, load_config
 from job_scout.config.settings import CliLimits
 from job_scout.db.groups import load_groups
-from job_scout.db.models import Job, Source
+from job_scout.db.models import Backend, Job, ScoringMode, Source
 from job_scout.fetch.models import Posting
 from job_scout.fetch.store import store_postings
 from job_scout.scoring.planner import BatchPlanner, Limits
@@ -159,9 +159,9 @@ def test_planner_output_budget() -> None:
 
 
 def test_limits_from_settings(app_config: AppConfig) -> None:
-    daily = app_config.settings.scoring.limits("daily", "cli")
+    daily = app_config.settings.scoring.limits(ScoringMode.DAILY, Backend.CLI)
     assert isinstance(daily, CliLimits)
     assert Limits.from_settings(daily) == Limits(20, 5, 60_000, 12_000)
-    assert Limits.from_settings(app_config.settings.scoring.limits("backlog", "api")) == Limits(
-        1, 10_000, None, None
-    )
+    assert Limits.from_settings(
+        app_config.settings.scoring.limits(ScoringMode.BACKLOG, Backend.API)
+    ) == Limits(1, 10_000, None, None)
