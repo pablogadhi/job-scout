@@ -151,7 +151,7 @@ def test_cli_timeout(app_config: AppConfig, tmp_path: Path) -> None:
 
     options = app_config.settings.scoring.cli.model_copy(update={"workdir": tmp_path})
     result = CliScorer(options, "m", environ={}, run=run).score(REQUEST)
-    assert result.status == "timeout" and "timed out" in result.error
+    assert result.status == "timeout" and "timed out" in (result.error or "")
 
 
 # --- api ---------------------------------------------------------------------------------
@@ -288,7 +288,7 @@ def test_api_http_errors(app_config: AppConfig) -> None:
     )
     result = scorer.score(REQUEST)
     assert (result.status, result.http_status) == ("error", 429)
-    assert "RateLimitError" in result.error
+    assert "RateLimitError" in (result.error or "")
 
 
 def test_batch_submit_poll_results(app_config: AppConfig) -> None:

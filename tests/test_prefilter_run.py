@@ -61,7 +61,7 @@ def test_group_reevaluated_when_eligible_copy_arrives(
     assert run_prefilter(app_config, session_factory).evaluated == 1
     verdict = verdict_for(session_factory, "emea")
     assert verdict.passed and verdict.group_size == 2
-    assert "via copy" in verdict.reason
+    assert "via copy" in (verdict.reason or "")
     with session_factory() as session:
         assert (
             session.scalar(
@@ -128,7 +128,7 @@ def test_synthetic_fixtures_end_to_end(
         verdicts = {(source, title): (passed, reason) for source, title, passed, reason in rows}
         for key, (passed, reason_start) in expected.items():
             assert verdicts[key][0] is passed, (key, verdicts[key])
-            assert verdicts[key][1].startswith(reason_start), (key, verdicts[key])
+            assert (verdicts[key][1] or "").startswith(reason_start), (key, verdicts[key])
 
         hn = {
             title.split(" |")[0]: passed

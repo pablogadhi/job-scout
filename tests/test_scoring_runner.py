@@ -68,6 +68,7 @@ def test_scores_everything_pending(
     assert score.status == ScoreStatus.SCORED and score.overall_score == 70
     assert score.backend == Backend.CLI and score.model == "claude-haiku-5-5"
     assert score.profile_hash == app_config.profile.sha256
+    assert score.result is not None
     assert score.result["matched_skills"] == ["Python", "Django"]
     with session_factory() as session:
         run = session.scalars(select(Run)).one()
@@ -208,7 +209,7 @@ def test_switching_backend_mid_backlog(
         options(api_limits)
     )
     assert (second.scored, second.stop_reason) == (3, StopReason.DONE)
-    backends = sorted(s.backend for s in scores(session_factory).values())
+    backends = sorted((s.backend for s in scores(session_factory).values()), key=str)
     assert backends == [Backend.API] * 3 + [Backend.CLI] * 3
 
 
@@ -375,7 +376,8 @@ def test_batches_api_end_to_end(
             "msgbatch_1",
             4,
         )
-        assert set(call.request_map) == {"c0", "c1", "c2", "c3"}
+        assert call.request_map is not None
+    assert set(call.request_map) == {"c0", "c1", "c2", "c3"}
 
 
 def test_batch_resumes_after_restart(

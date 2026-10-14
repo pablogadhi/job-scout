@@ -86,6 +86,12 @@ class FakeSmtp:
         self.messages.append(message)
 
 
+def body_of(message: EmailMessage, subtype: str) -> str:
+    part = message.get_body((subtype,))
+    assert part is not None, f"no text/{subtype} part"
+    return part.get_content()
+
+
 @pytest.fixture(autouse=True)
 def _reset_smtp() -> None:
     FakeSmtp.instances = []
@@ -170,8 +176,8 @@ def test_digest_email(tmp_path: Path, session_factory: sessionmaker[Session]) ->
     assert smtp.login_args == ("job-scout@example.test", "tok")
     (message,) = smtp.messages
     assert message["To"] == "me@example.test" and "1 top" in message["Subject"]
-    assert message.get_body(("plain",)).get_content().count("[80]") == 1
-    assert "Senior Backend Engineer 1" in message.get_body(("html",)).get_content()
+    assert body_of(message, "plain").count("[80]") == 1
+    assert "Senior Backend Engineer 1" in body_of(message, "html")
 
 
 def test_failed_email_is_not_recorded(
@@ -356,7 +362,7 @@ def test_notify_failure_command(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
     assert result.exit_code == 0, result.output
     (message,) = FakeSmtp.instances[0].messages
     assert message["Subject"] == "job-scout: daily run failed (exit-code)"
-    body = message.get_body(("plain",)).get_content()
+    body = body_of(message, "plain")
     assert "scoring failed: [redacted] expired" in body and "abc123" not in body
 
     off = CliRunner().invoke(

@@ -35,7 +35,7 @@ def test_calls_detail(
     (call,) = result.candidates[0].calls_detail
     assert (call.postings, call.returned, call.valid, call.rejected) == (5, 3, 1, 1)
     assert call.unknown_ids == [9_999] and len(call.missing_ids) == 4
-    assert "overall_score" in call.first_rejection
+    assert "overall_score" in (call.first_rejection or "")
     assert (call.input_tokens, call.output_tokens) == (100, 40)
     assert result.candidates[0].input_tokens == 100
     (failed,) = result.candidates[1].calls_detail

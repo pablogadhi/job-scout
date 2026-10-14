@@ -124,7 +124,9 @@ def test_remoteok(app_config: AppConfig, make_http: Callable[..., HttpClient]) -
         "Senior Django Developer",
         "Worldwide",
     )
-    assert p.description_text.startswith("\U0001f680 About Quetzal Labs")  # mojibake repaired
+    assert (p.description_text or "").startswith(
+        "\U0001f680 About Quetzal Labs"
+    )  # mojibake repaired
     assert (p.salary_min, p.salary_max) == (130_000, 160_000)
     assert postings[1].salary_max is None  # salary 0 means unlisted
 
@@ -153,8 +155,8 @@ def test_weworkremotely(app_config: AppConfig, make_http: Callable[..., HttpClie
     postings = fetch(app_config, make_http(), "weworkremotely")
     p = by_title(postings, "Senior Back-End Engineer")
     assert p.company == "Harbor & Co"
-    assert p.location_raw.startswith("region: Anywhere in the World; countries:")
-    assert "Guatemala" in p.location_raw
+    assert (p.location_raw or "").startswith("region: Anywhere in the World; countries:")
+    assert "Guatemala" in (p.location_raw or "")
     # "Python, PostgreSQL, and Kubernetes": the Oxford comma doesn't leak into a tag.
     assert {"Python", "PostgreSQL", "Kubernetes", "Full-Time"} <= set(p.tags)
     assert not any(t.startswith("and ") for t in p.tags)

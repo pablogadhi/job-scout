@@ -40,8 +40,8 @@ def test_second_run_adds_nothing(
             session.scalar(
                 select(SourceRun.items_new).where(SourceRun.source_id == "pyjobs").limit(1)
             )
-            > 0
-        )
+            or 0
+        ) > 0
 
 
 def test_min_interval_skips_without_force(
@@ -53,7 +53,7 @@ def test_min_interval_skips_without_force(
         run_fetch(app_config, session_factory, http, source_ids=["pyjobs"])
         again = run_fetch(app_config, session_factory, http, source_ids=["pyjobs"])[0]
     assert again.status == "skipped"
-    assert "min interval 6h" in again.reason
+    assert "min interval 6h" in (again.reason or "")
 
 
 def test_one_failing_source_does_not_stop_others(
@@ -65,7 +65,7 @@ def test_one_failing_source_does_not_stop_others(
     with make_http(broken) as http:
         outcomes = by_id(run_fetch(app_config, session_factory, http, source_ids=RSS_SOURCES))
     assert outcomes["typescriptjobs"].status == "failed"
-    assert "HTTP 503" in outcomes["typescriptjobs"].reason
+    assert "HTTP 503" in (outcomes["typescriptjobs"].reason or "")
     assert outcomes["pyjobs"].status == outcomes["remotegamejobs"].status == "ok"
     with session_factory() as session:
         state = session.get_one(Source, "typescriptjobs")
@@ -73,7 +73,7 @@ def test_one_failing_source_does_not_stop_others(
         run = session.scalars(
             select(SourceRun).where(SourceRun.source_id == "typescriptjobs")
         ).one()
-        assert run.status == SourceRunStatus.FAILED and "503" in run.error
+        assert run.status == SourceRunStatus.FAILED and "503" in (run.error or "")
 
 
 def test_html_instead_of_feed_fails(
@@ -88,7 +88,7 @@ def test_html_instead_of_feed_fails(
     }
     with make_http(html) as http:
         outcome = run_fetch(app_config, session_factory, http, source_ids=["pyjobs"])[0]
-    assert outcome.status == "failed" and "not a valid feed" in outcome.reason
+    assert outcome.status == "failed" and "not a valid feed" in (outcome.reason or "")
 
 
 def test_request_budget_skips_remotive(
@@ -143,7 +143,7 @@ def test_sources_that_cannot_run_are_skipped(
         )
     assert outcomes["findwork"].reason == "FINDWORK_API_KEY is not set"
     assert outcomes["remoteintech"].reason == "no company boards yet: run `job-scout ats detect`"
-    assert "Phase 7" in outcomes["nodesk"].reason
+    assert "Phase 7" in (outcomes["nodesk"].reason or "")
     assert {o.status for o in outcomes.values()} == {"skipped"}
 
 

@@ -107,9 +107,9 @@ def app_config() -> AppConfig:
     return load_config(REPO_CONFIG)
 
 
-def load_http_fixtures() -> dict[str, httpx.Response]:
+def load_http_fixtures() -> dict[str, tuple[int, str, bytes]]:
     """URL -> recorded response, from every tests/fixtures/http/*/manifest.json."""
-    responses = {}
+    responses: dict[str, tuple[int, str, bytes]] = {}
     for manifest in HTTP_FIXTURES.glob("*/manifest.json"):
         for url, entry in json.loads(manifest.read_text()).items():
             body = (manifest.parent / entry["file"]).read_bytes()

@@ -52,7 +52,7 @@ def test_roundtrip_and_utc(session_factory: sessionmaker[Session]) -> None:
     with session_factory() as session:
         job = session.query(Job).one()
         assert job.posted_at == posted
-        assert job.posted_at.tzinfo == UTC
+        assert job.posted_at is not None and job.posted_at.tzinfo == UTC
         assert job.tags == ["python", "django"]
         assert job.first_seen_at.tzinfo == UTC
         session.add(Score(job_id=job.id, profile_hash="h"))

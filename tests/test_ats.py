@@ -3,7 +3,7 @@
 import csv
 import io
 import tarfile
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -40,7 +40,7 @@ SEED_URL = "https://api.github.com/repos/remoteintech/remote-jobs/tarball"
 Route = Callable[[httpx.Request], httpx.Response]
 
 
-def web(pages: dict[str, httpx.Response | Route]) -> httpx.MockTransport:
+def web(pages: Mapping[str, httpx.Response | Route]) -> httpx.MockTransport:
     """A scripted web: exact URLs (query included) answer as given; robots.txt is absent;
     any other URL is a 404, which is what an unknown ATS board returns."""
 
@@ -75,7 +75,7 @@ def company(slug: str, **fields: str | None) -> SeedCompany:
     return SeedCompany(slug=slug, **{**defaults, **fields})  # type: ignore[arg-type]
 
 
-def detector(app_config: AppConfig, pages: dict[str, httpx.Response | Route]) -> Detector:
+def detector(app_config: AppConfig, pages: Mapping[str, httpx.Response | Route]) -> Detector:
     http = HttpClient(app_config.sources.defaults, transport=web(pages), sleep=lambda _s: None)
     http.__enter__()
     return Detector(http, app_config.sources.get("remoteintech"), app_config.sources.ats_platforms)
@@ -454,7 +454,9 @@ def test_poll_boards_and_store(
         170_000,
         "USD",
     )
-    assert "&lt;" not in (backend.description_text or "") and "Django" in backend.description_text
+    assert "&lt;" not in (backend.description_text or "") and "Django" in (
+        backend.description_text or ""
+    )
     platform = jobs_by_title["Senior Platform Engineer"]
     assert (platform.remote_raw, platform.salary_max, platform.salary_period) == (
         "remote",
@@ -466,7 +468,7 @@ def test_poll_boards_and_store(
     assert (data.salary_min, data.remote_raw) == (
         125_000,
         "Remote",
-    ) and "Mexico" in data.location_raw
+    ) and "Mexico" in (data.location_raw or "")
     assert "Unlisted Role" not in jobs_by_title
 
 
@@ -487,7 +489,7 @@ def test_recruitee_and_workable_mapping(
         "month",
     )
     assert devops.posted_at == datetime(2026, 10, 6, 12, 0, tzinfo=UTC)
-    assert "Terraform" in devops.description_text
+    assert "Terraform" in (devops.description_text or "")
     fullstack = found["Senior Full-Stack Developer"]
     assert (
         fullstack.remote_raw == "remote"

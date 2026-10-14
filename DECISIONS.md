@@ -1206,5 +1206,27 @@ features planned; Phase 7 (Tier 2 scrapers) and the Findwork key are still open.
 
 ### P9 For you to review
 
-- **P9-R1 The 36 pyright errors in `tests/`:** fix them too (mostly adding
-  `assert x is not None` before using a value), or only check `src/`?
+- ~~**P9-R1 The 36 pyright errors in `tests/`.**~~ Decided: fix them too (P9-U7).
+
+### P9 Your decisions (continued)
+
+- **P9-U7 Type-check the tests too.** `pyright` now checks `src/` and `tests/`
+  (`include` in `pyproject.toml`'s `[tool.pyright]`, so a bare `pyright` does both):
+  0 errors.
+
+### P9 Decisions (Claude, continued)
+
+- **P9-D12 How the 36 test errors were fixed:**
+  - About 25 were strings that may be None (`reason`, `error`, `description_text`), used
+    with `in` or `.startswith` inside asserts. They now use `(x or "")`, the pattern
+    `test_ats.py` already used. Two other values that may be None get an
+    `assert x is not None` first, and email parts go through a `body_of()` helper.
+  - The mailer's `SmtpFactory` claimed to return `smtplib.SMTP`, so the tests' fake
+    server didn't fit. It now returns `SmtpConnection`, a Protocol with the four methods
+    the mailer uses. The real `_smtp()` is typed with it too, so pyright checks that
+    `smtplib.SMTP` still matches. That check caught a wrong `__exit__` signature in
+    the first draft of the Protocol.
+  - Two test helpers had wrong hints: `conftest.load_http_fixtures` returns tuples, not
+    responses; `test_ats.web()` and `detector()` take a `Mapping`. The live scoring test
+    passes `Backend` members. One test asserts the `ApiLimits` type before reading
+    `use_batches_api`.

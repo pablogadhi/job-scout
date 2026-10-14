@@ -53,5 +53,6 @@ addopts = "-m 'not live'"
 markers = ["live: hits real network or a real Claude backend; run with -m live"]
 
 [tool.pyright]
+include = ["src", "tests"]
 venvPath = "."
 venv = ".venv"

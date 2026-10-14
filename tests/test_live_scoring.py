@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from job_scout.config import AppConfig
+from job_scout.db.models import Backend
 from job_scout.scoring.backends import make_scorer
 from job_scout.scoring.backends.base import CallRequest
 from job_scout.scoring.prompt import PostingInput, system_prompt, user_message
@@ -37,9 +38,9 @@ POSTINGS = [
 ]
 
 
-def _score(app_config: AppConfig, backend: str, tmp_path: Path) -> ScoreBatch:
+def _score(app_config: AppConfig, backend: Backend, tmp_path: Path) -> ScoreBatch:
     scoring = app_config.settings.scoring
-    if backend == "cli":
+    if backend == Backend.CLI:
         scoring = scoring.model_copy(
             update={"cli": scoring.cli.model_copy(update={"workdir": tmp_path / "claude-cwd"})}
         )
@@ -65,9 +66,9 @@ def _score(app_config: AppConfig, backend: str, tmp_path: Path) -> ScoreBatch:
     not os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"), reason="CLAUDE_CODE_OAUTH_TOKEN not set"
 )
 def test_cli_backend_scores_with_haiku(app_config: AppConfig, tmp_path: Path) -> None:
-    _score(app_config, "cli", tmp_path)
+    _score(app_config, Backend.CLI, tmp_path)
 
 
 @pytest.mark.skipif(not os.environ.get("ANTHROPIC_API_KEY"), reason="ANTHROPIC_API_KEY not set")
 def test_api_backend_scores(app_config: AppConfig, tmp_path: Path) -> None:
-    _score(app_config, "api", tmp_path)
+    _score(app_config, Backend.API, tmp_path)

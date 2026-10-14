@@ -11,6 +11,8 @@ from collections.abc import Callable, Mapping
 from datetime import datetime
 from email.message import EmailMessage
 from email.utils import format_datetime, make_msgid
+from types import TracebackType
+from typing import Protocol
 
 from pydantic import SecretStr
 
@@ -20,14 +22,31 @@ from job_scout.config.settings import Email
 TOKEN_ENV = "JOB_SCOUT_SMTP_TOKEN"
 TO_ENV = "JOB_SCOUT_DIGEST__EMAIL__TO_ADDRESS"  # the setting's env var (digest.email.to_address)
 
-SmtpFactory = Callable[[str, int, float], smtplib.SMTP]
+
+class SmtpConnection(Protocol):
+    """What `send` uses of an SMTP connection: smtplib.SMTP, or a fake in tests."""
+
+    def __enter__(self) -> SmtpConnection: ...
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+        /,
+    ) -> object: ...
+    def starttls(self, *, context: ssl.SSLContext) -> object: ...
+    def login(self, user: str, password: str, /) -> object: ...
+    def send_message(self, msg: EmailMessage, /) -> object: ...
+
+
+SmtpFactory = Callable[[str, int, float], SmtpConnection]
 
 
 class EmailError(RuntimeError):
     pass
 
 
-def _smtp(host: str, port: int, timeout: float) -> smtplib.SMTP:
+def _smtp(host: str, port: int, timeout: float) -> SmtpConnection:
     return smtplib.SMTP(host, port, timeout=timeout)
 
 
