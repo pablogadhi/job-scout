@@ -43,6 +43,9 @@ class SourceConfig(StrictModel):
     # Enforced limits; free-text limits in `notes` are documentation only.
     max_requests_per_day: PositiveInt | None = None  # rolling 24 hours
     min_request_interval_seconds: PositiveFloat | None = None
+    # APIs read newest first that we stop early (findwork): pages per run. `fetch
+    # --max-pages N` overrides it once, e.g. to read further back for the backlog.
+    max_pages: PositiveInt | None = None
     # full: all filters.yaml rules. remote_mention_only: free-text posts (HN comments) with
     # no real title only need to mention "remote"; Claude parses the rest.
     prefilter: PrefilterMode = "full"

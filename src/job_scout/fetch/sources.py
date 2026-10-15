@@ -163,7 +163,7 @@ def _map_workingnomads(item: dict[str, Any]) -> Posting | None:
 
 # --- Findwork (JSON, API key, paginated) -------------------------------------------------
 
-FINDWORK_MAX_PAGES = 5
+FINDWORK_MAX_PAGES = 5  # when sources.yaml sets no max_pages
 
 
 def _findwork_pages(ctx: FetchContext, url: str) -> Iterator[Any]:
@@ -172,7 +172,7 @@ def _findwork_pages(ctx: FetchContext, url: str) -> Iterator[Any]:
         raise FetchError(f"{ctx.source.auth_env} is not set")
     headers = {"Authorization": f"Token {key.get_secret_value()}"}
     next_url: str | None = url
-    for _ in range(FINDWORK_MAX_PAGES):
+    for _ in range(ctx.source.max_pages or FINDWORK_MAX_PAGES):
         if not next_url:
             return
         payload = ctx.get_json(next_url, headers=headers)

@@ -192,8 +192,9 @@ laptop and on the server alike. Data goes to the repo's gitignored `data/` (rela
   `tests/fixtures/make_http_fixtures.py` and run it. Tests replay them with
   `fixture_transport()` from `tests/conftest.py`, and any unrecorded URL fails the test.
 - **Source limits are config, not code:** `max_requests_per_day` (rolling 24h, counted from
-  `source_runs`, never bypassed by `--force`), `min_request_interval_seconds`, and `auth_env`
-  (the source is skipped, not failed, while that variable is unset).
+  `source_runs`, never bypassed by `--force`), `min_request_interval_seconds`, `auth_env`
+  (the source is skipped, not failed, while that variable is unset), and `max_pages` for APIs
+  we stop reading early (`fetch --max-pages N` overrides it for one run).
 - **Dedupe:** the same (source, source_job_id) is never stored twice (`last_seen_at` is bumped).
   A new posting whose `dedupe.key` matches an earlier job is stored with `duplicate_of` set to
   the first copy. Postings missing a key field (e.g. no company) never merge. A mapper whose

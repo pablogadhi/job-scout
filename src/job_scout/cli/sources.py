@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import os
 from datetime import datetime
 from pathlib import Path
@@ -37,6 +38,14 @@ def fetch(
             hidden=True,
         ),
     ] = None,
+    max_pages: Annotated[
+        int | None,
+        typer.Option(
+            "--max-pages",
+            min=1,
+            help="Sources with max_pages (findwork): read up to N pages this run.",
+        ),
+    ] = None,
 ) -> None:
     """Fetch postings from enabled sources and store new ones."""
     config = load(ctx)
@@ -47,6 +56,8 @@ def fetch(
             "Record to data/recordings instead.",
             label="--record must not write under tests/",
         )
+    if max_pages:
+        config = with_max_pages(config, max_pages)
     outcomes = fetch_sources(config, source_ids=source or [], tier=tier, force=force, record=record)
     print_outcomes(outcomes, "Fetch results")
     exit_if_all_failed(outcomes)
@@ -134,6 +145,17 @@ def check(
     if probe:
         outcomes = fetch_sources(config, source_ids=[s.id for s in enabled], tier=None, probe=True)
         print_outcomes(outcomes, "Probe results (nothing stored)")
+
+
+def with_max_pages(config: AppConfig, pages: int) -> AppConfig:
+    """The config with every source that has max_pages reading `pages` instead."""
+    sources = [
+        s.model_copy(update={"max_pages": pages}) if s.max_pages else s
+        for s in config.sources.sources
+    ]
+    return dataclasses.replace(
+        config, sources=config.sources.model_copy(update={"sources": sources})
+    )
 
 
 def fetch_sources(

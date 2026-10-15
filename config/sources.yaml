@@ -220,10 +220,12 @@ sources:
     format: json
     auth: 'API key from a free account, sent as "Authorization: Token <key>"'
     auth_env: FINDWORK_API_KEY      # source is skipped while this is unset
+    max_pages: 5                    # newest first, ~95 jobs a page; fetch --max-pages reads further
+    min_request_interval_seconds: 6 # responses say x-ratelimit-limit: 10; 6s keeps us under 10/minute
     notes: >
       Aggregates other boards: mostly We Work Remotely (every category, where our own
       weworkremotely source reads three), plus HN, YC, Dribbble and Gitjobs. About 100 jobs
-      per page, newest first, 5 pages per run; "location" is usually empty. Its HN items
+      per page, newest first (2,089 remote jobs on 2026-10-14); "location" is usually empty. Its HN items
       are skipped, since hn_whoishiring fetches those comments directly.
 
 # ---------------------------------------------------------------------------------------------

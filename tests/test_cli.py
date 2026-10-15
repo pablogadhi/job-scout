@@ -12,6 +12,7 @@ from typer.testing import CliRunner
 from job_scout.ats.refresh import RefreshReport
 from job_scout.cli import app
 from job_scout.cli.common import PIPE_WIDTH, make_console
+from job_scout.config import AppConfig, load_config
 from job_scout.db import make_engine, make_session_factory
 from job_scout.db.models import Backend, Job, Source
 from job_scout.fetch.models import Posting
@@ -85,6 +86,19 @@ def test_fetch_unknown_source_exits_2() -> None:
     result = invoke("fetch", "--source", "nope")
     assert result.exit_code == 2
     assert "unknown source id: nope" in result.output
+
+
+def test_fetch_max_pages_overrides_paginated_sources(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: list[AppConfig] = []
+    monkeypatch.setattr(
+        "job_scout.cli.sources.fetch_sources", lambda config, **_: seen.append(config) or []
+    )
+    result = invoke("fetch", "--source", "findwork", "--max-pages", "30")
+    assert result.exit_code == 0, result.output
+    pages = {s.id: s.max_pages for s in seen[0].sources.sources}
+    assert pages["findwork"] == 30
+    assert pages["remotive"] is None  # sources without max_pages are left alone
+    assert load_config(REPO_CONFIG).sources.get("findwork").max_pages == 5
 
 
 def _seed_group(db_url: str) -> int:

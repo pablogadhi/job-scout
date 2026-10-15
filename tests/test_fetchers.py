@@ -7,6 +7,7 @@ import httpx
 import pytest
 
 from job_scout.ats.platforms import Board, api_url
+from job_scout.cli.sources import with_max_pages
 from job_scout.config import AppConfig
 from job_scout.fetch.base import FetchContext
 from job_scout.fetch.hn import map_comment
@@ -256,6 +257,21 @@ def test_hn_role_for_matching_duplicates(header: str, role: str | None) -> None:
     posting = map_comment(comment)
     assert posting is not None
     assert (posting.title, posting.dedupe_title) == (header, role)
+
+
+def test_findwork_stops_at_max_pages(
+    app_config: AppConfig, make_http: Callable[..., HttpClient]
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        page = int(request.url.params.get("page", "1"))
+        item = {"id": page, "role": "Backend Engineer", "url": f"https://findwork.dev/{page}"}
+        next_url = f"https://findwork.dev/api/jobs/?page={page + 1}"
+        return httpx.Response(200, json={"next": next_url, "results": [item]})
+
+    http = make_http({"https://findwork.dev/api/jobs/": handler})
+    config = with_max_pages(app_config, 3)
+    postings = fetch(config, http, "findwork", environ={"FINDWORK_API_KEY": "secret"})
+    assert [p.source_job_id for p in postings] == ["1", "2", "3"]
 
 
 def test_working_nomads_keeps_development_only(

@@ -1426,3 +1426,14 @@ features planned; Phase 7 (Tier 2 scrapers) and the Findwork key are still open.
   with the old parser). Checked live: every enabled source's endpoint and the ATS APIs
   are still allowed, so the daily run loses nothing. Careers pages that `ats detect`
   reads may now be refused where their robots.txt uses wildcards, which is correct.
+- **P9-U18 Findwork's page cap is config, with a one-run override.** The 5-page cap was a
+  constant in the code, so a fetch only reached the newest ~470 of Findwork's 2,089 remote
+  jobs (back to Sept 29). It's now `max_pages: 5` in `sources.yaml`, used by every daily
+  run. `fetch --max-pages N` raises it for one run, for sources that set `max_pages`, to
+  read further back for the backlog. The code keeps 5 as the fallback when the config sets
+  none.
+- **P9-D19 Findwork requests are 6 seconds apart** (`min_request_interval_seconds: 6`).
+  Its responses carry `x-ratelimit-limit: 10`, and the remaining count dropped by one per
+  request. They don't say over what window, so 6 seconds keeps us under 10 a minute. A
+  5-page daily fetch takes about 30 seconds; a full read of ~22 pages takes about 2
+  minutes.
