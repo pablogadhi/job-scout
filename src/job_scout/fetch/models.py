@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 from typing import Any
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator
@@ -28,6 +29,13 @@ class Posting(BaseModel):
     tags: list[str] = []
     posted_at: AwareDatetime | None = None
     raw: dict[str, Any]
+
+    @field_validator("title", "company", mode="before")
+    @classmethod
+    def _unescape(cls, value: Any) -> Any:
+        # Some feeds send names still HTML-escaped ("R&amp;D", "O&#39;Brien"); left as is,
+        # the copy wouldn't merge with the same job from another source.
+        return html.unescape(value) if isinstance(value, str) else value
 
     @field_validator("company", "location_raw", "remote_raw", "apply_url", "description_text")
     @classmethod

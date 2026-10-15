@@ -1336,3 +1336,25 @@ features planned; Phase 7 (Tier 2 scrapers) and the Findwork key are still open.
   CLI tests had hidden it by setting `COLUMNS=200`; a new test builds a non-terminal console
   without it. `COLUMNS=0` (set but not a width) made the CLI print nothing at all
   without a terminal; it now counts as unset.
+- **Findwork checked against the live API (2026-10-14)** with your key: the mapper's
+  fields match the real responses, and the first fetch gave 474 postings (404 new, 70
+  duplicates). `sources.yaml` now has `checked: 2026-10-14`, and its notes describe what
+  Findwork relists.
+- **P9-D16 Findwork's HN items are skipped.** Findwork relists the HN "Who is hiring"
+  comments that `hn_whoishiring` already fetches: 34 of its 40 HN postings were companies
+  our HN source had. None of them merged, because our HN title is the comment's whole
+  header line ("Mastra | AI Engineer | REMOTE …"), so each would have been scored twice.
+  The other 26 HN items had no title at all and showed up as "26 items unmappable". They
+  were all HN, checked by re-reading the same 5 pages. The skip is silent, not counted as
+  unmappable. The 40 Findwork HN rows already in your local DB stay.
+- **P9-B6 HTML-escaped titles and company names** ("Dynamics 365 CE/CRM &amp; F&amp;O",
+  "O&#39;Brien"): 32 Findwork postings and 1 RemoteOK posting had them. Besides looking
+  wrong in the digest, an escaped copy can't merge with the same job from another source,
+  since the dedupe key is built from the names. `Posting` now decodes entities in `title`
+  and `company` for every source. Rows already stored keep their text.
+- **P9-R3 HN postings never merge with other sources.** Our HN title is the comment's
+  header line (company | role | location …), on purpose, since Claude parses the rest. It
+  never equals a plain job title, so an HN job that's also on a board is scored twice. It's
+  rare now that Findwork's HN copies are skipped, but it can still happen with ATS boards
+  and Remotive. A fix would be to take the role from the header's second field for the
+  dedupe key only. Say if you want it.

@@ -226,7 +226,12 @@ def _findwork_pages(ctx: FetchContext, url: str) -> Iterator[Any]:
         next_url = payload.get("next")
 
 
-def _map_findwork(item: dict[str, Any]) -> Posting:
+def _map_findwork(item: dict[str, Any]) -> Posting | None:
+    # Findwork relists HN "Who is hiring" comments, which hn_whoishiring fetches directly.
+    # Its copies have a shorter title (often none), so they'd never merge with ours and the
+    # same job would be scored twice.
+    if item.get("source") == "Hn":
+        return None
     remote = item.get("remote")
     return Posting(
         source_job_id=str(item["id"]),

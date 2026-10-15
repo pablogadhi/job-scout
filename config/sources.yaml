@@ -215,12 +215,16 @@ sources:
     url: https://findwork.dev
     method: api
     tier: 1
-    checked: unverified
+    checked: 2026-10-14
     endpoints: ["https://findwork.dev/api/jobs/?remote=true&sort_by=date"]
     format: json
-    auth: 'API key from a free account, sent as "Authorization: Token <key>" (unverified until a key exists)'
+    auth: 'API key from a free account, sent as "Authorization: Token <key>"'
     auth_env: FINDWORK_API_KEY      # source is skipped while this is unset
-    notes: Aggregates several boards and adds company data. Will overlap with other sources.
+    notes: >
+      Aggregates other boards: mostly We Work Remotely (every category, where our own
+      weworkremotely source reads three), plus HN, YC, Dribbble and Gitjobs. About 100 jobs
+      per page, newest first, 5 pages per run; "location" is usually empty. Its HN items
+      are skipped, since hn_whoishiring fetches those comments directly.
 
 # ---------------------------------------------------------------------------------------------
 # ATS seed: companies, not jobs

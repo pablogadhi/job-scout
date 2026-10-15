@@ -257,7 +257,7 @@ def test_working_nomads_keeps_development_only(
 def test_findwork_sends_token_and_follows_pages(
     app_config: AppConfig, make_http: Callable[..., HttpClient]
 ) -> None:
-    """Shape from the Findwork docs; unverified against the live API until a key exists."""
+    """Shape checked against the live API on 2026-10-14."""
     seen_auth: list[str | None] = []
     item = {
         "id": 7,
@@ -270,12 +270,16 @@ def test_findwork_sends_token_and_follows_pages(
         "date_posted": "2026-10-11T10:00:00Z",
         "keywords": ["python", "django"],
         "employment_type": "full time",
+        "source": "Weworkremotely",
     }
 
     def handler(request: httpx.Request) -> httpx.Response:
         seen_auth.append(request.headers.get("authorization"))
         if "page=2" in str(request.url):
-            return httpx.Response(200, json={"next": None, "results": [{**item, "id": 8}]})
+            # Relisted HN comments are skipped: hn_whoishiring has them. Some have no role.
+            hn = {**item, "id": 9, "source": "Hn"}
+            results = [{**item, "id": 8, "role": "R&amp;D Lead"}, hn, {**hn, "role": None}]
+            return httpx.Response(200, json={"next": None, "results": results})
         return httpx.Response(
             200, json={"next": "https://findwork.dev/api/jobs/?page=2", "results": [item]}
         )
@@ -283,6 +287,7 @@ def test_findwork_sends_token_and_follows_pages(
     http = make_http({"https://findwork.dev/api/jobs/": handler})
     postings = fetch(app_config, http, "findwork", environ={"FINDWORK_API_KEY": "secret"})
     assert [p.source_job_id for p in postings] == ["7", "8"]
+    assert postings[1].title == "R&D Lead"
     assert seen_auth == ["Token secret", "Token secret"]
     assert postings[0].remote_raw == "remote"
     assert postings[0].description_text == "Build things"
