@@ -55,6 +55,65 @@ def test_robots_disallow_blocks_request(
             http.get("https://example.com/private/x", source=source, budget=RequestBudget())
 
 
+WILDCARD_ROBOTS = """User-agent: *
+Disallow: /api/*
+Allow: /api/public/
+Disallow: /*category=
+Disallow: /*/rss.xml
+Disallow: /exact$
+"""
+
+
+@pytest.mark.parametrize(
+    ("path", "allowed"),
+    [
+        ("/api/jobs", False),
+        ("/api/public/jobs", True),  # the longest matching rule wins
+        ("/jobs?category=a", False),
+        ("/jobs/rss.xml", False),
+        ("/exact", False),
+        ("/exactly", True),  # $ anchors the end
+        ("/remote-jobs/feed", True),
+    ],
+)
+def test_robots_wildcards(
+    app_config: AppConfig, make_http: Callable[..., HttpClient], path: str, allowed: bool
+) -> None:
+    """RFC 9309 patterns: `*` matches any run of characters, `$` the end of the path."""
+    source = app_config.sources.get("remoteok")
+    overrides = {
+        "https://example.com/robots.txt": robots(WILDCARD_ROBOTS),
+        "https://example.com/": ok,
+    }
+    with make_http(overrides) as http:
+        if allowed:
+            http.get(f"https://example.com{path}", source=source, budget=RequestBudget())
+        else:
+            with pytest.raises(RobotsDisallowed):
+                http.get(f"https://example.com{path}", source=source, budget=RequestBudget())
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "﻿User-agent: *\nDisallow: /private",  # leading byte-order mark
+        "User-agent: job-scout\nDisallow: /private\n\nUser-agent: *\nDisallow: /",  # our group
+    ],
+)
+def test_robots_groups(
+    app_config: AppConfig, make_http: Callable[..., HttpClient], text: str
+) -> None:
+    source = app_config.sources.get("remoteok")
+    overrides = {
+        "https://example.com/robots.txt": lambda _r: httpx.Response(200, content=text.encode()),
+        "https://example.com/": ok,
+    }
+    with make_http(overrides) as http:
+        http.get("https://example.com/public", source=source, budget=RequestBudget())
+        with pytest.raises(RobotsDisallowed):
+            http.get("https://example.com/private/x", source=source, budget=RequestBudget())
+
+
 @pytest.mark.parametrize("status", [404, 401, 403, 410])
 def test_robots_4xx_means_allowed(
     app_config: AppConfig, make_http: Callable[..., HttpClient], status: int

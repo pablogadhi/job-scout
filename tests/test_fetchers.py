@@ -10,7 +10,7 @@ from job_scout.ats.platforms import Board, api_url
 from job_scout.config import AppConfig
 from job_scout.fetch.base import FetchContext
 from job_scout.fetch.hn import map_comment
-from job_scout.fetch.http import FetchError, HttpClient, RequestBudget
+from job_scout.fetch.http import HttpClient, RequestBudget
 from job_scout.fetch.models import Posting
 from job_scout.fetch.sources import FETCHERS
 
@@ -133,23 +133,14 @@ def test_remoteok(app_config: AppConfig, make_http: Callable[..., HttpClient]) -
 
 
 def test_remotive(app_config: AppConfig, make_http: Callable[..., HttpClient]) -> None:
-    postings = fetch(app_config, make_http(), "remotive")  # first run: checks categories
+    postings = fetch(app_config, make_http(), "remotive")
     p = by_title(postings, "Senior Full Stack Engineer")
+    assert p.source_job_id == "7000001"  # jobId: the JSON API's id, so stored jobs still match
     assert (p.company, p.location_raw) == ("Cobalt Systems", "Americas")
-    assert (p.salary_min, p.salary_max) == (120_000, 150_000)
-    assert p.posted_at == datetime(2026, 10, 8, 21, 47, 32, tzinfo=UTC)  # naive -> UTC
-
-
-def test_remotive_rejects_unknown_category(
-    app_config: AppConfig, make_http: Callable[..., HttpClient]
-) -> None:
-    source = app_config.sources.get("remotive")
-    bad = source.model_copy(
-        update={"endpoints": ["https://remotive.com/api/remote-jobs?category=nope"]}
-    )
-    ctx = FetchContext(source=bad, http=make_http(), budget=RequestBudget(), now=NOW)
-    with ctx.http, pytest.raises(FetchError, match=r"unknown Remotive categories \['nope'\]"):
-        FETCHERS["remotive"].fetch(ctx)
+    assert {"Software Development", "full_time"} <= set(p.tags)
+    assert (p.salary_min, p.salary_max) == (120_000, 150_000)  # from the description
+    assert p.posted_at == datetime(2026, 10, 8, 21, 47, 32, tzinfo=UTC)
+    assert by_title(postings, "Inside Sales Representative").salary_max is None
 
 
 def test_weworkremotely(app_config: AppConfig, make_http: Callable[..., HttpClient]) -> None:

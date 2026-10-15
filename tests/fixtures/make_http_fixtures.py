@@ -256,45 +256,55 @@ def remoteok(endpoint: str) -> dict[str, Any]:
 
 
 def remotive(endpoint: str) -> dict[str, Any]:
-    legal = {"0-legal-notice": "Synthetic fixture.", "job-count": 2, "total-job-count": 2}
-    categories = [
-        {"id": 19, "name": "Software Development", "slug": "software-development"},
-        {"id": 20, "name": "DevOps / Sysadmin", "slug": "devops"},
-        {"id": 21, "name": "Sales", "slug": "sales"},
-    ]
-    jobs = [
-        {
-            "id": 7000001,
-            "url": "https://remotive.com/remote-jobs/software-dev/senior-full-stack-engineer-7000001",
-            "title": "Senior Full Stack Engineer",
-            "company_name": "Cobalt Systems",
-            "company_logo": "",
-            "category": "Software Development",
-            "tags": ["react", "django"],
-            "job_type": "full_time",
-            "publication_date": "2026-10-08T21:47:32",  # no timezone, as served
-            "candidate_required_location": "Americas",
-            "salary": "$120k - $150k",
-            "description": "<p>Own features end to end.</p>",
-        },
-        {
-            "id": 7000002,
-            "url": "https://remotive.com/remote-jobs/sales/inside-sales-representative-7000002",
-            "title": "Inside Sales Representative",
-            "company_name": "Brightpath",
-            "company_logo": "",
-            "category": "Sales",
-            "tags": ["crm"],
-            "job_type": "contract",
-            "publication_date": "2026-10-07T10:00:00",
-            "candidate_required_location": "USA Only",
-            "salary": "OTE $40k - $60k",
-            "description": "<p>Close deals.</p>",
-        },
-    ]
+    def job(job_id: int, slug: str, title: str, company: str, **fields: str) -> str:
+        url = f"https://remotive.com/remote-jobs/{slug}-{job_id}"
+        return item(
+            title=escape(title),
+            jobId=str(job_id),
+            company=escape(company),
+            location=escape(fields["location"]),
+            type=fields["type"],
+            **{'guid isPermaLink="false"': url},
+            link=url,
+            pubDate=fields["date"],
+            **{"dc:creator": escape(company)},
+            category=escape(fields["category"]),
+            description=cdata(fields["body"]),
+        )
+
+    ns = ' xmlns:dc="http://purl.org/dc/elements/1.1/"'
     return {
-        "https://remotive.com/api/remote-jobs/categories": (JSON, {**legal, "jobs": categories}),
-        endpoint: (JSON, {**legal, "jobs": jobs}),
+        endpoint: (
+            RSS,
+            rss(
+                "Remotive Remote Jobs RSS Feed",
+                [
+                    job(
+                        7000001,
+                        "software-development/senior-full-stack-engineer",
+                        "Senior Full Stack Engineer",
+                        "Cobalt Systems",
+                        location="Americas",
+                        type="full_time",
+                        date="Thu, 08 Oct 2026 21:47:32 GMT",
+                        category="Software Development",
+                        body="<p>Own features end to end.</p><p>Salary: $120,000 - $150,000</p>",
+                    ),
+                    job(
+                        7000002,
+                        "sales/inside-sales-representative",
+                        "Inside Sales Representative",
+                        "Brightpath",
+                        location="USA Only",
+                        type="contract",
+                        date="Wed, 07 Oct 2026 10:00:00 GMT",
+                        category="Sales",
+                        body="<p>Close deals.</p>",
+                    ),
+                ],
+                ns,
+            ),
+        )
     }
 
 

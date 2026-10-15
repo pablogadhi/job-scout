@@ -163,11 +163,8 @@ class JsonFetcher:
     items: Callable[[Any], Iterable[Any]]
     map_item: Callable[[Any], Posting | None]
     pages: Callable[[FetchContext, str], Iterator[Any]] | None = None
-    before: Callable[[FetchContext], None] | None = None
 
     def fetch(self, ctx: FetchContext) -> list[Posting]:
-        if self.before:
-            self.before(ctx)
         postings: list[Posting] = []
         for url in ctx.source.endpoints:
             payloads = self.pages(ctx, url) if self.pages else iter([ctx.get_json(url)])

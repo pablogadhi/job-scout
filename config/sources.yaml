@@ -74,19 +74,19 @@ sources:
     name: Remotive
     list: job_boards
     url: https://remotive.com
-    method: api
+    method: rss
     tier: 1
-    checked: 2026-10-12     # robots.txt allows job-scout's UA; slugs validated against /categories
+    checked: 2026-10-14     # feed allowed by robots.txt; the API (/api/*, /*category=) is not
     endpoints:
-      # The free API ignores the category filter: every category URL returns the same 15
-      # delayed jobs across all categories (checked 2026-10-12), so one request is enough.
-      - https://remotive.com/api/remote-jobs?category=software-development
-    format: json
-    max_requests_per_day: 4         # enforced; the first successful fetch also spends one on /categories
+      # Same 15 jobs as the free API. Category feeds (/remote-jobs/<slug>/feed) are subsets
+      # of this one; the slugs in the feed repo's README are outdated (software-dev is a 404).
+      - https://remotive.com/remote-jobs/feed
+    format: rss
+    max_requests_per_day: 4         # their advice for the API: at most 4 times a day
     min_request_interval_seconds: 31  # more than 2 per minute gets blocked
     notes: >
-      Get valid category slugs from https://remotive.com/api/remote-jobs/categories on first run.
-      Max 4 calls per day; more than 2 per minute gets blocked. Jobs appear with a 24h delay.
+      Documented at https://github.com/remotive-com/remote-jobs-feed. Items carry jobId (the
+      API's job id), company, location and type. No salary field; descriptions often state one.
     terms: >
       Link back to the job on Remotive and credit Remotive. Don't repost the jobs elsewhere.
 

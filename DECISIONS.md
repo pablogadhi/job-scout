@@ -1394,3 +1394,35 @@ features planned; Phase 7 (Tier 2 scrapers) and the Findwork key are still open.
   Platform Lead", the "Post Training" research roles); `filters.yaml` sends unclear titles
   to Claude on purpose. The next `filter` re-checks every verdict, since the rules'
   fingerprint changed.
+- **P9-B7 Remotive's robots.txt disallows the API we were calling.** It has `Disallow:
+  /api/*` and `Disallow: /*category=`, which cover both `/api/remote-jobs?category=…` and
+  `/api/remote-jobs/categories`. `HttpClient` let them through because
+  `urllib.robotparser` reads `*` literally (found during Phase 10's source research;
+  fixed in P9-B8).
+- **P9-U18 Remotive reads its documented RSS feed instead**
+  (github.com/remotive-com/remote-jobs-feed), which robots.txt allows. Done on this branch.
+- **P9-D19 How the Remotive feed is read:**
+  - One request to `https://remotive.com/remote-jobs/feed`: the same 15 jobs the free API
+    served (the category feeds are subsets of it, and the README's slugs are outdated:
+    `software-dev` is a 404).
+  - Items carry `jobId`, the id the API used, so it stays the `source_job_id` and jobs
+    already stored from the API keep matching instead of being stored again.
+  - Company, location and job type come from the feed's own tags. There's no salary field:
+    a salary is parsed only when the description labels it ("Salary: …"), otherwise it's
+    left to Claude (1 of the 15 live items had one).
+  - The first-run check of category slugs went with the API, and so did
+    `JsonFetcher.before`, which only it used. The budget (4 requests a day) and the 31s
+    spacing stay. A live fetch into a throwaway database stored 15 jobs with 1 request.
+- **P9-B8 The robots.txt check ignored wildcards.** `urllib.robotparser` matches rule
+  paths as literal prefixes, so RFC 9309 rules with `*` or `$` (`Disallow: /api/*`,
+  `/*category=`, `/*/rss.xml`) never matched, and a byte-order mark at the start of the
+  file hid the first `User-agent` line. Found during Phase 10's source research.
+- **P9-U19 Fix it on this branch** (it changes the running instance).
+- **P9-D20 `protego` replaces `urllib.robotparser`.** It's Scrapy's RFC 9309 parser
+  (wildcards, `$`, longest match wins, our own `User-agent` group before `*`), so no
+  matcher of our own to maintain. It doesn't strip a byte-order mark, so `HttpClient`
+  does that before parsing. The 4xx/5xx handling is unchanged. New tests cover the
+  wildcard, `$`, longest-match, byte-order-mark and own-group cases (5 of them fail
+  with the old parser). Checked live: every enabled source's endpoint and the ATS APIs
+  are still allowed, so the daily run loses nothing. Careers pages that `ats detect`
+  reads may now be refused where their robots.txt uses wildcards, which is correct.
