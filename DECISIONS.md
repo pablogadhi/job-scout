@@ -1426,39 +1426,47 @@ features planned; Phase 7 (Tier 2 scrapers) and the Findwork key are still open.
   with the old parser). Checked live: every enabled source's endpoint and the ATS APIs
   are still allowed, so the daily run loses nothing. Careers pages that `ats detect`
   reads may now be refused where their robots.txt uses wildcards, which is correct.
-- **P9-U18 Findwork's page cap is config, with a one-run override.** The 5-page cap was a
+- **P9-U20 Findwork's page cap is config, with a one-run override.** The 5-page cap was a
   constant in the code, so a fetch only reached the newest ~470 of Findwork's 2,089 remote
   jobs (back to Sept 29). It's now `max_pages: 5` in `sources.yaml`, used by every daily
   run. `fetch --max-pages N` raises it for one run, for sources that set `max_pages`, to
   read further back for the backlog. The code keeps 5 as the fallback when the config sets
   none.
-- **P9-D19 Findwork requests are 6 seconds apart** (`min_request_interval_seconds: 6`).
+- **P9-D22 Findwork requests are 6 seconds apart** (`min_request_interval_seconds: 6`).
   Its responses carry `x-ratelimit-limit: 10`, and the remaining count dropped by one per
   request. They don't say over what window, so 6 seconds keeps us under 10 a minute. A
   5-page daily fetch takes about 30 seconds; a full read of ~22 pages takes about 2
   minutes.
-- **P9-B7 CrazyGames was polled at a board that isn't theirs** (`careers-analytics`).
+- **P9-B9 CrazyGames was polled at a board that isn't theirs** (`careers-analytics`).
   Careers pages using Recruitee load a script from `careers-analytics.recruitee.com`, and
   the Recruitee pattern (`<token>.recruitee.com`) took that host for the company's board.
   The API answered 403 every day; their real board is `crazygames`. Recruitee's own hosts
   (`careers-analytics`, `app`, `cdn`, `assets`) are now non-tokens.
-- **P9-B8 A deleted board was polled forever when the seed's careers URL named it.**
+- **P9-B10 A deleted board was polled forever when the seed's careers URL named it.**
   Detection accepted a board from the careers URL without a request, so the monthly
   re-detection marked it ok again even after the board was gone. Found from a fetch where 3
   boards answered 404: Lambda School (`lever:BloomTech`), ReCharge Payments
   (`greenhouse:recharge`) and Sketch (`ashby:sketch`); all three still 404 on 2026-10-14.
-- **P9-D20 A board found in a careers URL or page must answer on its API.** Any answer
+- **P9-D23 A board found in a careers URL or page must answer on its API.** Any answer
   counts, even with no jobs: the company may just not be hiring right now. The probe
   still needs at least one job, since a slug guess that answers with an empty board is
   weak evidence. On a 404 the board doesn't count and detection moves on to the next
   method. A temporary failure makes the detection inconclusive, so the company keeps its
   board and is retried next run. Costs one request per company found this way per
   detection, about 130 a month for your seed.
-- **P9-U19 Weaker watchlist jobs are collapsed.** Watchlist jobs scoring under 50 go in a
+- **P9-U21 Weaker watchlist jobs are collapsed.** Watchlist jobs scoring under 50 go in a
   collapsed "Watchlist below 50 (N)" block under the watchlist section, so a watchlist
   company posting many jobs at once doesn't swamp the digest. The cutoff is a setting,
   `digest.watchlist_collapse_below: 50`. Jobs between `watchlist_min_score` (21) and 50
   still appear and still count as reported; only their layout changes.
-- **P9-D21 In the plain-text email part they're one line each** ("[34] Title - Company
+- **P9-D24 In the plain-text email part they're one line each** ("[34] Title - Company
   (job #N)"), since plain text can't collapse. The split happens in the templates, so the
   digest's bookkeeping (`Sections.watchlist`, recorded job ids) is unchanged.
+- **P9-U22 Travel is not a work-life-balance concern.** Claude listed "travel twice a
+  year" under WLB concerns. The user is fine with up to about 6 trips a year, maybe more,
+  to anywhere in the world. `profile.md` now says so next to the on-call rule.
+- **P9-D25 How the travel rule reads:** offsites, retreats, conferences and occasional
+  customer visits are neutral up to ~6 trips a year; only travel clearly beyond that
+  ("25%+", monthly or weekly trips) is a mild negative, never a disqualifier. Occasional
+  travel never makes a role hybrid. Editing the profile re-scores nothing: jobs already
+  scored keep their old travel flags.

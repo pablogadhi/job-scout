@@ -72,6 +72,11 @@ and score on the rest.
      an early-stage startup, "willing to work long hours / weekends", "high-intensity",
      "we're a family", extreme growth-at-all-costs language.
    - **On-call is neutral.** Do not count on-call in either direction.
+   - **Travel is neutral up to about 6 trips a year, to anywhere in the world.** Team offsites,
+     company retreats, conferences and occasional customer visits are not a work-life-balance
+     concern; don't list them in `wlb_negative`. Only travel clearly beyond that ("travel 25%+",
+     monthly or weekly trips) is a mild negative. Occasional travel never makes a role hybrid
+     or fails the fully-remote requirement.
 
 ## Skills and experience
 
