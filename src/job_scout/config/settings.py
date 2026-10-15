@@ -92,7 +92,7 @@ class Modes(StrictModel):
 
 class CliOptions(StrictModel):
     binary: str = "claude"
-    workdir: Path = Path("/var/lib/job-scout/claude-cwd")
+    workdir: Path = Path("data/claude-cwd")
     timeout_seconds: PositiveInt = 600
     token_created: date | None = None
 
@@ -236,9 +236,12 @@ class Feedback(StrictModel):
 
 
 class Paths(StrictModel):
-    database: Path = Path("/var/lib/job-scout/job-scout.db")
-    reports: Path = Path("/var/lib/job-scout/reports")
-    exports: Path = Path("/var/lib/job-scout/exports")
+    """Relative paths resolve against the working directory: the repo root, or /app in the
+    container, where the repo's data/ is mounted."""
+
+    database: Path = Path("data/job-scout.db")
+    reports: Path = Path("data/reports")
+    exports: Path = Path("data/exports")
 
 
 class Settings(BaseSettings):

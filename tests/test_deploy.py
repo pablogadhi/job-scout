@@ -1,7 +1,6 @@
 """The deploy files stay consistent with the code and config (no Docker or systemd needed)."""
 
 import re
-from pathlib import Path
 
 import yaml
 
@@ -38,8 +37,9 @@ def test_service_reports_failures_and_hangs() -> None:
 
 def test_compose_mounts_the_configured_paths(app_config: AppConfig) -> None:
     compose = yaml.safe_load((DEPLOY / "compose.yaml").read_text())["services"]["job-scout"]
-    data_mount = next(v for v in compose["volumes"] if v.endswith(":/var/lib/job-scout"))
-    assert data_mount.startswith("/var/lib/job-scout:")
+    assert compose["env_file"] == "../.env"
+    assert "../data:/app/data" in compose["volumes"]
+    assert "../config:/app/config:ro" in compose["volumes"]
     paths = app_config.settings.paths
     for path in (
         paths.database,
@@ -47,8 +47,20 @@ def test_compose_mounts_the_configured_paths(app_config: AppConfig) -> None:
         paths.exports,
         app_config.settings.scoring.cli.workdir,
     ):
-        assert Path(path).is_relative_to("/var/lib/job-scout"), path
-    assert "../config:/app/config:ro" in compose["volumes"]
+        assert not path.is_absolute() and path.is_relative_to("data"), path
+    assert "HOME=/app/data/home" in (ROOT / "Dockerfile").read_text()
+
+
+def test_deploy_stays_in_the_users_home() -> None:
+    """No system paths: the repo, data and secrets all live in ~/job-scout."""
+    files = [ROOT / "Dockerfile", *(p for p in DEPLOY.rglob("*") if p.is_file())]
+    for path in files:
+        text = path.read_text(encoding="utf-8")
+        for system_path in ("/var/lib", "/opt/", "/etc/job-scout", "/etc/systemd"):
+            assert system_path not in text, f"{path.name} mentions {system_path}"
+    for name in ("job-scout.service", "job-scout-failure.service"):
+        assert "WorkingDirectory=%h/job-scout/deploy" in unit(name)
+    assert "journalctl --user" in unit("job-scout-failure.service")
 
 
 def test_feedback_page_service(app_config: AppConfig) -> None:
@@ -63,11 +75,7 @@ def test_feedback_page_service(app_config: AppConfig) -> None:
 
 
 def test_env_example_lists_every_secret() -> None:
-    names = set(
-        re.findall(
-            r"^#?\s*([A-Z][A-Z0-9_]+)=", (DEPLOY / "job-scout.env.example").read_text(), re.M
-        )
-    )
+    names = set(re.findall(r"^#?\s*([A-Z][A-Z0-9_]+)=", (ROOT / ".env.example").read_text(), re.M))
     expected = {
         "CLAUDE_CODE_OAUTH_TOKEN",
         "ANTHROPIC_API_KEY",

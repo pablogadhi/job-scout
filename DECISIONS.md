@@ -1298,3 +1298,33 @@ features planned; Phase 7 (Tier 2 scrapers) and the Findwork key are still open.
   name in `src/`, `config/`, `deploy/` and the Dockerfile and fails on any that's missing.
 - **P9-B4 `sources check`'s health line didn't use `secret()`** (`report/data.py`): a blank
   `FINDWORK_API_KEY` counted as set there but as unset when fetching. Left over from P9-D8.
+- **P9-U15 Nothing on the server runs as root or lives in a system path.** You keep
+  everything in your home: the repo in `~/job-scout`, its data in the same folder. So:
+  - Data paths are relative: `data/job-scout.db`, `data/reports`, `data/exports`,
+    `data/claude-cwd` (settings.yaml and the built-in defaults). They resolve against the
+    working directory: the repo root locally, `/app` in the container. Locally that's what
+    `.env` already set, so the path lines in `.env.example` are now commented out.
+  - compose mounts `../data` at `/app/data` (was `/var/lib/job-scout`), and the
+    container's `HOME` is `/app/data/home`.
+  - One `.env`: `deploy/job-scout.env.example` is deleted, and compose reads the repo's
+    `.env` (`env_file: ../.env`, was `/etc/job-scout/job-scout.env`). Its notes on
+    `claude setup-token` and the feedback address moved into `.env.example`, and the
+    secrets test reads `.env.example`.
+  - A new test fails if the Dockerfile or any deploy file names `/var/lib`, `/opt`,
+    `/etc/job-scout` or `/etc/systemd`.
+- **P9-D15 The systemd units are user units** (`~/.config/systemd/user`, `systemctl --user`),
+  with `loginctl enable-linger` so the timer fires without a login. Consequences:
+  - `WorkingDirectory=%h/job-scout/deploy`.
+  - A user unit can't depend on the system's `docker.service` or `network-online.target`,
+    so the run waits up to 5 minutes for `docker info` to answer (`ExecStartPre`). That only
+    matters for a catch-up run right after boot (`Persistent=true`).
+  - The failure email reads the user journal: `journalctl --user` matching the run's
+    `_SYSTEMD_INVOCATION_ID` (its output; checked on this laptop that user-unit lines carry
+    their own invocation id) or `USER_INVOCATION_ID` (the user manager's messages about it,
+    e.g. a timeout kill, which the system version didn't include).
+  - Docker itself stays rootful: your user needs the `docker` group. With rootless Docker
+    the container's UID 1000 would map to another host UID and couldn't write `data/`.
+  - `systemd-analyze verify` can't run in the sandbox; the README runs it on the server.
+- **P6-R1 and P6-R2 updated:** the server steps are now the ones in `deploy/README.md`
+  (clone to `~/job-scout`, `.env`, user units). The git remote exists
+  (`github.com/pablogadhi/job-scout`, private), so updates are `git pull` in `~/job-scout`.

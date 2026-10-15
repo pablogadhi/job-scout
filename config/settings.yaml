@@ -53,7 +53,7 @@ scoring:
 
   cli:
     binary: claude
-    workdir: /var/lib/job-scout/claude-cwd # empty dir: no CLAUDE.md, hooks or MCP config
+    workdir: data/claude-cwd # empty dir: no CLAUDE.md, hooks or MCP config
     timeout_seconds: 600
     # Auth: CLAUDE_CODE_OAUTH_TOKEN from `claude setup-token` (valid one year).
     # The subprocess gets an allowlisted environment: ANTHROPIC_* never reaches it.
@@ -118,7 +118,9 @@ schedule:
   timezone: America/Guatemala
   daily_run_time: "08:15"           # the server boots at 08:00; keep in sync with deploy/systemd/job-scout.timer
 
+# Relative to the working directory: the repo root, or /app in the container, where the
+# repo's gitignored data/ is mounted.
 paths:
-  database: /var/lib/job-scout/job-scout.db
-  reports: /var/lib/job-scout/reports
-  exports: /var/lib/job-scout/exports # job-scout export (CSV, --sqlite snapshot)
+  database: data/job-scout.db
+  reports: data/reports
+  exports: data/exports # job-scout export (CSV, --sqlite snapshot)

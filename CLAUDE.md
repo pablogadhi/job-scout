@@ -47,8 +47,9 @@ git config core.hooksPath .githooks             # once per clone: ruff + pyright
 uv run --env-file .env alembic revision --autogenerate -m "what changed"
 ```
 
-`.env` (gitignored, copy from `.env.example`) points paths at `./data/` for local work;
-`settings.yaml` holds the server paths under `/var/lib/job-scout`.
+`.env` (gitignored, copy from `.env.example`) holds secrets and per-machine settings, on the
+laptop and on the server alike. Data goes to the repo's gitignored `data/` (relative paths in
+`settings.yaml`, so run commands from the repo root).
 
 ## Layout
 
@@ -99,8 +100,9 @@ uv run --env-file .env alembic revision --autogenerate -m "what changed"
   `report.py` (agreement stats).
 - `Dockerfile` + `deploy/`: the server setup (`deploy/README.md`). One image (Python deps from
   `uv.lock`, the pinned native `claude` binary); `compose.yaml` mounts `config/` read-only and
-  `/var/lib/job-scout`, and runs the always-on `feedback` page service from the same image;
-  `entrypoint.sh` migrates, then runs the command; `systemd/` has the
+  `data/` at `/app/data`, reads the repo's `.env`, and runs the always-on `feedback` page
+  service from the same image; `entrypoint.sh` migrates, then runs the command; `systemd/`
+  has user units (the server runs everything from `~/job-scout`, nothing as root): the
   08:15 timer, the run service (`TimeoutStartSec`, `OnFailure=`) and the failure-email
   service, which pipes the run's journal into `job-scout notify-failure`.
 - `tests/`: pytest; `conftest.py` clears `JOB_SCOUT_*` env vars and gives a writable copy of
@@ -127,11 +129,11 @@ uv run --env-file .env alembic revision --autogenerate -m "what changed"
   `JOB_SCOUT_SMTP_TOKEN`, both checked at send time. The token is wrapped in `SecretStr`,
   never stored in settings or logged. Tests that load the repo config turn email off.
 - **Deploy files are tested for consistency** (`tests/test_deploy.py`): the timer's time and
-  zone must match `schedule.daily_run_time`/`timezone`, data paths must live under
-  `/var/lib/job-scout`, `deploy/job-scout.env.example` must list every secret the code
-  reads, and `.env.example` every env var named in `src/`, `config/`, `deploy/` or the
-  Dockerfile (add new ones there). Bump `CLAUDE_CODE_VERSION` in the Dockerfile only on
-  purpose.
+  zone must match `schedule.daily_run_time`/`timezone`, data paths must be relative, under
+  `data/`, no deploy file may name a system path (`/var/lib`, `/opt`, `/etc/...`), and
+  `.env.example` must list every secret the code reads and every env var named in `src/`,
+  `config/`, `deploy/` or the Dockerfile (add new ones there). Bump `CLAUDE_CODE_VERSION`
+  in the Dockerfile only on purpose.
 - **Feedback:** the digest links to `<feedback.base_url>/f/<job_id>?v=…&s=<signature>`;
   opening a link saves nothing, only the page's POST does. No links while
   `JOB_SCOUT_FEEDBACK__BASE_URL` (env only: it differs per machine) or

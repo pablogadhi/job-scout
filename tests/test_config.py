@@ -90,7 +90,7 @@ def test_flag_beats_env(config_dir: Path, monkeypatch: pytest.MonkeyPatch) -> No
 
 
 def test_database_url(config_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    assert load_settings_only(config_dir).db_url == "sqlite:////var/lib/job-scout/job-scout.db"
+    assert load_settings_only(config_dir).db_url == "sqlite:///data/job-scout.db"
     monkeypatch.setenv("JOB_SCOUT_PATHS__DATABASE", "data/x.db")
     assert load_settings_only(config_dir).db_url == "sqlite:///data/x.db"
     monkeypatch.setenv("JOB_SCOUT_DATABASE_URL", "postgresql+psycopg://h/db")

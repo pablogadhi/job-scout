@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # job-scout: the daily pipeline in one image (PLAN.md Phase 6). Built and run by
-# deploy/compose.yaml; see deploy/README.md. config/ and /var/lib/job-scout are mounted.
+# deploy/compose.yaml; see deploy/README.md. The repo's config/ and data/ are mounted in /app.
 
 ARG PYTHON_VERSION=3.12
 # Pinned, and updated deliberately: CLI flags can change between releases (PLAN.md Phase 6).
@@ -30,7 +30,7 @@ FROM python:${PYTHON_VERSION}-slim-bookworm
 ARG UID=1000
 ARG GID=1000
 RUN groupadd --gid "${GID}" job-scout \
- && useradd --uid "${UID}" --gid "${GID}" --home-dir /var/lib/job-scout/home --no-create-home \
+ && useradd --uid "${UID}" --gid "${GID}" --home-dir /app/data/home --no-create-home \
       --shell /usr/sbin/nologin job-scout
 COPY --from=claude /claude /usr/local/bin/claude
 COPY --from=build /app/.venv /app/.venv
@@ -39,7 +39,7 @@ COPY deploy/entrypoint.sh /usr/local/bin/entrypoint
 ENV PATH=/app/.venv/bin:$PATH \
     PYTHONUNBUFFERED=1 \
     JOB_SCOUT_CONFIG_DIR=/app/config \
-    HOME=/var/lib/job-scout/home
+    HOME=/app/data/home
 WORKDIR /app
 USER ${UID}:${GID}
 ENTRYPOINT ["entrypoint"]

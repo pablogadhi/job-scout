@@ -1,65 +1,76 @@
 # Deploying job-scout on the home server
 
-One Docker image runs every command; systemd runs `job-scout run` daily at 08:15
+One Docker image runs every command; a systemd user timer runs `job-scout run` daily at 08:15
 (Guatemala time). A failed or hung run emails you its log; the daily digest, sent even when
 there's nothing new, is the "it ran" signal. There is no external
 monitor: if the server itself is down, you notice anyway (it's also your DNS and DHCP).
 
 ## What's where
 
+Everything lives in your home directory; nothing runs as root.
+
 | Path on the server | What |
 | --- | --- |
-| `/opt/job-scout` | this repo (`config/` is mounted read-only into the container) |
-| `/var/lib/job-scout` | database, reports, exports, the claude CLI's home and work dir |
-| `/etc/job-scout/job-scout.env` | secrets, mode 600 (template: `deploy/job-scout.env.example`) |
-| `/etc/systemd/system/job-scout*` | the timer and the two services (`deploy/systemd/`) |
+| `~/job-scout` | this repo (`config/` is mounted read-only into the container) |
+| `~/job-scout/data/` | gitignored: database, reports, exports, the claude CLI's home and work dir |
+| `~/job-scout/.env` | gitignored secrets and per-machine settings, mode 600 (template: `.env.example`) |
+| `~/.config/systemd/user/job-scout*` | the timer and the two services (`deploy/systemd/`), as user units |
 
-Needs Docker with the compose plugin, and systemd 251 or later (`systemctl --version`), for
-the `MONITOR_*` variables the failure email uses.
+Needs Docker with the compose plugin, your user in the `docker` group (the container runs as
+UID/GID 1000 and writes to `data/` as that user; rootless Docker would map it to another
+UID), and systemd 251 or later (`systemctl --version`), for the `MONITOR_*` variables the
+failure email uses.
 
 ## First install
 
 ```sh
-# 1. Code and data directory (the container runs as UID/GID 1000 by default;
-#    build with JOB_SCOUT_UID=... JOB_SCOUT_GID=... to use another user)
-sudo git clone <your remote> /opt/job-scout
-sudo mkdir -p /var/lib/job-scout && sudo chown 1000:1000 /var/lib/job-scout
+# 1. Code and data directory. The container writes data/ as UID/GID 1000: if `id` shows
+#    another UID, export JOB_SCOUT_UID=$(id -u) JOB_SCOUT_GID=$(id -g) before building.
+git clone git@github.com:pablogadhi/job-scout.git ~/job-scout
+mkdir -p ~/job-scout/data      # before compose runs, or Docker creates it owned by root
 
-# 2. Secrets: fill in CLAUDE_CODE_OAUTH_TOKEN, ANTHROPIC_API_KEY, JOB_SCOUT_SMTP_TOKEN,
-#    JOB_SCOUT_DIGEST__EMAIL__TO_ADDRESS, the feedback page's JOB_SCOUT_FEEDBACK_SECRET
-#    (`openssl rand -hex 32`) and JOB_SCOUT_FEEDBACK__BASE_URL (see "Feedback page" below),
-#    and FINDWORK_API_KEY when you have one
-sudo install -d -m 700 /etc/job-scout
-sudo install -m 600 /opt/job-scout/deploy/job-scout.env.example /etc/job-scout/job-scout.env
-sudoedit /etc/job-scout/job-scout.env
+# 2. Secrets: uncomment and fill in CLAUDE_CODE_OAUTH_TOKEN and
+#    JOB_SCOUT_SCORING__CLI__TOKEN_CREATED (the day you ran `claude setup-token`),
+#    ANTHROPIC_API_KEY, JOB_SCOUT_SMTP_TOKEN, JOB_SCOUT_DIGEST__EMAIL__TO_ADDRESS, the
+#    feedback page's JOB_SCOUT_FEEDBACK_SECRET (`openssl rand -hex 32`) and
+#    JOB_SCOUT_FEEDBACK__BASE_URL (see "Feedback page" below), and FINDWORK_API_KEY when
+#    you have one
+cd ~/job-scout
+cp .env.example .env && chmod 600 .env
+$EDITOR .env
 
-# 3. In the same file, set JOB_SCOUT_SCORING__CLI__TOKEN_CREATED to the date you ran
-#    `claude setup-token` (YYYY-MM-DD), so the digest warns 30 days before the token expires.
-
-# 4. Optional: keep your local history (scores, what digests already reported). On your
+# 3. Optional: keep your local history (scores, what digests already reported). On your
 #    laptop: `uv run --env-file .env job-scout export --sqlite`, then copy the snapshot:
-#    scp data/exports/job-scout-<time>.db server:/tmp/ &&
-#    sudo install -o 1000 -g 1000 -m 600 /tmp/job-scout-<time>.db /var/lib/job-scout/job-scout.db
+#    scp data/exports/job-scout-<time>.db server:job-scout/data/job-scout.db
 
-# 5. Build the image (the database is created or migrated at the start of every command)
-cd /opt/job-scout/deploy
-sudo docker compose build
-sudo docker compose run --rm -T job-scout sources check
+# 4. Build the image (the database is created or migrated at the start of every command)
+cd ~/job-scout/deploy
+docker compose build
+docker compose run --rm -T job-scout sources check
 
-# 6. Company boards: the full detection (15-30 minutes; safe to interrupt and re-run)
-sudo docker compose run --rm -T job-scout ats detect
+# 5. Company boards: the full detection (15-30 minutes; safe to interrupt and re-run)
+docker compose run --rm -T job-scout ats detect
 ```
 
 ## Schedule it
 
+User units run while you're logged in; lingering keeps your user manager running from boot,
+so the timer fires without a login.
+
 ```sh
-sudo cp /opt/job-scout/deploy/systemd/job-scout* /etc/systemd/system/
-sudo systemd-analyze verify /etc/systemd/system/job-scout.timer \
-  /etc/systemd/system/job-scout.service /etc/systemd/system/job-scout-failure.service
-sudo systemctl daemon-reload
-sudo systemctl enable --now job-scout.timer
-systemctl list-timers job-scout.timer          # next run: tomorrow 08:15
+loginctl enable-linger "$USER"                 # once; may ask for your password
+mkdir -p ~/.config/systemd/user
+cp ~/job-scout/deploy/systemd/job-scout* ~/.config/systemd/user/
+systemd-analyze --user verify ~/.config/systemd/user/job-scout.timer \
+  ~/.config/systemd/user/job-scout.service ~/.config/systemd/user/job-scout-failure.service
+systemctl --user daemon-reload
+systemctl --user enable --now job-scout.timer
+systemctl --user list-timers job-scout.timer   # next run: tomorrow 08:15
 ```
+
+If `journalctl --user` shows nothing, your user can't read its own journal (a volatile
+journal): add yourself to the `systemd-journal` group, or the failure email arrives without
+the run's log.
 
 ## Feedback page
 
@@ -70,10 +81,10 @@ scoring prompt as examples, and `job-scout feedback report` shows how often Clau
 
 ```sh
 # Pick a name for the server in your DNS (e.g. jobscout.lan -> the server's LAN IP), and
-# set JOB_SCOUT_FEEDBACK__BASE_URL=http://jobscout.lan:8765 in /etc/job-scout/job-scout.env.
-cd /opt/job-scout/deploy
-sudo docker compose up -d feedback        # restarts with Docker at boot
-sudo docker compose logs feedback         # "feedback page listening on http://0.0.0.0:8765"
+# set JOB_SCOUT_FEEDBACK__BASE_URL=http://jobscout.lan:8765 in ~/job-scout/.env.
+cd ~/job-scout/deploy
+docker compose up -d feedback             # restarts with Docker at boot
+docker compose logs feedback              # "feedback page listening on http://0.0.0.0:8765"
 curl -s -o /dev/null -w '%{http_code}\n' http://jobscout.lan:8765/f/1   # 403: no signature
 ```
 
@@ -88,31 +99,32 @@ curl -s -o /dev/null -w '%{http_code}\n' http://jobscout.lan:8765/f/1   # 403: n
 
 ```sh
 # A real run now (spends up to 5 Pro prompts, sends the digest):
-sudo systemctl start job-scout.service
-journalctl -u job-scout.service -n 50 --no-pager
+systemctl --user start job-scout.service
+journalctl --user -u job-scout.service -n 50 --no-pager
 
 # The failure email, without breaking anything: a throwaway unit that fails and hands its
 # log to the same failure service. You should get "job-scout: daily run failed (exit-code)".
-sudo systemd-run --unit=job-scout-failtest -p OnFailure=job-scout-failure.service \
+systemd-run --user --unit=job-scout-failtest -p OnFailure=job-scout-failure.service \
   /bin/sh -c 'echo "deliberate failure for the Phase 6 check"; exit 1'
-journalctl -u job-scout-failure.service -n 20 --no-pager
+journalctl --user -u job-scout-failure.service -n 20 --no-pager
 ```
 
 ## Everyday
 
-- Logs: `journalctl -u job-scout.service` (each run), `journalctl -u job-scout-failure.service`.
-- Run a command: `cd /opt/job-scout/deploy && sudo docker compose run --rm -T job-scout <command>`,
-  e.g. `status`, `digest --dry-run`, `export --sqlite` (files land in `/var/lib/job-scout`).
+- Logs: `journalctl --user -u job-scout.service` (each run),
+  `journalctl --user -u job-scout-failure.service`.
+- Run a command: `cd ~/job-scout/deploy && docker compose run --rm -T job-scout <command>`,
+  e.g. `status`, `digest --dry-run`, `export --sqlite` (files land in `~/job-scout/data`).
 - How Claude's scores compare with your votes:
-  `sudo docker compose run --rm -T job-scout feedback report` (`--all` lists every vote).
+  `docker compose run --rm -T job-scout feedback report` (`--all` lists every vote).
 - The initial backlog on the API (spends, about $1-2 with Haiku 5.5):
-  `sudo docker compose run --rm -T job-scout backlog --backend api`.
-- Update: `cd /opt/job-scout && sudo git pull && cd deploy && sudo docker compose build`,
-  then `sudo docker compose up -d feedback` to restart the page on the new image. Database
+  `docker compose run --rm -T job-scout backlog --backend api`.
+- Update: `cd ~/job-scout && git pull && cd deploy && docker compose build`,
+  then `docker compose up -d feedback` to restart the page on the new image. Database
   migrations run on the next command. Re-copy the units if `deploy/systemd`
-  changed, then `sudo systemctl daemon-reload`.
+  changed, then `systemctl --user daemon-reload`.
 - Changing the run time: edit `deploy/systemd/job-scout.timer` *and*
   `schedule.daily_run_time` in `config/settings.yaml` (a test checks they match).
 - Updating the claude CLI: bump `CLAUDE_CODE_VERSION` in `Dockerfile` on purpose (its flags
   can change between releases), rebuild, then check one call:
-  `sudo docker compose run --rm -T job-scout score --max-calls 1`.
+  `docker compose run --rm -T job-scout score --max-calls 1`.

@@ -2,16 +2,17 @@
 #   docker compose run --rm -T job-scout run
 # and the feedback page runs as a long-lived service:
 #   docker compose up -d feedback
-# Paths: the repo checkout is /opt/job-scout, data lives in /var/lib/job-scout (the paths in
-# config/settings.yaml), secrets in /etc/job-scout/job-scout.env (mode 600, never in git).
+# Everything stays in the repo checkout (~/job-scout): config/ mounted read-only, the
+# gitignored data/ for the database, reports and the claude CLI's home, and the gitignored
+# .env (mode 600) for secrets.
 name: job-scout
 
 x-job-scout: &job-scout
   image: job-scout:local
-  env_file: /etc/job-scout/job-scout.env
+  env_file: ../.env
   volumes:
     - ../config:/app/config:ro
-    - /var/lib/job-scout:/var/lib/job-scout
+    - ../data:/app/data
   init: true
 
 services:
