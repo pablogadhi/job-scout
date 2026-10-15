@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Annotated, Any
+from typing import IO, Annotated, Any
 
 import typer
 from rich.console import Console
@@ -19,8 +20,23 @@ from job_scout.db.models import Backend
 from job_scout.log import setup_logging
 
 log = logging.getLogger(__name__)
-console = Console()
-err_console = Console(stderr=True)
+
+# Without a terminal Rich assumes 80 columns and squeezes tables into them, cutting headers
+# and values to "…". Wide enough for every table at its natural width.
+PIPE_WIDTH = 200
+
+
+def make_console(*, stderr: bool = False, file: IO[str] | None = None) -> Console:
+    """A console that prints whole tables when the output isn't a terminal (a pipe,
+    `docker compose run -T`, the journal). COLUMNS, when set, still decides the width."""
+    out = Console(stderr=stderr, file=file)
+    if not out.is_terminal and not os.environ.get("COLUMNS"):
+        out.width = PIPE_WIDTH
+    return out
+
+
+console = make_console()
+err_console = make_console(stderr=True)
 
 
 @dataclass

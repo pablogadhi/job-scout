@@ -1,14 +1,17 @@
+import io
 import json
 import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
+from rich.table import Table
 from sqlalchemy import select
 from typer.testing import CliRunner
 
 from job_scout.ats.refresh import RefreshReport
 from job_scout.cli import app
+from job_scout.cli.common import PIPE_WIDTH, make_console
 from job_scout.db import make_engine, make_session_factory
 from job_scout.db.models import Backend, Job, Source
 from job_scout.fetch.models import Posting
@@ -42,6 +45,23 @@ def test_sources_check_by_tier() -> None:
     assert "remoteok" in table
     assert "nodesk" not in table
     assert "nodesk" in disabled
+
+
+def test_console_without_a_terminal_is_wide(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("COLUMNS", raising=False)
+    out = io.StringIO()
+    console = make_console(file=out)
+    assert console.width == PIPE_WIDTH
+    table = Table()
+    for name in ("id", "tier", "method", "checked", "last success", "items", "new", "health"):
+        table.add_column(name)
+    table.add_row("realworkfromanywhere", "1", "api", "2026-10-09", "46.0h ago", "312", "19",
+                  "needs FINDWORK_API_KEY")  # fmt: skip
+    console.print(table)
+    assert "…" not in out.getvalue()
+    assert "needs FINDWORK_API_KEY" in out.getvalue()
+    monkeypatch.setenv("COLUMNS", "60")
+    assert make_console(file=io.StringIO()).width == 60
 
 
 def test_bad_config_exits_2(config_dir: Path) -> None:

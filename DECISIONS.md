@@ -1328,3 +1328,10 @@ features planned; Phase 7 (Tier 2 scrapers) and the Findwork key are still open.
 - **P6-R1 and P6-R2 updated:** the server steps are now the ones in `deploy/README.md`
   (clone to `~/job-scout`, `.env`, user units). The git remote exists
   (`github.com/pablogadhi/job-scout`, private), so updates are `git pull` in `~/job-scout`.
+- **P9-B5 Tables were cut to 80 columns whenever the output wasn't a terminal**
+  (`docker compose run -T`, a pipe, the journal): Rich assumes 80 columns there and squeezed
+  `sources check` down to "ti…", "h…" and even an item count of 300 to "3…". The daily run's
+  tables in the journal were cut the same way. The CLI's consoles now use 200 columns
+  without a terminal, so tables print at their natural width (`COLUMNS` still wins). The
+  CLI tests had hidden it by setting `COLUMNS=200`; a new test builds a non-terminal console
+  without it.
