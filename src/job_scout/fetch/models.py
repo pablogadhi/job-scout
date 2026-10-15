@@ -29,6 +29,9 @@ class Posting(BaseModel):
     tags: list[str] = []
     posted_at: AwareDatetime | None = None
     raw: dict[str, Any]
+    # What duplicates are matched on when the title carries more than the role (HN's
+    # "Company | Role | Location" header). Not stored: it only shapes title_normalized.
+    dedupe_title: str | None = Field(default=None, exclude=True)
 
     @field_validator("title", "company", mode="before")
     @classmethod
@@ -58,6 +61,7 @@ class Posting(BaseModel):
         return Posting.model_validate(
             {
                 **self.model_dump(),
+                "dedupe_title": self.dedupe_title,
                 "salary_min": salary.min,
                 "salary_max": salary.max,
                 "salary_currency": salary.currency,

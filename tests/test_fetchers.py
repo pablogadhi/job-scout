@@ -9,6 +9,7 @@ import pytest
 from job_scout.ats.platforms import Board, api_url
 from job_scout.config import AppConfig
 from job_scout.fetch.base import FetchContext
+from job_scout.fetch.hn import map_comment
 from job_scout.fetch.http import FetchError, HttpClient, RequestBudget
 from job_scout.fetch.models import Posting
 from job_scout.fetch.sources import FETCHERS
@@ -245,6 +246,25 @@ def test_hn(app_config: AppConfig, make_http: Callable[..., HttpClient]) -> None
     assert "\n" not in em_dash.title and "Payments" not in em_dash.title
     funded = postings[3]
     assert (funded.salary_min, funded.salary_max) == (140_000, 170_000)  # not the $20M round
+    # Duplicates are matched on the role alone; the title keeps the whole header.
+    roles = ["Senior Platform Engineer", "Senior Backend Engineer", "Staff Engineer"]
+    assert [p.dedupe_title for p in postings] == [*roles, "Backend Engineer"]
+
+
+@pytest.mark.parametrize(
+    ("header", "role"),
+    [
+        ("Acme | Remote | Full-Time | Senior SRE | $200k", "Senior SRE"),
+        ("Acme | https://a.example | a.io | Data Engineer (Remote)", "Data Engineer (Remote)"),
+        ("Acme | REMOTE (US) | Full time | https://acme.example", None),
+        ("Acme is hiring engineers", None),
+    ],
+)  # fmt: skip
+def test_hn_role_for_matching_duplicates(header: str, role: str | None) -> None:
+    comment = {"id": 1, "author": "a", "text": f"{header}<p>About us.</p>", "created_at": None}
+    posting = map_comment(comment)
+    assert posting is not None
+    assert (posting.title, posting.dedupe_title) == (header, role)
 
 
 def test_working_nomads_keeps_development_only(

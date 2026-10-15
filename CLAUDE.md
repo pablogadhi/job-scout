@@ -195,7 +195,9 @@ laptop and on the server alike. Data goes to the repo's gitignored `data/` (rela
   (the source is skipped, not failed, while that variable is unset).
 - **Dedupe:** the same (source, source_job_id) is never stored twice (`last_seen_at` is bumped).
   A new posting whose `dedupe.key` matches an earlier job is stored with `duplicate_of` set to
-  the first copy. Postings missing a key field (e.g. no company) never merge.
+  the first copy. Postings missing a key field (e.g. no company) never merge. A mapper whose
+  title carries more than the role sets `Posting.dedupe_title` (HN: the header's role), which
+  only shapes `title_normalized`; the stored title stays whole.
 - **Secrets:** `CLAUDE_CODE_OAUTH_TOKEN` (cli backend) and `ANTHROPIC_API_KEY` (api backend)
   come from the environment, never from files in git. The API key must never reach the
   `claude` subprocess. Read every secret with `config.secrets.secret()` (a `SecretStr`, or

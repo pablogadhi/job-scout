@@ -1352,9 +1352,26 @@ features planned; Phase 7 (Tier 2 scrapers) and the Findwork key are still open.
   wrong in the digest, an escaped copy can't merge with the same job from another source,
   since the dedupe key is built from the names. `Posting` now decodes entities in `title`
   and `company` for every source. Rows already stored keep their text.
-- **P9-R3 HN postings never merge with other sources.** Our HN title is the comment's
+- ~~**P9-R3 HN postings never merge with other sources.**~~ Decided: fix it (P9-U16). Our HN title is the comment's
   header line (company | role | location …), on purpose, since Claude parses the rest. It
   never equals a plain job title, so an HN job that's also on a board is scored twice. It's
   rare now that Findwork's HN copies are skipped, but it can still happen with ATS boards
   and Remotive. A fix would be to take the role from the header's second field for the
   dedupe key only. Say if you want it.
+- **P9-U16 HN postings are matched on their role.** A new `Posting.dedupe_title` (not
+  stored) replaces the title when building `title_normalized`, so the dedupe key uses it.
+  The HN mapper sets it to the header's role, and the title shown everywhere keeps the
+  whole header.
+- **P9-D17 How the role is picked:** the first header segment after the company that isn't
+  a link, a domain, a work arrangement (remote, onsite, hybrid), an employment type, or
+  pay. Parentheses are ignored for that test, so "Data Engineer (Remote)" counts as a
+  role. On your 260 stored HN headers it found a role for 220.
+  - Sometimes a place is picked instead ("Berkeley, CA"). That's harmless: a place never
+    equals another job's title, so the posting just doesn't merge, which is how it was
+    before.
+  - A header with no role segment keeps matching on the whole header.
+  - Side effect: the same company posting the same role in next month's thread now
+    merges with this month's copy. That's correct, and as with any linked copy, the
+    group is queued for a re-score.
+  - HN rows already stored keep their old key, so a board copy of an October comment
+    won't merge with it. From next month's thread on, every comment uses the new key.

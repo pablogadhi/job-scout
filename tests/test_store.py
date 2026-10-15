@@ -42,6 +42,18 @@ def test_html_escaped_names_merge_with_plain_ones(
     assert (result.new, result.duplicate) == (0, 1)
 
 
+def test_a_title_can_be_matched_on_a_shorter_one(session_factory: sessionmaker[Session]) -> None:
+    header = "Acme Inc. | Senior Backend Engineer | REMOTE (US) | Full-time"
+    hn = posting("1", header).model_copy(update={"dedupe_title": "Senior Backend Engineer"})
+    setup_sources(session_factory, "hn", "board")
+    with session_factory.begin() as session:
+        store_postings(session, "hn", [hn], KEY, NOW)
+        result = store_postings(session, "board", [posting("2")], KEY, NOW)
+        stored = session.scalars(select(Job).where(Job.source_id == "hn")).one()
+    assert (result.new, result.duplicate) == (0, 1)
+    assert stored.title == header  # only the match key uses the short title
+
+
 def test_new_seen_and_cross_posted(session_factory: sessionmaker[Session]) -> None:
     setup_sources(session_factory, "a", "b")
     with session_factory.begin() as session:

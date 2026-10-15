@@ -68,7 +68,7 @@ def store_postings(
             source_id=source_id,
             **posting.model_dump(),
             company_normalized=normalize_company(posting.company),
-            title_normalized=normalize_title(posting.title),
+            title_normalized=normalize_title(posting.dedupe_title or posting.title),
             first_seen_at=now,
             last_seen_at=now,
         )
