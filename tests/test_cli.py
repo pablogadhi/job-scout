@@ -62,6 +62,8 @@ def test_console_without_a_terminal_is_wide(monkeypatch: pytest.MonkeyPatch) -> 
     assert "needs FINDWORK_API_KEY" in out.getvalue()
     monkeypatch.setenv("COLUMNS", "60")
     assert make_console(file=io.StringIO()).width == 60
+    monkeypatch.setenv("COLUMNS", "0")
+    assert make_console(file=io.StringIO()).width == PIPE_WIDTH
 
 
 def test_bad_config_exits_2(config_dir: Path) -> None:

@@ -1334,4 +1334,5 @@ features planned; Phase 7 (Tier 2 scrapers) and the Findwork key are still open.
   tables in the journal were cut the same way. The CLI's consoles now use 200 columns
   without a terminal, so tables print at their natural width (`COLUMNS` still wins). The
   CLI tests had hidden it by setting `COLUMNS=200`; a new test builds a non-terminal console
-  without it.
+  without it. `COLUMNS=0` (set but not a width) made the CLI print nothing at all
+  without a terminal; it now counts as unset.

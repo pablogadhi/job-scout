@@ -28,9 +28,11 @@ PIPE_WIDTH = 200
 
 def make_console(*, stderr: bool = False, file: IO[str] | None = None) -> Console:
     """A console that prints whole tables when the output isn't a terminal (a pipe,
-    `docker compose run -T`, the journal). COLUMNS, when set, still decides the width."""
+    `docker compose run -T`, the journal). A positive COLUMNS still decides the width; Rich
+    would print nothing at all with COLUMNS=0."""
     out = Console(stderr=stderr, file=file)
-    if not out.is_terminal and not os.environ.get("COLUMNS"):
+    columns = os.environ.get("COLUMNS", "")
+    if not out.is_terminal and not (columns.isdigit() and int(columns) > 0):
         out.width = PIPE_WIDTH
     return out
 
