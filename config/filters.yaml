@@ -23,6 +23,16 @@ titles:
     - '\bdata (engineer|platform engineer)\b'
     - '\b(iot|internet of things)\b'
     - '\b(embedded|firmware)\b.*\b(engineer|developer)\b'
+    # Titles without engineer/developer that still name the work ("Team Lead, Software
+    # Development", "Software Development Specialist II"), unless they're management or sales.
+    - '^(?!.*\b(manager|director|head of|vp|vice president|sales|alliances?)\b).*\bsoftware\b'
+    - '^(?!.*\b(manager|director|head of|vp|vice president|sales|alliances?)\b).*\b(engineering|software|python|backend|platform|infrastructure) (team )?lead\b'
+    # Architects: the role often fits a senior IC who owns architecture.
+    - '\b(software|platform|infrastructure|cloud|technical) architect\b'
+    # AI labs' name for engineers ("Member of Technical Staff, ML Platform")
+    - '\bmember of (the )?technical staff\b'
+    # Spanish and Portuguese titles
+    - '\b(desarrollador|programador|desenvolvedor)\b'
     # Any other engineer/developer title: ambiguous ones ("Forward Deployed Engineer",
     # "Staff Engineer", "Senior Integration Engineer") go to Claude rather than being
     # dropped. The exclude list below still removes the clear non-fits.

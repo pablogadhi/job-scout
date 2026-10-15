@@ -145,7 +145,31 @@ def test_ambiguous_engineering_titles_go_to_claude(prefilter: Prefilter, title: 
 
 
 @pytest.mark.parametrize(
-    "title", ["Senior Solutions Engineer", "ASIC Physical Design Engineer", "Engineering Manager"]
+    "title",
+    [
+        "Team Lead, Software Development",
+        "Software Development Specialist II",
+        "Software Architect (L6)",
+        "Engineering Team Lead",
+        "Member of Technical Staff, ML Platform",
+        "Desarrollador Backend Senior",
+    ],
+)
+def test_software_titles_without_engineer_go_to_claude(prefilter: Prefilter, title: str) -> None:
+    assert prefilter.evaluate(FakeJob(title=title)).passed
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        "Senior Solutions Engineer",
+        "ASIC Physical Design Engineer",
+        "Engineering Manager",
+        "Software Engineering Director",
+        "Software Alliances Director, Americas",
+        "Embedded Devices Software Solution Sales",
+        "Senior Manager, Platform Lead",
+    ],
 )
 def test_clear_non_fits_still_dropped(prefilter: Prefilter, title: str) -> None:
     assert not prefilter.evaluate(FakeJob(title=title)).passed

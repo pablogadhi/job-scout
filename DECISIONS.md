@@ -1375,3 +1375,22 @@ features planned; Phase 7 (Tier 2 scrapers) and the Findwork key are still open.
     group is queued for a re-score.
   - HN rows already stored keep their old key, so a board copy of an October comment
     won't merge with it. From next month's thread on, every comment uses the new key.
+- **P9-U17 More titles go to Claude.** You noticed titles like "Team Lead, Software
+  Development", "Software Development Specialist II" and "Software Architect (L6)" being
+  dropped, and suggested passing anything with "software" in it except managers. New
+  `titles.include_any` patterns in `filters.yaml`:
+  - "software" anywhere;
+  - "<engineering|software|python|backend|platform|infrastructure> (team) lead";
+  - "<software|platform|infrastructure|cloud|technical> architect";
+  - "member of technical staff";
+  - "desarrollador", "programador" and "desenvolvedor".
+- **P9-D18 The "not management" check is inside the new patterns, not a new exclude.**
+  The first two patterns skip titles naming a manager, director, head of, VP, sales or
+  alliances. A global exclude for "manager" or "sales" would have dropped 20 titles that
+  pass today, e.g. "Lead Software Engineer (Secrets Manager & AI Identity)", "Senior
+  Software Engineer, Full Stack - Sales Planning" and "Tech Lead / Engineering Manager".
+  Tested on the 3,208 titles in your local DB: 47 newly pass, none newly drop. A few
+  weak fits now reach Claude ("ServiceNow Certified Technical Architect", "Salesforce
+  Platform Lead", the "Post Training" research roles); `filters.yaml` sends unclear titles
+  to Claude on purpose. The next `filter` re-checks every verdict, since the rules'
+  fingerprint changed.
