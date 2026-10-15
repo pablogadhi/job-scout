@@ -2,7 +2,8 @@
 
 Every request goes through `HttpClient.get`, which:
 - sends the configured User-Agent and timeout,
-- checks robots.txt (cached per host for the client's lifetime),
+- checks robots.txt with RFC 9309 matching (`*` and `$` patterns), cached per host for the
+  client's lifetime,
 - spaces requests to the same host by max(1s, robots Crawl-delay, the source's own interval),
 - enforces the source's request budget (e.g. Remotive's 4 calls per day),
 - on HTTP 429, waits (Retry-After, or a short backoff), retries, and slows down for that host,
@@ -20,9 +21,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
-from urllib.robotparser import RobotFileParser
 
 import httpx
+from protego import Protego
 
 from job_scout.config.sources import SourceConfig, SourceDefaults
 
@@ -91,7 +92,7 @@ class RequestBudget:
 
 @dataclass
 class _Host:
-    robots: RobotFileParser | None = None
+    robots: Protego | None = None
     last_request: float | None = None
     slowdown: float = 0.0  # extra spacing after this host rate-limited us (HTTP 429)
 
@@ -140,7 +141,7 @@ class HttpClient:
             raise ForbiddenHost(f"never fetched (ground rule): {full_url}")
         host = self._host(full_url)
         robots = host.robots if self.defaults.respect_robots_txt else None
-        if robots is not None and not robots.can_fetch(self.defaults.user_agent, full_url):
+        if robots is not None and not robots.can_fetch(full_url, self.defaults.user_agent):
             raise RobotsDisallowed(f"robots.txt disallows {full_url}")
         attempt = 0
         while True:
@@ -188,24 +189,22 @@ class HttpClient:
             )
         return self._hosts[key]
 
-    def _load_robots(self, origin: str) -> RobotFileParser:
-        parser = RobotFileParser(f"{origin}/robots.txt")
+    def _load_robots(self, origin: str) -> Protego:
         try:
             response = self.client.get(f"{origin}/robots.txt")
         except httpx.HTTPError as exc:
             raise FetchError(f"could not read {origin}/robots.txt: {exc}") from exc
         # RFC 9309 2.3.1: any 4xx (401/403 included) means robots.txt is unavailable, so
         # everything is allowed; a server error means assume everything is disallowed, which
-        # failing the request does. (urllib.robotparser treats 401/403 as disallow-all.)
+        # failing the request does.
         if response.status_code >= 500:
             raise HttpStatusError(
                 f"{origin}/robots.txt returned HTTP {response.status_code}", response.status_code
             )
         if response.status_code >= 400:
-            parser.parse([])
-        else:
-            parser.parse(response.text.splitlines())
-        return parser
+            return Protego.parse("")
+        # A leading byte-order mark would hide the first User-agent line from the parser.
+        return Protego.parse(response.text.lstrip("\ufeff"))
 
     def _wait(self, host: _Host, source: SourceConfig) -> None:
         interval = max(MIN_HOST_INTERVAL_SECONDS, host.slowdown)

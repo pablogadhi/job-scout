@@ -69,9 +69,10 @@ laptop and on the server alike. Data goes to the repo's gitignored `data/` (rela
 - `src/job_scout/migrations/`: Alembic (`script_location = job_scout:migrations`).
 - `src/job_scout/fetch/`: the only package that touches the network.
   - `http.py`: `HttpClient`, the single gateway for requests. It handles the User-Agent,
-    robots.txt, per-host spacing (max of 1s, Crawl-delay and the source's interval), request
-    budgets, HTTP 429 retries (Retry-After, then more spacing for that host), and the
-    fixture `Recorder`. `FetchError.retryable` marks temporary failures (429, 5xx, timeouts).
+    robots.txt (RFC 9309 matching with `protego`, so `*` and `$` rules apply; not
+    `urllib.robotparser`, which reads `*` literally), per-host spacing (max of 1s,
+    Crawl-delay and the source's interval), request budgets, HTTP 429 retries (Retry-After,
+    then more spacing for that host), and the fixture `Recorder`. `FetchError.retryable` marks temporary failures (429, 5xx, timeouts).
   - `base.py`: generic `RssFetcher` and `JsonFetcher`, plus `FetchContext`.
   - `sources.py`: per-source mappers and the `FETCHERS` registry. `hn.py`: HN Who is hiring.
   - `normalize.py`: pure helpers (HTML to text, salary parsing, company/title normalization).
