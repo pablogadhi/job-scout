@@ -166,6 +166,12 @@ def test_board_from_url(app_config: AppConfig, url: str | None, board: tuple | N
 def test_find_board_in_page_skips_non_tokens(app_config: AppConfig) -> None:
     page = '<a href="https://apply.workable.com/j/AB12CD">job</a> <a href="https://apply.workable.com/acme/">all</a>'
     assert find_board(page, app_config.sources.ats_platforms) == ("workable", "acme")
+    # Recruitee's analytics script comes before the board link on some careers pages.
+    page = (
+        '<script src="https://careers-analytics.recruitee.com/v1.js"></script>'
+        '<a href="https://acme.recruitee.com/o/backend-engineer">job</a>'
+    )
+    assert find_board(page, app_config.sources.ats_platforms) == ("recruitee", "acme")
 
 
 def test_slug_candidates() -> None:
@@ -173,16 +179,25 @@ def test_slug_candidates() -> None:
     assert slug_candidates(c) == ["tikal-soft", "tikalsoft"]
 
 
-def test_detect_careers_url_needs_no_request(app_config: AppConfig) -> None:
-    d = detector(app_config, {})
+def test_detect_careers_url_checks_the_board_exists(app_config: AppConfig) -> None:
+    lever = app_config.sources.ats_platforms["lever"].api
+    # An empty board still exists: the company isn't hiring right now.
+    d = detector(app_config, {api_url(lever, "acme"): httpx.Response(200, json=[])})
     result = d.detect(company("acme", careers_url="https://jobs.lever.co/acme"))
     assert (result.ats, result.token, result.method) == ("lever", "acme", AtsMethod.CAREERS_URL)
-    assert d.budget.used == 0
+    assert d.budget.used == 1
+
+    # A careers URL pointing to a deleted board (404): not the company's board any more.
+    d = detector(app_config, {})
+    result = d.detect(company("gone", careers_url="https://jobs.lever.co/gone"))
+    assert result.ats is None and not result.retry
+    assert "lever:gone doesn't answer on its API" in (result.note or "")
 
 
 def test_detect_from_careers_page_embed(app_config: AppConfig) -> None:
     page = html('<script src="https://jobs.ashbyhq.com/nimbusworks/embed?version=2"></script>')
-    d = detector(app_config, {"https://nimbusworks.example/careers": page})
+    ashby = api_url(app_config.sources.ats_platforms["ashby"].api, "nimbusworks")
+    d = detector(app_config, {"https://nimbusworks.example/careers": page, ashby: jobs(1)})
     result = d.detect(company("nimbus-works", careers_url="https://nimbusworks.example/careers"))
     assert (result.ats, result.token, result.method) == (
         "ashby",
@@ -199,6 +214,7 @@ def test_detect_follows_the_website_careers_link(app_config: AppConfig) -> None:
             "https://www.tikalsoft.example/join-us": html(
                 '<a href="https://apply.workable.com/tikalsoft/">Open roles</a>'
             ),
+            api_url(app_config.sources.ats_platforms["workable"].api, "tikalsoft"): jobs(1),
         },
     )
     result = d.detect(company("tikal-soft", website="https://www.tikalsoft.example/"))
@@ -236,7 +252,7 @@ def test_detect_unknown_and_robots_blocked_platform(app_config: AppConfig) -> No
     )
     result = d.detect(company("ghost", careers_url="https://ghost.example/careers"))
     assert result.ats is None and result.method is None
-    assert "HTTP 500" in (result.note or "") and "ashby probing off" in (result.note or "")
+    assert "HTTP 500" in (result.note or "") and "ashby API off" in (result.note or "")
     assert result.retry  # a server error is temporary: detect again later
 
     d = detector(app_config, {"https://gone.example/careers": httpx.Response(410)})
@@ -249,7 +265,7 @@ def test_rate_limited_probe_is_inconclusive(app_config: AppConfig) -> None:
     d = detector(app_config, {workable: httpx.Response(429)})
     result = d.detect(company("busyco"))
     assert result.ats is None and result.retry
-    assert "workable probe: HTTP 429" in (result.note or "")
+    assert "workable:busyco: HTTP 429" in (result.note or "")
     # The same detector, next company: the flag doesn't carry over.
     assert not d.detect(company("quietco")).retry
 
@@ -270,6 +286,17 @@ def test_robots_401_does_not_block_probing(app_config: AppConfig) -> None:
 # --- store + refresh -----------------------------------------------------------------------
 
 
+def board_apis(app_config: AppConfig) -> dict[str, httpx.Response | Route]:
+    """API answers for the fixture companies whose careers URL names a board: detection
+    checks that the board exists."""
+    platforms = app_config.sources.ats_platforms
+    return {
+        api_url(platforms["greenhouse"].api, "quetzallabs"): jobs(1),
+        api_url(platforms["lever"].api, "brightpath"): httpx.Response(200, json=[]),
+        api_url(platforms["recruitee"].api, "lagunadata"): httpx.Response(200, json={"offers": []}),
+    }
+
+
 def refresh_web(app_config: AppConfig) -> HttpClient:
     """Seed tarball plus what detection needs for the five kept fixture companies."""
     pages: dict[str, httpx.Response | Route] = {
@@ -282,6 +309,8 @@ def refresh_web(app_config: AppConfig) -> HttpClient:
         api_url(app_config.sources.ats_platforms["workable"].api, "tikalsoft"): httpx.Response(
             200, json={"jobs": [{"shortcode": "X"}]}
         ),
+        api_url(app_config.sources.ats_platforms["ashby"].api, "nimbusworks"): jobs(1),
+        **board_apis(app_config),
     }
     http = HttpClient(app_config.sources.defaults, transport=web(pages), sleep=lambda _s: None)
     http.__enter__()
@@ -514,7 +543,8 @@ def test_unsupported_ats_platform_is_a_config_error(config_dir: Path) -> None:
 def test_ats_detect_command(
     app_config: AppConfig, db_url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    pages = {SEED_URL: httpx.Response(200, content=SEED)}  # nothing else answers: unknown ATS
+    # The boards named by careers URLs answer; nothing else does: unknown ATS.
+    pages = {SEED_URL: httpx.Response(200, content=SEED), **board_apis(app_config)}
 
     def client(defaults: object, **kwargs: object) -> HttpClient:
         return HttpClient(app_config.sources.defaults, transport=web(pages), sleep=lambda _s: None)
@@ -527,7 +557,8 @@ def test_ats_detect_command(
     assert result.exit_code == 0, result.output
     assert "seed: 7 companies, 5 kept by the filters (5 new" in result.output
     assert "Company boards" in result.output and "Unknown ATS (2)" in result.output
-    # careers_url hits need no page; nimbus-works and tikal-soft have no pages here: unknown.
+    # careers_url boards are found from the URL; nimbus-works and tikal-soft have no pages
+    # here: unknown.
     with make_session_factory(make_engine(db_url))() as session:
         status = {r.slug: (r.status, r.ats) for r in session.scalars(select(AtsCompany))}
     assert status["quetzal-labs"] == (AtsStatus.OK, "greenhouse")

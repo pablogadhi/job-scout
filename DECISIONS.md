@@ -1437,3 +1437,20 @@ features planned; Phase 7 (Tier 2 scrapers) and the Findwork key are still open.
   request. They don't say over what window, so 6 seconds keeps us under 10 a minute. A
   5-page daily fetch takes about 30 seconds; a full read of ~22 pages takes about 2
   minutes.
+- **P9-B7 CrazyGames was polled at a board that isn't theirs** (`careers-analytics`).
+  Careers pages using Recruitee load a script from `careers-analytics.recruitee.com`, and
+  the Recruitee pattern (`<token>.recruitee.com`) took that host for the company's board.
+  The API answered 403 every day; their real board is `crazygames`. Recruitee's own hosts
+  (`careers-analytics`, `app`, `cdn`, `assets`) are now non-tokens.
+- **P9-B8 A deleted board was polled forever when the seed's careers URL named it.**
+  Detection accepted a board from the careers URL without a request, so the monthly
+  re-detection marked it ok again even after the board was gone. Found from a fetch where 3
+  boards answered 404: Lambda School (`lever:BloomTech`), ReCharge Payments
+  (`greenhouse:recharge`) and Sketch (`ashby:sketch`); all three still 404 on 2026-10-14.
+- **P9-D20 A board found in a careers URL or page must answer on its API.** Any answer
+  counts, even with no jobs: the company may just not be hiring right now. The probe
+  still needs at least one job, since a slug guess that answers with an empty board is
+  weak evidence. On a 404 the board doesn't count and detection moves on to the next
+  method. A temporary failure makes the detection inconclusive, so the company keeps its
+  board and is retried next run. Costs one request per company found this way per
+  detection, about 130 a month for your seed.

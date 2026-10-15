@@ -19,8 +19,12 @@ from job_scout.fetch.models import Posting
 from job_scout.fetch.normalize import Salary, as_float, html_to_text, iso_to_utc
 
 _TOKEN = r"([A-Za-z0-9][A-Za-z0-9_.-]*)"
-# Path segments that look like a token but aren't one (e.g. apply.workable.com/j/<job>).
-_NOT_TOKENS = {"j", "api", "embed", "v0", "v1", "www", "apply", "jobs", "careers", "static"}
+# Path segments and subdomains that look like a token but aren't one: apply.workable.com/j/<job>,
+# and Recruitee's own hosts, which careers pages load scripts from (careers-analytics).
+_NOT_TOKENS = {
+    *("j", "api", "embed", "v0", "v1", "www", "apply", "jobs", "careers", "static"),
+    *("careers-analytics", "app", "cdn", "assets"),
+}
 
 
 @dataclass(frozen=True)

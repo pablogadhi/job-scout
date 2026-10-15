@@ -4,6 +4,8 @@
 2. careers_page: the careers page (or, without one, the website and its careers link)
    links to or embeds a board.
 3. probe: the company slug answers on a platform's API with at least one job.
+A board found by 1 or 2 must answer on its API too (with any number of jobs): a careers URL
+or page can still point to a board the company has since deleted.
 Otherwise the company is unknown_ats, unless a check failed for a temporary reason (rate
 limit, server error, timeout): then the result is inconclusive (`retry`) and the company is
 detected again next run (store.save_detection caps the attempts).
@@ -15,6 +17,7 @@ import logging
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import Any
 from urllib.parse import urljoin, urlsplit
 
 from job_scout.ats.platforms import PLATFORMS, api_url, tokens_in
@@ -93,10 +96,11 @@ class Detector:
 
     def detect(self, company: SeedCompany) -> Detection:
         self._inconclusive = False
-        if hit := board_from_url(company.careers_url, self.platforms):
-            return Detection(*hit, AtsMethod.CAREERS_URL)
         notes: list[str] = []
-        if hit := self._from_pages(company, notes):
+        hit = board_from_url(company.careers_url, self.platforms)
+        if hit and self._answers(hit, notes):
+            return Detection(*hit, AtsMethod.CAREERS_URL)
+        if (hit := self._from_pages(company, notes)) and self._answers(hit, notes):
             return Detection(*hit, AtsMethod.CAREERS_PAGE)
         if hit := self._probe(company, notes):
             return Detection(*hit, AtsMethod.PROBE)
@@ -137,29 +141,37 @@ class Detector:
                 return find_board(page, self.platforms) if page else None
         return None
 
+    def _jobs(self, name: str, token: str, notes: list[str]) -> list[Any] | None:
+        """The board's jobs from its API, or None when it doesn't answer (a 404 is no note:
+        probing expects them)."""
+        if name in self._blocked:
+            return None
+        url = api_url(self.platforms[name].api, token)
+        try:
+            payload = self.http.get(url, source=self.source, budget=self.budget).json()
+            return PLATFORMS[name].jobs(payload)
+        except RobotsDisallowed as exc:
+            self._blocked.add(name)
+            notes.append(f"{name} API off: {exc}")
+        except HttpStatusError as exc:
+            if exc.status_code != 404:
+                self._failed(notes, f"{name}:{token}: {exc}", exc)
+        except FetchError as exc:
+            self._failed(notes, f"{name}:{token}: {exc}", exc)
+        except ValueError as exc:
+            notes.append(f"{name}:{token}: {exc}")
+        return None
+
+    def _answers(self, hit: tuple[str, str], notes: list[str]) -> bool:
+        """A board found in a URL or page exists: its API answers, even with no jobs."""
+        if self._jobs(*hit, notes) is not None:
+            return True
+        notes.append(f"{hit[0]}:{hit[1]} doesn't answer on its API")
+        return False
+
     def _probe(self, company: SeedCompany, notes: list[str]) -> tuple[str, str] | None:
         for candidate in slug_candidates(company):
-            for name, platform in self.platforms.items():
-                if name in self._blocked:
-                    continue
-                url = api_url(platform.api, candidate)
-                try:
-                    payload = self.http.get(url, source=self.source, budget=self.budget).json()
-                    jobs = PLATFORMS[name].jobs(payload)
-                except RobotsDisallowed as exc:
-                    self._blocked.add(name)
-                    notes.append(f"{name} probing off: {exc}")
-                    continue
-                except HttpStatusError as exc:
-                    if exc.status_code != 404:
-                        self._failed(notes, f"{name} probe: {exc}", exc)
-                    continue
-                except FetchError as exc:
-                    self._failed(notes, f"{name} probe: {exc}", exc)
-                    continue
-                except ValueError as exc:
-                    notes.append(f"{name} probe: {exc}")
-                    continue
-                if jobs:
+            for name in self.platforms:
+                if self._jobs(name, candidate, notes):
                     return name, candidate
         return None
