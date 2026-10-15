@@ -183,6 +183,9 @@ class Digest(StrictModel):
 
     min_score: int = Field(default=60, ge=0, le=100)
     watchlist_min_score: int = Field(default=21, ge=0, le=100)
+    # Watchlist jobs scoring below this are listed collapsed (one line each in plain text), so
+    # a watchlist company posting many jobs at once doesn't swamp the report.
+    watchlist_collapse_below: int = Field(default=50, ge=0, le=100)
     send_when_empty: bool = True  # email a digest with no new matches (its health footer)
     email: Email = Email()
 

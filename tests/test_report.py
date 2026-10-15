@@ -125,6 +125,25 @@ def test_sections(tmp_path: Path, session_factory: sessionmaker[Session]) -> Non
     assert sorted(sections.job_ids) == sorted([a, b, e, f])  # below isn't "reported"
 
 
+def test_weak_watchlist_jobs_are_collapsed(
+    tmp_path: Path, session_factory: sessionmaker[Session]
+) -> None:
+    config = config_with(tmp_path, min_score=50, watchlist_min_score=21, email=EMAIL)
+    strong, weak = seed_jobs(session_factory, 2)
+    with session_factory.begin() as session:
+        session.execute(update(Job).values(company_normalized="canonical"))  # on the watchlist
+    score_jobs(session_factory, config, {strong: {"score": 70}, weak: {"score": 30}})
+    outcome = make_digest(
+        config, session_factory, now=NOW, environ={TOKEN_ENV: "t"}, smtp_factory=FakeSmtp
+    )
+    assert [i.job_id for i in outcome.sections.watchlist] == [strong, weak]  # both reported
+    shown, collapsed = outcome.path.read_text().split("<summary>Watchlist below 50 (1)</summary>")
+    assert f"job #{strong}" in shown and f"job #{weak}" not in shown
+    assert f"job #{weak}" in collapsed.split("</details>")[0]
+    text = body_of(FakeSmtp.instances[0].messages[0], "plain")
+    assert f"  [30] Senior Backend Engineer {weak} - " in text and f"(job #{weak})" in text
+
+
 def test_digest_shows_only_new_matches(
     tmp_path: Path, session_factory: sessionmaker[Session]
 ) -> None:

@@ -1454,3 +1454,11 @@ features planned; Phase 7 (Tier 2 scrapers) and the Findwork key are still open.
   method. A temporary failure makes the detection inconclusive, so the company keeps its
   board and is retried next run. Costs one request per company found this way per
   detection, about 130 a month for your seed.
+- **P9-U19 Weaker watchlist jobs are collapsed.** Watchlist jobs scoring under 50 go in a
+  collapsed "Watchlist below 50 (N)" block under the watchlist section, so a watchlist
+  company posting many jobs at once doesn't swamp the digest. The cutoff is a setting,
+  `digest.watchlist_collapse_below: 50`. Jobs between `watchlist_min_score` (21) and 50
+  still appear and still count as reported; only their layout changes.
+- **P9-D21 In the plain-text email part they're one line each** ("[34] Title - Company
+  (job #N)"), since plain text can't collapse. The split happens in the templates, so the
+  digest's bookkeeping (`Sections.watchlist`, recorded job ids) is unchanged.

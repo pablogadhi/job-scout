@@ -26,9 +26,18 @@ Generated {{ generated_at }}, threshold {{ settings.min_score }} (watchlist {{ s
 {%- endif %}
 {%- endmacro %}
 {%- if sections.watchlist %}
+{%- set cutoff = settings.watchlist_collapse_below %}
+{%- set weak = sections.watchlist | selectattr("overall", "lt", cutoff) | list %}
 
 == Watchlist matches ==
-{%- for item in sections.watchlist %}{{ job(item) }}{% endfor %}
+{%- for item in sections.watchlist | selectattr("overall", "ge", cutoff) %}{{ job(item) }}{% endfor %}
+{%- if weak %}
+
+Watchlist below {{ cutoff }} ({{ weak | length }}), details in the HTML version:
+{%- for item in weak %}
+  [{{ item.overall }}] {{ item.title }} - {{ item.company }} (job #{{ item.job_id }})
+{%- endfor %}
+{%- endif %}
 {%- endif %}
 
 == Top matches ==

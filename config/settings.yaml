@@ -89,6 +89,7 @@ scoring:
 digest:
   min_score: 50 # 50 while testing; plan default 60
   watchlist_min_score: 21 # watchlist jobs appear unless disqualified
+  watchlist_collapse_below: 50 # weaker watchlist jobs are listed collapsed
   send_when_empty: true # still email a digest with no new matches (health footer)
   # The HTML digest is always written under paths.reports. Email is sent in addition when
   # enabled: Proton SMTP submission from an alias. The SMTP token is read only from the

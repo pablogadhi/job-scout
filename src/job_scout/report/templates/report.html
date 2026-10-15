@@ -99,8 +99,16 @@
 {%- endmacro %}
 
 {%- if sections.watchlist %}
+{%- set cutoff = settings.watchlist_collapse_below %}
+{%- set weak = sections.watchlist | selectattr("overall", "lt", cutoff) | list %}
 <h2>Watchlist matches</h2>
-{%- for item in sections.watchlist %}{{ job(item) }}{% endfor %}
+{%- for item in sections.watchlist | selectattr("overall", "ge", cutoff) %}{{ job(item) }}{% endfor %}
+{%- if weak %}
+<details>
+<summary>Watchlist below {{ cutoff }} ({{ weak | length }})</summary>
+{%- for item in weak %}{{ job(item) }}{% endfor %}
+</details>
+{%- endif %}
 {%- endif %}
 
 <h2>Top matches</h2>
