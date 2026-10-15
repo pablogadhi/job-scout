@@ -115,17 +115,6 @@ def test_request_budget_skips_remotive(
     assert outcome.reason == "request budget: 4 of 4 used in the last 24h"
 
 
-def test_remotive_first_run_checks_categories(
-    app_config: AppConfig,
-    session_factory: sessionmaker[Session],
-    make_http: Callable[..., HttpClient],
-) -> None:
-    with make_http() as http:
-        outcome = run_fetch(app_config, session_factory, http, source_ids=["remotive"])[0]
-    assert outcome.status == "ok"
-    assert outcome.requests == 2  # /categories (first run only) + one jobs endpoint
-
-
 def test_sources_that_cannot_run_are_skipped(
     app_config: AppConfig,
     session_factory: sessionmaker[Session],

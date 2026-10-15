@@ -1394,3 +1394,22 @@ features planned; Phase 7 (Tier 2 scrapers) and the Findwork key are still open.
   Platform Lead", the "Post Training" research roles); `filters.yaml` sends unclear titles
   to Claude on purpose. The next `filter` re-checks every verdict, since the rules'
   fingerprint changed.
+- **P9-B7 Remotive's robots.txt disallows the API we were calling.** It has `Disallow:
+  /api/*` and `Disallow: /*category=`, which cover both `/api/remote-jobs?category=…` and
+  `/api/remote-jobs/categories`. `HttpClient` let them through because
+  `urllib.robotparser` reads `*` literally (found during Phase 10's source research,
+  where the robots.txt fix itself is still open).
+- **P9-U18 Remotive reads its documented RSS feed instead**
+  (github.com/remotive-com/remote-jobs-feed), which robots.txt allows. Done on this branch.
+- **P9-D19 How the Remotive feed is read:**
+  - One request to `https://remotive.com/remote-jobs/feed`: the same 15 jobs the free API
+    served (the category feeds are subsets of it, and the README's slugs are outdated:
+    `software-dev` is a 404).
+  - Items carry `jobId`, the id the API used, so it stays the `source_job_id` and jobs
+    already stored from the API keep matching instead of being stored again.
+  - Company, location and job type come from the feed's own tags. There's no salary field:
+    a salary is parsed only when the description labels it ("Salary: …"), otherwise it's
+    left to Claude (1 of the 15 live items had one).
+  - The first-run check of category slugs went with the API, and so did
+    `JsonFetcher.before`, which only it used. The budget (4 requests a day) and the 31s
+    spacing stay. A live fetch into a throwaway database stored 15 jobs with 1 request.

@@ -10,7 +10,6 @@ import math
 import re
 from collections.abc import Iterator
 from typing import Any
-from urllib.parse import parse_qs, urlsplit
 
 from job_scout.ats.fetcher import AtsFetcher
 from job_scout.config.secrets import secret
@@ -137,51 +136,6 @@ def _map_remoteok(item: dict[str, Any]) -> Posting | None:
         posted_at=iso_to_utc(text.get("date")),
         raw=item,
     ).with_salary(salary)
-
-
-# --- Remotive (JSON) -----------------------------------------------------------------------
-
-
-def _slugs(node: Any) -> set[str]:
-    if isinstance(node, dict):
-        found = {node["slug"]} if isinstance(node.get("slug"), str) else set()
-        return found.union(*(_slugs(v) for v in node.values()))
-    if isinstance(node, list):
-        return set().union(*(_slugs(v) for v in node))
-    return set()
-
-
-def _remotive_check_categories(ctx: FetchContext) -> None:
-    """On the first successful run, confirm the configured category slugs exist."""
-    if ctx.last_success_at is not None:
-        return
-    valid = _slugs(ctx.get_json("https://remotive.com/api/remote-jobs/categories"))
-    wanted = {
-        value
-        for url in ctx.source.endpoints
-        for value in parse_qs(urlsplit(url).query).get("category", [])
-    }
-    if wanted - valid:
-        raise FetchError(
-            f"unknown Remotive categories {sorted(wanted - valid)}; valid: {sorted(valid)}"
-        )
-
-
-def _map_remotive(item: dict[str, Any]) -> Posting:
-    return Posting(
-        source_job_id=str(item["id"]),
-        canonical_url=item["url"],
-        title=item["title"],
-        company=item.get("company_name"),
-        location_raw=item.get("candidate_required_location"),
-        description_text=html_to_text(item.get("description")),
-        tags=[
-            *(item.get("tags") or []),
-            *filter(None, [item.get("category"), item.get("job_type")]),
-        ],
-        posted_at=iso_to_utc(item.get("publication_date")),
-        raw=item,
-    ).with_salary(parse_salary(item.get("salary")))
 
 
 # --- Working Nomads (JSON, all jobs in one array) -------------------------------------------
@@ -321,6 +275,18 @@ def _map_pyjobs(entry: FeedEntry) -> Posting:
     ).with_salary(salary)
 
 
+def _map_remotive(entry: FeedEntry) -> Posting:
+    # jobId is the id the JSON API used, so jobs stored from the API still match.
+    return rss_posting(
+        entry,
+        title=entry["title"],
+        company=entry.get("company"),
+        source_job_id=entry.get("jobid") or entry["link"],
+        location_raw=entry.get("location"),
+        extra_tags=[entry.get("type")],
+    )
+
+
 _GAMEJOBS_TITLE = re.compile(r"^(?P<company>.+?) is hiring (?P<title>.+?)(?:\s*\(Remote Job\))?$")
 
 
@@ -353,9 +319,6 @@ FETCHERS: dict[str, Fetcher] = {
         items=lambda p: p["data"], map_item=_map_fourdayweek, pages=_fourdayweek_pages
     ),
     "remoteok": JsonFetcher(items=lambda p: p, map_item=_map_remoteok),
-    "remotive": JsonFetcher(
-        items=lambda p: p["jobs"], map_item=_map_remotive, before=_remotive_check_categories
-    ),
     "workingnomads": JsonFetcher(items=lambda p: p, map_item=_map_workingnomads),
     "findwork": JsonFetcher(
         items=lambda p: p["results"], map_item=_map_findwork, pages=_findwork_pages
@@ -368,5 +331,6 @@ FETCHERS: dict[str, Fetcher] = {
     "pyjobs": RssFetcher(_map_pyjobs),
     "remotegamejobs": RssFetcher(_map_remotegamejobs),
     "findjobit": RssFetcher(_map_findjobit),
+    "remotive": RssFetcher(_map_remotive),
     "remoteintech": AtsFetcher(),
 }
