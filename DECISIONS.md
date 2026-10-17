@@ -2260,3 +2260,17 @@ Its files are in the gitignored `instances/ngo/config/`; nothing personal is log
   differed by an empty requirements list (worth half the skill points) against a few vague
   ones ("APIs", "Databases"): 36 vs 53. API output was about 1,910 tokens per posting,
   thinking included.
+- **P12-U16 Three profile.md rules against the swings of P12-D28,** which you approved:
+  a listing's "REMOTE (US or Canada)" label alone is unclear (an example next to "United
+  States (remote)"); the posting's own text wins over a listing's remote tags or labels (a
+  remote-tagged job whose text says "this is a hybrid role" is `remote: no`); requirements
+  are only those the posting states (named skills, tools, platforms, qualifications or
+  experience), never broad areas made from its duties, and an empty list when it states
+  none.
+- **P12-D29 The same check again, on the same 10 jobs** ($0.024): mean difference 2.6 (was
+  11.7), 9 of 10 within 10 points, the largest 12 (was 52), rank agreement 0.953 (was
+  0.675). Remote, location, role, seniority, salary and language agreed on all 10, signals
+  overlap 1.0, requirement names 0.62 (was 0.38). The two left at 10–12 points are both far
+  below the digest threshold; they come from how a list of options is split ("Java, Kotlin
+  or Go" as one requirement matched or as several missing). API output stayed at about
+  1,860 tokens per posting.

@@ -36,7 +36,9 @@ fails one, set that field to `no`, `fail`, `below` or `other`; the code disquali
 use `unclear` (or `unlisted` for salary) and report the rest as usual. Never guess a fail.
 
 1. **Fully remote** (`remote`). Hybrid, on-site, "remote but must come in X days", or relocation
-   required → `no`.
+   required → `no`. The posting's own text wins over a listing's labels and tags: a job
+   tagged or listed as remote whose description says "this is a hybrid role" or names office
+   days is `no`.
 2. **Location eligibility: worldwide or LATAM / Central America** (`location_eligibility`).
    - Pass: "worldwide", "anywhere", "global", "LATAM", "Latin America", "Americas" (including
      Central/South America), explicitly lists Guatemala, or "any country where we can hire via
@@ -46,7 +48,8 @@ use `unclear` (or `unlisted` for salary) and report the rest as usual. Never gue
    - Unclear: "North America" (often means US/Canada only), "remote" with no location stated,
      "US time zones" without a residency requirement. Flag these as unclear, do not fail them.
    - Remote roles listed under a country ("United States (remote)", "Canada (remote)",
-     "Remote - Spain"): the label alone is unclear. Read the description. If it clearly requires
+     "Remote - Spain", a title or header saying "REMOTE (US or Canada)"): the label alone is
+     unclear. Read the description. If it clearly requires
      the candidate to be located in that country or region, it fails even though the role is
      remote: "open to candidates residing in the US", "must be based in Canada", "remote within
      the UK". If the description doesn't say, keep it unclear. A company's customers, offices
@@ -208,8 +211,9 @@ He targets senior and lead roles; staff is a stretch.
 
 ## How to extract
 
-- `requirements`: the posting's requirements that are skills, tools, platforms or experience,
-  at most 12, required ones first. One entry per distinct skill; merge trivial variants
+- `requirements`: the requirements the posting states, as named skills, tools, platforms,
+  qualifications or experience, at most 12, required ones first. Don't turn its duties into
+  broad areas ("APIs", "databases"); if it states no requirements, return an empty list. One entry per distinct skill; merge trivial variants
   ("Postgres", "PostgreSQL"). `importance` is `nice-to-have` when the posting says "bonus",
   "plus", "preferred" or "nice to have", otherwise `required`. `evidence` quotes the posting in
   12 words or fewer. Spoken languages aren't requirements: they go in `language`.
