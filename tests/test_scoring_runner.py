@@ -425,7 +425,7 @@ def test_batch_spend_guard_trims_the_batch(
     app_config: AppConfig, session_factory: sessionmaker[Session]
 ) -> None:
     seed_jobs(session_factory, 5)
-    api = app_config.settings.scoring.api.model_copy(update={"max_spend_usd_per_run": 0.004})
+    api = app_config.settings.scoring.api.model_copy(update={"max_spend_usd_per_run": 0.01})
     settings = app_config.settings.model_copy(
         update={"scoring": app_config.settings.scoring.model_copy(update={"api": api})}
     )

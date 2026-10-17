@@ -17,7 +17,12 @@ from job_scout.db.models import Vote
 from job_scout.feedback.examples import Example
 
 CHARS_PER_TOKEN = 4  # rough estimate used for batching budgets
+# Packing budget per posting, not the real reply length: max_output_tokens_per_call is
+# tuned against it, and API requests add thinking headroom on top.
 OUTPUT_TOKENS_PER_POSTING = 450
+# What a reply really costs per posting, thinking included (Haiku 5.5, effort medium:
+# ~1,250-1,550 measured on CLI calls). Used only for cost estimates and the spend guard.
+COST_OUTPUT_TOKENS_PER_POSTING = 1_500
 
 INPUT_RULES = """
 

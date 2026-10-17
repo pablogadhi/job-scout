@@ -36,6 +36,7 @@ from job_scout.scoring.backends.base import CallRequest, CallResult, Scorer
 from job_scout.scoring.planner import BatchPlanner, Limits
 from job_scout.scoring.prompt import (
     CHARS_PER_TOKEN,
+    COST_OUTPUT_TOKENS_PER_POSTING,
     OUTPUT_TOKENS_PER_POSTING,
     PostingInput,
     render_posting,
@@ -442,7 +443,7 @@ class ScoringRunner:
         if prices is None:
             return 0.0
         input_tokens = len(self.system) // CHARS_PER_TOKEN + sum(p.estimated_tokens for p in call)
-        output_tokens = OUTPUT_TOKENS_PER_POSTING * len(call)
+        output_tokens = COST_OUTPUT_TOKENS_PER_POSTING * len(call)
         return (input_tokens * prices.input + output_tokens * prices.output) / 1_000_000 * discount
 
     # --- helpers ---------------------------------------------------------------------------

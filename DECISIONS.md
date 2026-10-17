@@ -1484,3 +1484,14 @@ features planned; Phase 7 (Tier 2 scrapers) and the Findwork key are still open.
   came back in 63 seconds, well inside the 600-second timeout. Earlier 20-posting calls
   took 47-178 seconds; the 2 of 11 that failed did so at the old cap too (exit code 1,
   `error_max_structured_output_retries`) and were retried split in half.
+- **P9-U24 Cost estimates assume real reply lengths.** The dry-run price, the spend guard
+  and a batch's stored estimate counted 450 output tokens per posting; real replies run
+  ~1,250-1,550 with Haiku 5.5's thinking (190 postings over 11 CLI calls averaged 1,256;
+  the live 11-posting call 1,530). They now use `COST_OUTPUT_TOKENS_PER_POSTING = 1_500`.
+  For a 1,500-job backlog on the Batches API that's about $0.80 more than before, closer
+  to what the user was billed.
+- **P9-D27 Call packing keeps the 450.** `max_output_tokens_per_call: 12000` is tuned
+  against it; raising it there would cut CLI calls from 20 postings to 7. API requests
+  are capped at 1,900 + 8,000 thinking headroom = 9,900 output tokens, ~6× a typical
+  reply, so that cap stays too. The spend-guard test's budget went from $0.004 to $0.01
+  so it still admits part of the batch.
