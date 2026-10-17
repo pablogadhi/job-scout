@@ -2209,3 +2209,11 @@ Its files are in the gitignored `instances/ngo/config/`; nothing personal is log
   hours that fit) from `asia-pacific` (−10 and a cap at 49). Claude's choice, for your
   review: Middle Eastern and South Asian hours go with Europe and Africa; Australian and
   East or Southeast Asian hours with Japan and New Zealand.
+- **P12-U11 Working hours regrouped.** New Zealand business time is 15:00–23:00 in
+  Guatemala, which overlaps her window more than Europe's (02:00–10:00). You: "Nvm about new
+  zealand then, let's uncap that timezon. Let's cap middle easy and south asia tho, those
+  are unacceptable." `hours_fit` is now `fits | outside | night | unknown`: `outside`
+  (Europe, Africa, New Zealand) is 0 points; `night` (Middle East, South Asia, East and
+  Southeast Asia including Japan, Australia) is −10 and capped at 49. Claude's choice, for
+  your review: Australia stays with `night` (Sydney's 9–5 is 17:00–01:00 in Guatemala,
+  16:00–00:00 in its summer; close to Japan's 18:00–03:00). This replaces P12-U10's split.
