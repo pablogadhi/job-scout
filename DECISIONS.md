@@ -2171,7 +2171,7 @@ your approval between steps.
   match it, and `test_profile_skill.py` checks the two fit together.
 - **P12-R1 The ngo instance doesn't load until Step 4.** Its profile.md still declares
   `overall_score` and it has no scoring.yaml; both are written with you in Step 4, before
-  anything of Phase 12 is deployed.
+  anything of Phase 12 is deployed. Done in Step 4 (P12-D21): it loads.
 
 ### P12 Bugs found and fixed (Step 3)
 
@@ -2179,3 +2179,33 @@ your approval between steps.
   before the dry-run plan, so the jobs stayed pending and the next run scored them (and
   spent). The dry run now restores each row's status afterwards; a test checks nothing
   stays queued.
+
+### P12 The ngo instance (Step 4)
+
+Its files are in the gitignored `instances/ngo/config/`; nothing personal is logged here.
+
+- **P12-D21 Converted, not re-interviewed.** profile.md keeps the person's facts and rules;
+  only what gave points changed: the rubric, `overall_score`, `disqualified`,
+  `disqualify_reason`, `matched_skills` and `gaps` are gone, and "boost", "lower", "subtract
+  15" and the ranges became fields and signals. The old file was kept outside the repo
+  until you approved.
+- **P12-D22 New fields:** `seniority_level` (entry, mid, senior, stretch, executive,
+  unstated), `employer_type` (mission, contractor-government, corporate, unknown),
+  `requirements` and `signals`. Secondary role types got their own `role_category` values
+  instead of "other minus 15". Languages stay requirements there (a plus for one, a gap for
+  others, as that profile said), unlike the main profile.
+- **P12-D23 Signals:** work-life balance (positive and negative), pay above the range she
+  wants, a consultancy under 3 months, a role mainly in a language she lacks practice in,
+  and two domain levels. Claude's picks for the weights, before your changes below: skills
+  35, seniority and role 15 each, contract 10, salary 8, travel and hours 5, location and
+  employer 4; caps at 45 for the wrong role or level and a missing main requirement, 49 for
+  frequent travel. A strong full-time fit with nothing known about travel or hours scores
+  about 80, a consultancy with little travel and fitting hours about 95.
+- **P12-U9 Heavier work-life negatives.** You said yes to −8 (from −5) for long hours,
+  on-call and emergency response: a consultancy with two of them went from 79 to 73.
+- **P12-U10 Working hours: only Asia-Pacific is a no-go.** You: "if it's remote it doesn't
+  matter much. Where it should be 49 is if it's Japan or new zeland hours, those should be
+  definitely a no no." `hours_fit` now splits `europe-africa` (0 points, against 5 for
+  hours that fit) from `asia-pacific` (−10 and a cap at 49). Claude's choice, for your
+  review: Middle Eastern and South Asian hours go with Europe and Africa; Australian and
+  East or Southeast Asian hours with Japan and New Zealand.
