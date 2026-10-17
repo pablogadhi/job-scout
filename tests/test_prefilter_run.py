@@ -117,6 +117,7 @@ def test_synthetic_fixtures_end_to_end(
         ("pyjobs", "Data Engineer Intern"): (False, "title: excluded by"),
         ("pyjobs", "Backend Engineer (R&D)"): (False, "remote:"),  # Hybrid
         ("findjobit", "Senior Backend Engineer"): (True, "location allowed ('Guatemala'"),
+        ("findjobit", "Senior Platform Engineer"): (True, "location unclear"),  # region: Chile
         ("remotegamejobs", "Senior Backend Engineer - Online Services"): (True, "location unclear"),
     }
     with session_factory() as session:

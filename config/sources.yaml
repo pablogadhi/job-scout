@@ -200,10 +200,12 @@ sources:
     url: https://findjobit.com
     method: rss
     tier: 1
-    checked: 2026-10-12
-    # /rss-feed is an HTML page listing feeds (all jobs, per country, per role). The Guatemala
-    # feed holds only postings open to Guatemala (26 when checked), so location is pre-checked.
-    endpoints: ["https://findjobit.com/jobs/country/guatemala/feed"]
+    checked: 2026-10-16
+    # /rss-feed is an HTML page listing feeds (all jobs, per country, per role). `region`
+    # lists the countries a job is open to, as the poster ticked them, not where the job is.
+    # The all-jobs feed holds every country feed (58 jobs when checked, 24 of them open to
+    # Guatemala), so a remote job whose poster didn't tick Guatemala still reaches Claude.
+    endpoints: ["https://findjobit.com/jobs/feed"]
     format: rss
     notes: >
       LATAM-focused IT board, mostly in Spanish. Good source for LATAM-eligible roles.

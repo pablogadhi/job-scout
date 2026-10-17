@@ -1520,3 +1520,15 @@ features planned; Phase 7 (Tier 2 scrapers) and the Findwork key are still open.
   assert their content (the watchlist's first entry is Canonical, Findwork's `max_pages`
   is 5, the dedupe key). Not pinned yet, since the user asked about settings; left for
   review.
+- **P9-U27 Findjobit reads every job, not only the Guatemala feed.** The user: "What if
+  eventually some posts a remote job in another country though. Even if we don't find any
+  right now, doesn't mean that there won't be any". A poster ticks the countries a job is
+  open to; one who forgets Guatemala on a remote LATAM job would never reach us.
+- **P9-D30 One feed, `/jobs/feed`, not one per country.** Checked live on 2026-10-16: it
+  had 58 jobs back to Jul 24, and the Guatemala feed's 24 were all among them, so every
+  country feed is a subset. None of the other 34 ticked Guatemala; most were hybrid or
+  on-site in Chile, Mexico or El Salvador. A fetch into a copy of the local DB stored 34
+  new jobs and matched the 24 known ones by link. The pre-filter sends 15 of the new ones
+  to Claude as unclear location (a bare "Chile" is neither allowed nor excluded), a
+  one-time ~15 scores, then a few a month. A synthetic fixture job (region "Chile",
+  remote for all of LATAM) checks that it reaches Claude.

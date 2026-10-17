@@ -702,6 +702,13 @@ def findjobit(endpoint: str) -> dict[str, Any]:
                         "Argentina",
                         "<p>Diseño de producto.</p>",
                     ),
+                    job(
+                        "f00000000000000000000003",
+                        "Andes Data busca un Senior Platform Engineer",
+                        "Ingeniero de Infraestructura",
+                        "Chile",
+                        "<p>100% remoto, abierto a toda LATAM. Kubernetes y Terraform.</p>",
+                    ),
                 ],
                 ns,
             ),

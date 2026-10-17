@@ -222,6 +222,8 @@ def test_findjobit(app_config: AppConfig, make_http: Callable[..., HttpClient]) 
     assert p.location_raw == "Guatemala,México,Colombia"
     assert p.tags == ["Ingeniero Backend", "Tiempo Completo"]
     assert fetch(app_config, make_http(), "findjobit")[1].title == "Diseñadora UX"  # "busca una"
+    # Open to one other country only, yet remote for all of LATAM: Claude reads the description.
+    assert fetch(app_config, make_http(), "findjobit")[2].location_raw == "Chile"
 
 
 def test_hn(app_config: AppConfig, make_http: Callable[..., HttpClient]) -> None:
