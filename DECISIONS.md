@@ -2217,3 +2217,22 @@ Its files are in the gitignored `instances/ngo/config/`; nothing personal is log
   Southeast Asia including Japan, Australia) is −10 and capped at 49. Claude's choice, for
   your review: Australia stays with `night` (Sydney's 9–5 is 17:00–01:00 in Guatemala,
   16:00–00:00 in its summer; close to Japan's 18:00–03:00). This replaces P12-U10's split.
+
+### P12 Paid checks (Step 5)
+
+- **P12-D24 The live tests pass on the new format** (CLI and API, 1 Pro prompt plus about
+  $0.01): the nested reply schema compiles on both backends and the score is computed from
+  the reply.
+- **P12-D25 One CLI call of 20 pending postings** (Pro, not billed): 19 scored, 1 came back
+  without a result (back to pending, no error), 138 s, 108,137 input and 39,610 output
+  tokens. That's about 1,980 output tokens per posting, against 1,000–1,600 for the
+  20-posting calls of the old format: about 6.5 requirements and 0.3 signals per reply,
+  1,950 characters of JSON. The scores read as intended (top 73, caps at 45 and 49, 7 of
+  19 disqualified with the right reason).
+- **P12-U12 CLI calls carry 15 postings, not 20** (daily and backlog), after P12-D25. You
+  chose it; the comments in settings.yaml say why.
+- **P12-U13 The cost estimate assumes 1,750 output tokens per posting** (was 1,100): the
+  measured API figure times the 1.6 growth seen on the CLI, until API requests are measured
+  again. The legacy rescore's estimate went from $0.92 to $1.20.
+- **P12-U14 No rescore on the laptop.** You: "I'll do that with the server data, we only
+  have a subset here". The laptop's 19 new-format scores are from P12-D25.
