@@ -1,0 +1,79 @@
+# Settings for the offline tests, pinned so tests don't depend on config/settings.yaml,
+# which you edit at will. Values here are what the tests assert against; anything left out
+# takes the built-in default. The other config files link to the real ones in config/.
+scoring:
+  backend: cli
+  model: claude-haiku-5-5
+  effort: null
+  description_max_chars: 20000
+  modes:
+    daily:
+      cli:
+        postings_per_call: 20
+        max_calls: 5
+        max_input_tokens_per_call: 60000
+        max_output_tokens_per_call: 12000
+      api:
+        postings_per_call: 1
+        max_calls: 500
+        use_batches_api: false
+    backlog:
+      cli:
+        postings_per_call: 20
+        max_calls: 25
+        max_input_tokens_per_call: 60000
+        max_output_tokens_per_call: 12000
+      api:
+        postings_per_call: 1
+        max_calls: 10000
+        use_batches_api: true
+  order: newest_first
+  cli:
+    binary: claude
+    workdir: data/claude-cwd
+    timeout_seconds: 600
+    token_created: null
+  api:
+    prompt_caching: true
+    max_spend_usd_per_run: 5.0
+    max_retries: 3
+    batch_poll_seconds: 60
+    batch_max_wait_minutes: 120
+    batch_discount: 0.5
+    thinking_headroom_tokens: 8000
+    prices:
+      claude-haiku-4-5:
+        input: 1.0
+        output: 5.0
+        cache_write: 1.25
+        cache_read: 0.1
+      claude-haiku-5-5:
+        input: 0.1
+        output: 0.5
+        cache_write: 0.125
+        cache_read: 0.01
+digest:
+  min_score: 50
+  watchlist_min_score: 21
+  watchlist_collapse_below: 50
+  send_when_empty: true
+  email:
+    enabled: true
+    smtp_host: smtp.protonmail.ch
+    smtp_port: 587
+    from_address: job-scout@gadhi.one
+ats:
+  seed_refresh_days: 7
+  redetect_days: 30
+  max_detections_per_run: 40
+feedback:
+  host: 127.0.0.1
+  port: 8765
+  prompt_examples: 8
+schedule:
+  timezone: America/Guatemala
+  daily_run_time: "08:15"
+paths:
+  database: data/job-scout.db
+  reports: data/reports
+  exports: data/exports

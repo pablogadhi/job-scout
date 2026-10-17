@@ -34,7 +34,7 @@ from job_scout.report.build import make_digest
 from job_scout.scoring.planner import Limits
 from job_scout.scoring.prompt import system_prompt
 from job_scout.scoring.runner import RunOptions, ScoringRunner
-from tests.conftest import REPO_CONFIG
+from tests.conftest import TEST_CONFIG
 from tests.scoring_helpers import FakeScorer, result_for, seed_jobs
 
 SECRET = SecretStr("s" * 40)
@@ -229,7 +229,7 @@ def test_scoring_run_sends_examples_and_records_them(
         calls = session.scalars(select(ScoringCall)).all()
         assert calls and all(sorted(c.feedback_job_ids or []) == rated for c in calls)
 
-    off = load_config(REPO_CONFIG, {"feedback": {"prompt_examples": 0}})
+    off = load_config(TEST_CONFIG, {"feedback": {"prompt_examples": 0}})
     with session_factory() as session:
         assert select_examples(session, off.settings.feedback.prompt_examples, 50) == []
     assert ScoringRunner(off, session_factory, FakeScorer()).feedback_job_ids is None
@@ -327,7 +327,7 @@ def test_digest_has_feedback_links_when_configured(
     tmp_path: Path, session_factory: sessionmaker[Session]
 ) -> None:
     config = load_config(
-        REPO_CONFIG,
+        TEST_CONFIG,
         {
             "paths": {"reports": str(tmp_path / "reports")},
             "digest": {"email": {"enabled": False}},
@@ -368,7 +368,7 @@ def test_feedback_report(app_config: AppConfig, session_factory: sessionmaker[Se
 
     result = CliRunner().invoke(
         app,
-        ["--config-dir", str(REPO_CONFIG), "feedback", "report"],
+        ["--config-dir", str(TEST_CONFIG), "feedback", "report"],
         env={"COLUMNS": "200", "JOB_SCOUT_DIGEST__MIN_SCORE": "50"},
     )
     assert result.exit_code == 0, result.output
@@ -376,7 +376,7 @@ def test_feedback_report(app_config: AppConfig, session_factory: sessionmaker[Se
     assert "Disagreements (2)" in result.output and "Agency role." in result.output
 
     explained = CliRunner().invoke(
-        app, ["--config-dir", str(REPO_CONFIG), "explain", str(ids[2])], env={"COLUMNS": "200"}
+        app, ["--config-dir", str(TEST_CONFIG), "explain", str(ids[2])], env={"COLUMNS": "200"}
     )
     assert "thumbs down to score 85" in explained.output and "Agency role." in explained.output
 
@@ -384,6 +384,6 @@ def test_feedback_report(app_config: AppConfig, session_factory: sessionmaker[Se
 @pytest.mark.usefixtures("db_url")
 def test_serve_needs_the_secret() -> None:
     result = CliRunner().invoke(
-        app, ["--config-dir", str(REPO_CONFIG), "feedback", "serve"], env={"COLUMNS": "200"}
+        app, ["--config-dir", str(TEST_CONFIG), "feedback", "serve"], env={"COLUMNS": "200"}
     )
     assert result.exit_code == 2 and SECRET_ENV in result.output

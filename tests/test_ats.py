@@ -30,7 +30,7 @@ from job_scout.db import make_engine, make_session_factory
 from job_scout.db.models import AtsCompany, AtsMethod, AtsSeed, AtsStatus, Job
 from job_scout.fetch.http import HttpClient
 from job_scout.fetch.runner import run_fetch
-from tests.conftest import HTTP_FIXTURES, REPO_CONFIG, edit
+from tests.conftest import HTTP_FIXTURES, TEST_CONFIG, edit
 from tests.test_fetchers import FIXTURE_BOARDS
 
 NOW = datetime(2026, 10, 13, 12, 0, tzinfo=UTC)
@@ -552,7 +552,7 @@ def test_ats_detect_command(
     monkeypatch.setattr("job_scout.cli.ats.HttpClient", client)
     monkeypatch.setenv("JOB_SCOUT_PATHS__REPORTS", str(tmp_path / "reports"))
     result = CliRunner().invoke(
-        app, ["--config-dir", str(REPO_CONFIG), "ats", "detect"], env={"COLUMNS": "200"}
+        app, ["--config-dir", str(TEST_CONFIG), "ats", "detect"], env={"COLUMNS": "200"}
     )
     assert result.exit_code == 0, result.output
     assert "seed: 7 companies, 5 kept by the filters (5 new" in result.output

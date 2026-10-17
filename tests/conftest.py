@@ -19,6 +19,8 @@ from job_scout.fetch.http import HttpClient
 
 ROOT = Path(__file__).resolve().parent.parent
 REPO_CONFIG = ROOT / "config"
+# config/ with a pinned settings.yaml: tests don't break when the real settings change.
+TEST_CONFIG = Path(__file__).resolve().parent / "fixtures" / "config"
 HTTP_FIXTURES = Path(__file__).resolve().parent / "fixtures" / "http"
 
 
@@ -56,9 +58,9 @@ def _clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture
 def config_dir(tmp_path: Path) -> Path:
-    """A writable copy of the real config/ directory."""
+    """A writable copy of the test config directory (links resolved to the real files)."""
     target = tmp_path / "config"
-    shutil.copytree(REPO_CONFIG, target, copy_function=shutil.copyfile)  # drop read-only modes
+    shutil.copytree(TEST_CONFIG, target, copy_function=shutil.copyfile)  # drop read-only modes
     return target
 
 
@@ -104,7 +106,7 @@ def session_factory(engine: Engine) -> sessionmaker[Session]:
 
 @pytest.fixture
 def app_config() -> AppConfig:
-    return load_config(REPO_CONFIG)
+    return load_config(TEST_CONFIG)
 
 
 def load_http_fixtures() -> dict[str, tuple[int, str, bytes]]:

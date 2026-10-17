@@ -18,7 +18,7 @@ from job_scout.report.data import build_sections, scored_items
 from job_scout.report.export import export_csv, snapshot_sqlite
 from job_scout.report.mailer import TOKEN_ENV
 from job_scout.report.render import http_url
-from tests.conftest import REPO_CONFIG
+from tests.conftest import TEST_CONFIG
 from tests.scoring_helpers import result_for, seed_jobs
 
 NOW = datetime(2026, 10, 13, 14, 0, tzinfo=UTC)
@@ -33,7 +33,7 @@ def config_with(tmp_path: Path, **digest: Any) -> AppConfig:
     """The repo config, email off unless a test turns it on (whatever settings.yaml says)."""
     digest = {"email": {"enabled": False}, **digest}
     return load_config(
-        REPO_CONFIG,
+        TEST_CONFIG,
         {"paths": {"reports": str(tmp_path / "reports")}, "digest": digest},
     )
 
@@ -374,7 +374,7 @@ def test_notify_failure_command(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
         "JOB_SCOUT_DIGEST__EMAIL__TO_ADDRESS": "me@example.test",
     }
     log = "fetch ok\nscoring failed: CLAUDE_CODE_OAUTH_TOKEN=abc123 expired\n"
-    args = ["--config-dir", str(REPO_CONFIG), "notify-failure", "--unit", "job-scout.service"]
+    args = ["--config-dir", str(TEST_CONFIG), "notify-failure", "--unit", "job-scout.service"]
     result = CliRunner().invoke(
         app, [*args, "--result", "exit-code", "--exit-status", "1"], input=log, env=env
     )

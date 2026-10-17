@@ -2,14 +2,21 @@
 
 import re
 
+import pytest
 import yaml
 
-from job_scout.config import AppConfig
+from job_scout.config import AppConfig, load_config
 from job_scout.feedback.links import SECRET_ENV
 from job_scout.report import mailer
-from tests.conftest import ROOT
+from tests.conftest import REPO_CONFIG, ROOT
 
 DEPLOY = ROOT / "deploy"
+
+
+@pytest.fixture
+def app_config() -> AppConfig:
+    """The real config/: the deploy files must agree with the settings that get deployed."""
+    return load_config(REPO_CONFIG)
 
 
 def unit(name: str) -> str:

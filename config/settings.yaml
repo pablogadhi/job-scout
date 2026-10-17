@@ -15,7 +15,7 @@ scoring:
   # Thinking effort: low | medium | high | xhigh | max, or null to not send it.
   # Haiku 4.5 rejects it (keep null); Haiku 5.5 defaults to medium.
   # Override: JOB_SCOUT_SCORING__EFFORT=low
-  effort: null
+  effort: medium
 
   description_max_chars: 20000 # posting description is truncated to this before scoring
 
@@ -30,13 +30,13 @@ scoring:
     daily:
       cli:
         postings_per_call: 20
-        max_calls: 5
+        max_calls: 10
         max_input_tokens_per_call: 60000
         max_output_tokens_per_call: 12000
       api:
         postings_per_call: 1 # one posting per request (the prompt is too short to cache)
         max_calls: 500
-        use_batches_api: false
+        use_batches_api: true
     backlog:
       cli:
         postings_per_call: 20 # calibration: 40 per call lost 33 of 50 results, 60 timed out
@@ -102,9 +102,9 @@ digest:
 
 ats:
   # Company job boards from the remoteintech seed and the watchlist (sources.yaml).
-  seed_refresh_days: 7              # re-download the seed list this often
-  redetect_days: 30                 # re-detect each company's board this often
-  max_detections_per_run: 40        # `run` caps detection work; `ats detect` has no cap
+  seed_refresh_days: 7 # re-download the seed list this often
+  redetect_days: 30 # re-detect each company's board this often
+  max_detections_per_run: 40 # `run` caps detection work; `ats detect` has no cap
 
 feedback:
   # Thumbs up/down links in the digest open a page served by `job-scout feedback serve` (the
@@ -117,7 +117,7 @@ feedback:
 
 schedule:
   timezone: America/Guatemala
-  daily_run_time: "08:15"           # the server boots at 08:00; keep in sync with deploy/systemd/job-scout.timer
+  daily_run_time: "08:15" # the server boots at 08:00; keep in sync with deploy/systemd/job-scout.timer
 
 # Relative to the working directory: the repo root, or /app in the container, where the
 # repo's gitignored data/ is mounted.

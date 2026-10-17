@@ -1499,3 +1499,23 @@ features planned; Phase 7 (Tier 2 scrapers) and the Findwork key are still open.
   the check on the server: the API backlog averaged 1,115 output tokens per posting over
   2,767 single-posting requests. That's the backend that bills, so it replaces the CLI
   figure (CLI calls hold 20 postings and ran longer per posting).
+- **P9-U25 The user's settings changes:** `scoring.effort: medium`, daily CLI `max_calls:
+  10` (was 5) and the Batches API for daily API runs (`use_batches_api: true`). A daily
+  run on the API now waits up to `batch_max_wait_minutes` (120) for its batch; jobs whose
+  batch isn't back in time go into the next digest. The user's formatter also realigned
+  a few inline comments. Committed as the user made them.
+- **P9-U26 Tests no longer depend on `config/settings.yaml`.** The user: "it's pointless
+  to have a settings file that can change at anytime if the tests are going to break".
+  Their `max_calls: 10` broke `test_limits_from_settings`.
+- **P9-D29 How:** tests load `tests/fixtures/config/`, a pinned `settings.yaml` (the
+  committed values before P9-U25, comments dropped) plus symlinks to the real
+  `sources.yaml`, `filters.yaml` and `profile.md`. `test_limits_from_settings` now builds
+  its own limits. `test_repo_config_is_valid` still loads the real `config/` but no longer
+  asserts its backend and model. The deploy tests override `app_config` with the real
+  config, since the timer, ports and paths must match what gets deployed. Checked by
+  bumping every number and flipping every flag in a copy of `config/settings.yaml`: 15
+  tests failed before, now only the feedback-port deploy check does, as it should.
+- **P9-R5 Tests still read the real `sources.yaml`, `filters.yaml` and `profile.md`.** Some
+  assert their content (the watchlist's first entry is Canonical, Findwork's `max_pages`
+  is 5, the dedupe key). Not pinned yet, since the user asked about settings; left for
+  review.

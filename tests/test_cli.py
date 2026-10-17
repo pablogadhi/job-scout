@@ -18,13 +18,13 @@ from job_scout.db.models import Backend, Job, Source
 from job_scout.fetch.models import Posting
 from job_scout.fetch.store import store_postings
 from job_scout.scoring.calibrate import ConfigSpec
-from tests.conftest import REPO_CONFIG, edit
+from tests.conftest import TEST_CONFIG, edit
 from tests.scoring_helpers import result_for, seed_jobs
 
 runner = CliRunner()
 
 
-def invoke(*args: str, config_dir: Path = REPO_CONFIG):
+def invoke(*args: str, config_dir: Path = TEST_CONFIG):
     return runner.invoke(app, ["--config-dir", str(config_dir), *args], env={"COLUMNS": "200"})
 
 
@@ -98,7 +98,7 @@ def test_fetch_max_pages_overrides_paginated_sources(monkeypatch: pytest.MonkeyP
     pages = {s.id: s.max_pages for s in seen[0].sources.sources}
     assert pages["findwork"] == 30
     assert pages["remotive"] is None  # sources without max_pages are left alone
-    assert load_config(REPO_CONFIG).sources.get("findwork").max_pages == 5
+    assert load_config(TEST_CONFIG).sources.get("findwork").max_pages == 5
 
 
 def _seed_group(db_url: str) -> int:

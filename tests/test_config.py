@@ -6,13 +6,11 @@ import pytest
 from job_scout.config import ConfigError, load_config, load_settings_only
 from job_scout.config.settings import ApiLimits
 from job_scout.db.models import Backend, ScoringMode
-from tests.conftest import REPO_CONFIG, edit
+from tests.conftest import REPO_CONFIG, TEST_CONFIG, edit
 
 
 def test_repo_config_is_valid() -> None:
     config = load_config(REPO_CONFIG)
-    assert config.settings.scoring.backend == "cli"
-    assert config.settings.scoring.model == "claude-haiku-5-5"
     assert (
         config.profile.sha256
         == hashlib.sha256((REPO_CONFIG / "profile.md").read_bytes()).hexdigest()
@@ -98,7 +96,7 @@ def test_database_url(config_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None
 
 
 def test_limits_with_flag_overrides() -> None:
-    scoring = load_settings_only(REPO_CONFIG).scoring
+    scoring = load_settings_only(TEST_CONFIG).scoring
     limits = scoring.limits(ScoringMode.BACKLOG, Backend.CLI, postings_per_call=60, max_calls=None)
     assert (limits.postings_per_call, limits.max_calls) == (60, 25)
     api_limits = scoring.limits(ScoringMode.BACKLOG, Backend.API)

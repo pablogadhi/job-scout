@@ -106,8 +106,11 @@ laptop and on the server alike. Data goes to the repo's gitignored `data/` (rela
   has user units (the server runs everything from `~/job-scout`, nothing as root): the
   08:15 timer, the run service (`TimeoutStartSec`, `OnFailure=`) and the failure-email
   service, which pipes the run's journal into `job-scout notify-failure`.
-- `tests/`: pytest; `conftest.py` clears `JOB_SCOUT_*` env vars and gives a writable copy of
-  `config/` (`config_dir` fixture).
+- `tests/`: pytest; `conftest.py` clears `JOB_SCOUT_*` env vars. Tests load
+  `tests/fixtures/config/` (`app_config`, and a writable copy via `config_dir`): a pinned
+  `settings.yaml`, plus links to the real `sources.yaml`, `filters.yaml` and `profile.md`.
+  Editing `config/settings.yaml` never breaks a test, except the deploy checks, which read
+  the real settings on purpose. A test that needs a setting value asserts the pinned one.
 
 ## Conventions
 
@@ -128,7 +131,7 @@ laptop and on the server alike. Data goes to the repo's gitignored `data/` (rela
 - **Email:** `digest.email` in settings.yaml; the recipient(s) from
   `JOB_SCOUT_DIGEST__EMAIL__TO_ADDRESS` (comma-separated) and the SMTP token only from
   `JOB_SCOUT_SMTP_TOKEN`, both checked at send time. The token is wrapped in `SecretStr`,
-  never stored in settings or logged. Tests that load the repo config turn email off.
+  never stored in settings or logged. Tests that load a config turn email off.
 - **Deploy files are tested for consistency** (`tests/test_deploy.py`): the timer's time and
   zone must match `schedule.daily_run_time`/`timezone`, data paths must be relative, under
   `data/`, no deploy file may name a system path (`/var/lib`, `/opt`, `/etc/...`), and
