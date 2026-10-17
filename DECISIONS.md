@@ -1479,5 +1479,8 @@ features planned; Phase 7 (Tier 2 scrapers) and the Findwork key are still open.
   pending groups: per posting the median stays ~1,570 tokens, p90 goes from 1,660 to
   2,420, the max from 2,000 to 5,500. Calls stay at 20 postings (77 calls either way);
   the median call grows from 32k to 36k input tokens and the largest reaches 59k, so the
-  60k input budget splits just one call. Whether a near-60k call behaves (time, results
-  returned) needs one live CLI call; left for the user's approval.
+  60k input budget splits just one call. One live CLI call (approved by the user) sent the
+  largest planned call, 11 long postings at ~59k estimated input tokens: all 11 results
+  came back in 63 seconds, well inside the 600-second timeout. Earlier 20-posting calls
+  took 47-178 seconds; the 2 of 11 that failed did so at the old cap too (exit code 1,
+  `error_max_structured_output_retries`) and were retried split in half.
