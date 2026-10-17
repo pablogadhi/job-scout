@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+<channel>
+<title>ReliefWeb - Jobs</title>
+<link>https://example.invalid/</link>
+<description>Synthetic fixture feed</description>
+<item>
+  <title>Programme Manager, Food Security</title>
+  <link>https://reliefweb.int/job/8100001/programme-manager-food-security</link>
+  <guid isPermaLink="true">https://reliefweb.int/job/8100001/programme-manager-food-security</guid>
+  <pubDate>Thu, 15 Oct 2026 13:27:17 +0000</pubDate>
+  <source url="https://reliefweb.int/jobs/rss.xml?advanced-search=%28TY263%29_%28CC6867%29&amp;search=remote">ReliefWeb - Jobs</source>
+  <description>&lt;div class="tag country"&gt;Country: Côte d'Ivoire&lt;/div&gt;
+&lt;div class="tag source"&gt;Organization: Ceiba Relief &amp; Development&lt;/div&gt;
+&lt;div class="date closing"&gt;Closing date: 30 Oct 2026&lt;/div&gt;
+&lt;p&gt;Lead a food security programme in Abidjan. Remote work is possible two days a week.&lt;/p&gt;</description>
+  <category>Côte d'Ivoire</category>
+  <category>Ceiba Relief &amp; Development</category>
+  <category>Program/Project Management</category>
+  <category>Job</category>
+  <author>Ceiba Relief &amp; Development</author>
+</item>
+<item>
+  <title>Senior Grants Manager (home-based)</title>
+  <link>https://reliefweb.int/job/8100002/senior-grants-manager-home-based</link>
+  <guid isPermaLink="true">https://reliefweb.int/job/8100002/senior-grants-manager-home-based</guid>
+  <pubDate>Wed, 14 Oct 2026 09:00:00 +0000</pubDate>
+  <source url="https://reliefweb.int/jobs/rss.xml?advanced-search=%28TY263%29_%28CC6867%29&amp;search=remote">ReliefWeb - Jobs</source>
+  <description>&lt;div class="tag source"&gt;Organization: Alianza Verde International&lt;/div&gt;
+&lt;div class="date closing"&gt;Closing date: 12 Nov 2026&lt;/div&gt;
+&lt;p&gt;Home-based, any time zone in the Americas.&lt;/p&gt;&lt;p&gt;&lt;strong&gt;Salary: USD 70,000 - 82,000&lt;/strong&gt;&lt;/p&gt;</description>
+  <category>Alianza Verde International</category>
+  <category>Program/Project Management</category>
+  <category>Job</category>
+  <author>Alianza Verde International</author>
+</item>
+</channel>
+</rss>

@@ -27,7 +27,7 @@ from job_scout.feedback.examples import select_examples
 from job_scout.scoring.backends.base import CallRequest, Scorer
 from job_scout.scoring.prompt import PostingInput, render_posting, system_prompt, user_message
 from job_scout.scoring.runner import max_output_tokens
-from job_scout.scoring.schema import ScoreResult, output_json_schema
+from job_scout.scoring.schema import ScoreSchema, score_schema
 
 _EFFORTS: dict[str, Effort] = {e: e for e in get_args(Effort)}
 
@@ -150,10 +150,13 @@ def sample_job_ids(session: Session, size: int, seed: int | None = None) -> list
 
 
 def _score_with(
-    configuration: Configuration, system: str, postings: Sequence[PostingInput]
+    configuration: Configuration,
+    system: str,
+    scores: ScoreSchema,
+    postings: Sequence[PostingInput],
 ) -> ConfigResult:
     result = ConfigResult(configuration.name)
-    schema = output_json_schema()
+    schema = scores.json_schema()
     started = time.monotonic()
     size = configuration.postings_per_call
     for start in range(0, len(postings), size):
@@ -197,17 +200,18 @@ def _score_with(
         wanted = {p.job_id for p in chunk}
         for item in items:
             try:
-                parsed = ScoreResult.model_validate(item)
+                data, core = scores.parse(item)
             except ValidationError as exc:
                 detail.rejected += 1
                 detail.first_rejection = detail.first_rejection or str(exc)[:500]
                 continue
-            if parsed.job_id not in wanted:
-                detail.unknown_ids.append(parsed.job_id)
-            elif parsed.job_id not in result.scores:
+            job_id = data["job_id"]
+            if job_id not in wanted:
+                detail.unknown_ids.append(job_id)
+            elif job_id not in result.scores:
                 detail.valid += 1
-                result.scores[parsed.job_id] = parsed.overall_score
-                result.summaries[parsed.job_id] = parsed.summary
+                result.scores[job_id] = core.overall_score
+                result.summaries[job_id] = core.summary
         detail.missing_ids = sorted(wanted - result.scores.keys())
     result.seconds = round(time.monotonic() - started, 1)
     return result
@@ -227,12 +231,13 @@ def run_calibration(
         session, config.settings.feedback.prompt_examples, config.settings.digest.min_score
     )
     system = system_prompt(config.profile, examples)  # the same prompt a real run sends
+    scores = score_schema(config.profile)
     return Calibration(
         job_ids=[g.canonical.id for g in groups],
         titles={g.canonical.id: g.canonical.title for g in groups},
         companies={g.canonical.id: g.canonical.company or "" for g in groups},
-        reference=_score_with(reference, system, postings),
-        candidates=[_score_with(c, system, postings) for c in candidates],
+        reference=_score_with(reference, system, scores, postings),
+        candidates=[_score_with(c, system, scores, postings) for c in candidates],
     )
 
 

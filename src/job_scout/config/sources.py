@@ -1,4 +1,5 @@
-"""Job sources, skipped sites, ATS templates and the watchlist (config/sources.yaml)."""
+"""Job sources, skipped sites, ATS templates, the watchlist and an instance's own companies
+(config/sources.yaml)."""
 
 from __future__ import annotations
 
@@ -10,7 +11,10 @@ from pydantic import Field, PositiveFloat, PositiveInt, field_validator, model_v
 
 from job_scout.config.settings import StrictModel
 
-Method = Literal["api", "rss", "scrape", "ats_seed"]
+# ats_seed: downloads the remoteintech seed and polls every company board; ats_boards: polls
+# the boards of the watchlist and `companies` only, for an instance without that seed.
+Method = Literal["api", "rss", "scrape", "ats_seed", "ats_boards"]
+BOARD_METHODS: frozenset[Method] = frozenset({"ats_seed", "ats_boards"})
 PrefilterMode = Literal["full", "remote_mention_only"]
 Checked = date | Literal["unverified"]
 
@@ -43,12 +47,18 @@ class SourceConfig(StrictModel):
     # Enforced limits; free-text limits in `notes` are documentation only.
     max_requests_per_day: PositiveInt | None = None  # rolling 24 hours
     min_request_interval_seconds: PositiveFloat | None = None
+    # Only where you decided so for this source: its requests skip robots.txt's allow and
+    # disallow rules (Crawl-delay, spacing and budgets still apply).
+    ignore_robots_txt: bool = False
     # APIs read newest first that we stop early (findwork): pages per run. `fetch
     # --max-pages N` overrides it once, e.g. to read further back for the backlog.
     max_pages: PositiveInt | None = None
     # full: all filters.yaml rules. remote_mention_only: free-text posts (HN comments) with
     # no real title only need to mention "remote"; Claude parses the rest.
     prefilter: PrefilterMode = "full"
+    # Sources that serve every category in one list (workingnomads): the categories to keep
+    # (empty keeps all).
+    categories: list[str] = []
     # method ats_seed only: which seed companies to keep (empty keeps all).
     seed_regions: list[str] = []
     seed_remote_policies: list[str] = []
@@ -68,7 +78,9 @@ class SkippedSite(StrictModel):
 
 # ATS platforms the code can detect and poll (job_scout.ats.platforms). sources.yaml may list
 # a subset; a name outside this set is a config error.
-SUPPORTED_ATS = frozenset({"greenhouse", "lever", "ashby", "workable", "recruitee"})
+SUPPORTED_ATS = frozenset(
+    {"greenhouse", "lever", "ashby", "workable", "recruitee", "workday", "jobvite", "icims"}
+)
 
 
 class AtsPlatform(StrictModel):
@@ -83,10 +95,15 @@ class AtsPlatform(StrictModel):
 
     @field_validator("api")
     @classmethod
-    def _one_placeholder(cls, value: str) -> str:
-        if len(re.findall(r"\{\w+\}", value)) != 1:
-            raise ValueError(f"API template needs exactly one {{placeholder}}: {value}")
+    def _placeholders(cls, value: str) -> str:
+        if not re.findall(r"\{\w+\}", value):
+            raise ValueError(f"API template needs a {{placeholder}}: {value}")
         return value
+
+    @property
+    def token_parts(self) -> int:
+        """A token has one "/"-separated part per placeholder (Workday: host/tenant/site)."""
+        return len(re.findall(r"\{\w+\}", self.api))
 
 
 class WatchlistEntry(StrictModel):
@@ -98,12 +115,21 @@ class WatchlistEntry(StrictModel):
     notes: str | None = None
 
 
+class CompanyEntry(StrictModel):
+    """An organization whose job board `ats detect` should find (an instance's own seed)."""
+
+    company: str
+    careers_url: str
+    notes: str | None = None
+
+
 class SourcesConfig(StrictModel):
     defaults: SourceDefaults
     sources: list[SourceConfig]
     skipped: list[SkippedSite] = []
     ats_platforms: dict[str, AtsPlatform] = {}
     watchlist: list[WatchlistEntry] = []
+    companies: list[CompanyEntry] = []
 
     @model_validator(mode="after")
     def _cross_checks(self) -> SourcesConfig:
@@ -123,7 +149,22 @@ class SourcesConfig(StrictModel):
                     f"watchlist entry {entry.company!r} uses unknown ats {entry.ats!r}; "
                     f"known: {', '.join(self.ats_platforms)}"
                 )
+            parts = self.ats_platforms[entry.ats].token_parts
+            if len(entry.token.split("/")) != parts:
+                raise ValueError(
+                    f"watchlist entry {entry.company!r}: a {entry.ats} token has {parts} "
+                    f"part(s) separated by '/', got {entry.token!r}"
+                )
+        # Two would poll the same boards twice.
+        polling = [s.id for s in self.sources if s.method in BOARD_METHODS and s.is_enabled]
+        if len(polling) > 1:
+            raise ValueError(f"only one company-board source may be enabled: {', '.join(polling)}")
         return self
+
+    @property
+    def board_source(self) -> SourceConfig | None:
+        """The enabled source that polls company boards (remoteintech or company_boards)."""
+        return next((s for s in self.enabled() if s.method in BOARD_METHODS), None)
 
     def enabled(self, tier: int | None = None) -> list[SourceConfig]:
         return [s for s in self.sources if s.is_enabled and (tier is None or s.tier == tier)]

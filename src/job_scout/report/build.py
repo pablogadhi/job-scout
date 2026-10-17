@@ -56,6 +56,7 @@ def _render(
         config.settings.schedule.timezone,
         scoring.cli.token_created,
         now,
+        backend=scoring.backend,
     )
     return render(
         config,

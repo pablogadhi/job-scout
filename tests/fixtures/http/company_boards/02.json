@@ -1,0 +1,30 @@
+{
+ "total": 0,
+ "jobPostings": [
+  {
+   "title": "Program Manager, Rural Livelihoods",
+   "externalPath": "/job/Guatemala-City/Program-Manager-Rural-Livelihoods_JR1021",
+   "locationsText": "Panama City, Panama",
+   "postedOn": "Posted 3 Days Ago",
+   "bulletFields": [
+    "JR1021"
+   ]
+  },
+  {
+   "title": "Driver",
+   "externalPath": "/job/Guatemala-City/Driver_JR1022",
+   "locationsText": "Panama City, Panama",
+   "postedOn": "Posted 3 Days Ago",
+   "bulletFields": [
+    "JR1022"
+   ]
+  }
+ ],
+ "facets": [
+  {
+   "facetParameter": "timeType",
+   "values": []
+  }
+ ],
+ "userAuthenticated": false
+}

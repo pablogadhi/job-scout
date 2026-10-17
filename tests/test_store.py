@@ -104,3 +104,32 @@ def test_missing_company_never_merges(session_factory: sessionmaker[Session]) ->
         store_postings(session, "a", [posting("1", company=None)], KEY, NOW)
         result = store_postings(session, "b", [posting("2", company=None)], KEY, NOW)
     assert (result.new, result.duplicate) == (1, 0)
+
+
+def test_a_job_stored_without_its_description_gets_it_later(
+    session_factory: sessionmaker[Session],
+) -> None:
+    setup_sources(session_factory, "boards")
+    bare = posting("w1", "Program Manager")
+    described = bare.model_copy(
+        update={
+            "title": "Program Manager (renamed)",
+            "description_text": "Lead the programme.",
+            "location_raw": "Guatemala City, Guatemala",
+            "remote_raw": "Fully Remote",
+        }
+    )
+    with session_factory.begin() as session:
+        store_postings(session, "boards", [bare], KEY, NOW)
+    with session_factory.begin() as session:
+        result = store_postings(session, "boards", [described], KEY, NOW + timedelta(days=1))
+        again = store_postings(session, "boards", [described], KEY, NOW + timedelta(days=2))
+    assert (result.seen, result.filled, again.filled) == (1, 1, 0)
+    with session_factory() as session:
+        job = session.scalars(select(Job)).one()
+    assert (job.description_text, job.location_raw, job.remote_raw) == (
+        "Lead the programme.",
+        "Guatemala City, Guatemala",
+        "Fully Remote",
+    )
+    assert job.title == "Program Manager"  # what identifies the job stays as first stored

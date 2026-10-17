@@ -1,0 +1,22 @@
+# The daily run of another instance (instances/<name>/ in the repo), e.g. job-scout@ngo,
+# started by its own timer (job-scout@<name>.timer). Same as job-scout.service apart from
+# selecting the instance through its .env and running after yours. A failure is reported by job-scout-failure.service,
+# which runs as your instance: the email goes to you, never to the instance's own recipient.
+# A user unit (~/.config/systemd/user); the repo is checked out in ~/job-scout.
+[Unit]
+Description=job-scout daily run for instance %i (fetch, filter, score, digest)
+OnFailure=job-scout-failure.service
+# When both are due at once (the server booted after both run times, so Persistent=true fires
+# both timers together), this run starts once yours has finished: two instances never fetch at
+# the same time, so each host's spacing holds. On a normal day it changes nothing.
+After=job-scout.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/job-scout/deploy
+# User units can't order themselves after the system's docker.service: right after boot,
+# wait for the Docker daemon instead.
+ExecStartPre=/usr/bin/timeout 5m /bin/sh -c 'until /usr/bin/docker info >/dev/null 2>&1; do sleep 5; done'
+ExecStart=/usr/bin/docker compose --env-file ../instances/%i/.env run --rm -T job-scout run
+# A hung run (e.g. a stuck Claude call) is killed and reported instead of waiting forever.
+TimeoutStartSec=2h

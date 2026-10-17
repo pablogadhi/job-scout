@@ -11,6 +11,7 @@ import time
 from collections import deque
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
+from typing import Any
 
 from pydantic import ValidationError
 from sqlalchemy import select
@@ -44,7 +45,7 @@ from job_scout.scoring.prompt import (
     user_message,
 )
 from job_scout.scoring.queue import MAX_ATTEMPTS, enqueue, pending_count, pending_query
-from job_scout.scoring.schema import ScoreResult, check_profile_matches, output_json_schema
+from job_scout.scoring.schema import CoreResult, score_schema
 
 log = logging.getLogger(__name__)
 
@@ -101,7 +102,7 @@ class ScoringRunner:
         sleep: Callable[[float], None] = time.sleep,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
-        check_profile_matches(config.profile)
+        self.score_schema = score_schema(config.profile)
         self.config = config
         self.sf = session_factory
         self.scorer = scorer
@@ -117,7 +118,7 @@ class ScoringRunner:
             )
         self.feedback_job_ids = [e.job_id for e in examples] or None
         self.system = system_prompt(config.profile, examples)
-        self.schema = output_json_schema()
+        self.schema = self.score_schema.json_schema()
 
     # --- entry point ---------------------------------------------------------------------
 
@@ -262,7 +263,7 @@ class ScoringRunner:
         if result.status == "error" and result.extra.get("retry_free"):
             return outcome  # canceled/expired batch request: retry later at no attempt cost
 
-        valid: dict[int, ScoreResult] = {}
+        valid: dict[int, tuple[dict[str, Any], CoreResult]] = {}
         bad: set[int] = set()
         if result.status == "ok":
             items = result.payload.get("results") if isinstance(result.payload, dict) else None
@@ -280,7 +281,7 @@ class ScoringRunner:
                         log.warning("duplicate result for job %s; keeping the first", job_id)
                         continue
                     try:
-                        valid[job_id] = ScoreResult.model_validate(item)
+                        valid[job_id] = self.score_schema.parse(item)
                     except ValidationError as exc:
                         log.warning("invalid result for job %s: %s", job_id, exc.errors()[:3])
                         bad.add(job_id)
@@ -293,13 +294,13 @@ class ScoringRunner:
 
         now = utcnow()
         share = len(valid) or 1
-        for job_id, parsed in valid.items():
+        for job_id, (data, core) in valid.items():
             score = scores[job_id]
             score.status = ScoreStatus.SCORED
             score.profile_hash = self.profile_hash  # the profile this result was made under
-            score.result = parsed.model_dump()
-            score.overall_score = parsed.overall_score
-            score.disqualified = parsed.disqualified
+            score.result = data
+            score.overall_score = core.overall_score
+            score.disqualified = core.disqualified
             score.backend = self.scorer.backend
             score.model = self.scorer.model
             score.call_id = scoring_call.id

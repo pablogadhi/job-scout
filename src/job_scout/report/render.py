@@ -23,6 +23,14 @@ _ENV = Environment(
     lstrip_blocks=True,
     keep_trailing_newline=True,
 )
+# The plain-text twin places its newlines itself ({%- ... %} where a line must not start):
+# trimming after block tags would glue its lines together.
+_TEXT_ENV = Environment(
+    loader=PackageLoader("job_scout.report", "templates"),
+    autoescape=False,
+    undefined=StrictUndefined,
+    keep_trailing_newline=True,
+)
 
 
 def http_url(url: str | None) -> str:
@@ -73,7 +81,7 @@ def render(
     return Rendered(
         subject=f"{heading}: {counts}",
         html=_ENV.get_template("report.html").render(context),
-        text=_ENV.get_template("report.txt").render(context),
+        text=_TEXT_ENV.get_template("report.txt").render(context),
     )
 
 

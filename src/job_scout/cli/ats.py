@@ -11,7 +11,7 @@ from rich.markup import escape
 from rich.table import Table
 from sqlalchemy import select
 
-from job_scout.ats.refresh import RefreshReport, seed_source
+from job_scout.ats.refresh import RefreshReport
 from job_scout.ats.refresh import refresh as refresh_ats
 from job_scout.ats.store import counts as ats_counts
 from job_scout.cli.common import console, fail, load, open_db
@@ -33,7 +33,8 @@ def detect(
         bool, typer.Option("--no-seed", help="Use the stored company list; don't download it.")
     ] = False,
 ) -> None:
-    """Download the remoteintech seed, apply the watchlist, and find each company's job board.
+    """Download the remoteintech seed (when that source is on), apply the watchlist and
+    sources.yaml `companies`, and find each company's job board.
 
     Reports how many companies mapped to each ATS and lists the unknown ones (also saved as
     reports/ats-unknown-<time>.csv). Safe to interrupt: every detection is saved as it goes.
@@ -84,8 +85,7 @@ def detect(
 
 def upkeep(config: AppConfig) -> None:
     """Weekly seed download and capped board detection (settings.ats), for `run`/`backlog`."""
-    source = seed_source(config)
-    if source is None or not source.is_enabled:
+    if config.sources.board_source is None:
         return
     with HttpClient(config.sources.defaults) as http:
         report = refresh_ats(
@@ -103,7 +103,8 @@ def print_refresh(report: RefreshReport) -> None:
         )
     detected = ", ".join(f"{n} {ats}" for ats, n in report.detected.most_common()) or "none"
     console.print(
-        f"watchlist: {report.watchlist} board(s); detected this run: {detected}; "
+        f"watchlist: {report.watchlist} board(s); companies: {report.companies}; "
+        f"detected this run: {detected}; "
         f"{report.remaining} still to detect; {report.requests} requests"
     )
 

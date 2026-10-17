@@ -232,6 +232,12 @@ def test_score_with_cli_backend_end_to_end(
     assert "stop reason: done" in result.output
     assert "token_created" in result.output  # creation date not configured: warns
 
+    # The api backend uses no OAuth token, so there's nothing to warn about.
+    env = {"COLUMNS": "200", "JOB_SCOUT_BACKEND": "api"}
+    result = runner.invoke(app, ["--config-dir", str(TEST_CONFIG), "status"], env=env)
+    assert result.exit_code == 0, result.output
+    assert "backend: api" in result.output and "token_created" not in result.output
+
 
 @pytest.mark.usefixtures("db_url")
 def test_score_api_backend_needs_key(monkeypatch: pytest.MonkeyPatch) -> None:

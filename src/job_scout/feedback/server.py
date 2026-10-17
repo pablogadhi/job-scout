@@ -30,7 +30,7 @@ from job_scout.db.types import utcnow
 from job_scout.feedback.links import verify
 from job_scout.feedback.store import MAX_REASON_CHARS, current_score, get_vote, record_vote
 from job_scout.report.render import http_url
-from job_scout.scoring.schema import ScoreResult
+from job_scout.scoring.schema import CoreResult
 
 log = logging.getLogger(__name__)
 
@@ -114,7 +114,7 @@ class FeedbackApp:
                 return self._error(404, "That job isn't in the database.")
             job = group.canonical
             score = current_score(session, job_id)
-            result = ScoreResult.model_validate(score.result) if score and score.result else None
+            result = CoreResult.model_validate(score.result) if score and score.result else None
             previous = get_vote(session, job_id)
             context: dict[str, Any] = {
                 "title": f"Feedback: {job.title}",

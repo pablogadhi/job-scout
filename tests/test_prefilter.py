@@ -214,3 +214,20 @@ def test_fingerprint_tracks_rules_and_modes(app_config: AppConfig) -> None:
         update={"salary": app_config.filters.salary.model_copy(update={"min_annual": 130_000})}
     )
     assert base.fingerprint != Prefilter(stricter, {"hn": "remote_mention_only"}).fingerprint
+
+
+@pytest.mark.parametrize(
+    ("source_id", "title", "passes"),
+    [
+        ("remoteok", "Senior Backend Engineer", True),
+        ("remoteok", "Junior Backend Engineer", False),  # excluded
+        ("remoteok", "Head of Marketing", False),  # no include matches
+        ("hn", "Head of Marketing", True),  # free-text posts skip the title rules
+    ],
+)
+def test_title_passes_matches_evaluate(
+    prefilter: Prefilter, source_id: str, title: str, passes: bool
+) -> None:
+    assert prefilter.title_passes(source_id, title) is passes
+    if source_id != "hn":
+        assert prefilter.evaluate(FakeJob(title=title, source_id=source_id)).passed is passes

@@ -5,14 +5,19 @@
 # Everything stays in the repo checkout (~/job-scout): config/ mounted read-only, the
 # gitignored data/ for the database, reports and the claude CLI's home, and the gitignored
 # .env (mode 600) for secrets.
+#
+# Another instance (another person's profile) lives in instances/<name>/ with the same
+# config/, data/ and .env. Select it with its .env, which sets COMPOSE_PROJECT_NAME,
+# JOB_SCOUT_INSTANCE_DIR and JOB_SCOUT_FEEDBACK_PORT:
+#   docker compose --env-file ../instances/<name>/.env run --rm -T job-scout run
 name: job-scout
 
 x-job-scout: &job-scout
   image: job-scout:local
-  env_file: ../.env
+  env_file: ${JOB_SCOUT_INSTANCE_DIR:-..}/.env
   volumes:
-    - ../config:/app/config:ro
-    - ../data:/app/data
+    - ${JOB_SCOUT_INSTANCE_DIR:-..}/config:/app/config:ro
+    - ${JOB_SCOUT_INSTANCE_DIR:-..}/data:/app/data
   init: true
 
 services:
@@ -28,6 +33,7 @@ services:
   # The page the digest's thumbs up/down links open. Same image; build it with the
   # service above. Publishes feedback.port (8765 in the container) on the
   # server's LAN address; to pin one interface use e.g. "192.168.1.10:8765:8765".
+  # Each instance needs its own host port (JOB_SCOUT_FEEDBACK_PORT in its .env).
   feedback:
     <<: *job-scout
     command: ["feedback", "serve"]

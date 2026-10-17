@@ -1,0 +1,7 @@
+{
+  "https://reliefweb.int/jobs/rss.xml?advanced-search=%28TY263%29_%28CC6867%29&search=remote": {
+    "file": "01.xml",
+    "status": 200,
+    "content_type": "application/rss+xml; charset=utf-8"
+  }
+}

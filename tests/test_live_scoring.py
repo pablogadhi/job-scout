@@ -16,7 +16,7 @@ from job_scout.db.models import Backend
 from job_scout.scoring.backends import make_scorer
 from job_scout.scoring.backends.base import CallRequest
 from job_scout.scoring.prompt import PostingInput, system_prompt, user_message
-from job_scout.scoring.schema import ScoreBatch, output_json_schema
+from job_scout.scoring.schema import score_schema
 
 pytestmark = pytest.mark.live
 
@@ -38,28 +38,29 @@ POSTINGS = [
 ]
 
 
-def _score(app_config: AppConfig, backend: Backend, tmp_path: Path) -> ScoreBatch:
+def _score(app_config: AppConfig, backend: Backend, tmp_path: Path) -> None:
     scoring = app_config.settings.scoring
     if backend == Backend.CLI:
         scoring = scoring.model_copy(
             update={"cli": scoring.cli.model_copy(update={"workdir": tmp_path / "claude-cwd"})}
         )
     scorer = make_scorer(scoring, backend, os.environ)
+    schema = score_schema(app_config.profile)
     result = scorer.score(
         CallRequest(
             system=system_prompt(app_config.profile),
             user=user_message(POSTINGS),
             job_ids=(1, 2),
-            schema=output_json_schema(),
+            schema=schema.json_schema(),
             max_output_tokens=4_000,
         )
     )
     assert result.status == "ok", f"{backend} backend failed: {result.status}: {result.error}"
-    batch = ScoreBatch.model_validate(result.payload)
-    assert sorted(r.job_id for r in batch.results) == [1, 2]
-    by_id = {r.job_id: r for r in batch.results}
+    assert isinstance(result.payload, dict)
+    parsed = [schema.parse(item) for item in result.payload["results"]]
+    assert sorted(data["job_id"] for data, _ in parsed) == [1, 2]
+    by_id = {data["job_id"]: core for data, core in parsed}
     assert by_id[1].overall_score > by_id[2].overall_score
-    return batch
 
 
 @pytest.mark.skipif(

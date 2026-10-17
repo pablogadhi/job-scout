@@ -18,7 +18,9 @@ from xml.sax.saxutils import escape
 
 import httpx
 
+from job_scout.ats.platforms import WORKDAY_PAGE_SIZE, api_url
 from job_scout.config import load_config
+from job_scout.fetch.http import request_key
 
 ROOT = Path(__file__).resolve().parents[2]
 OUT = Path(__file__).resolve().parent / "http"
@@ -305,6 +307,107 @@ def remotive(endpoint: str) -> dict[str, Any]:
                 ns,
             ),
         )
+    }
+
+
+def reliefweb(endpoint: str) -> dict[str, Any]:
+    def job(job_id: int, slug: str, title: str, org: str, *, country: str | None, **f: str) -> str:
+        url = f"https://reliefweb.int/job/{job_id}/{slug}"
+        header = (f'<div class="tag country">Country: {country}</div>\n' if country else "") + (
+            f'<div class="tag source">Organization: {org}</div>\n'
+            f'<div class="date closing">Closing date: {f["closing"]}</div>\n'
+        )
+        tags = [country, org, "Program/Project Management", "Job"]
+        return "\n".join(
+            [
+                item(
+                    title=escape(title),
+                    link=url,
+                    **{'guid isPermaLink="true"': url},
+                    pubDate=f["date"],
+                    **{f'source url="{escape(endpoint)}"': "ReliefWeb - Jobs"},
+                    description=escape(header + f["body"]),
+                ).removesuffix("\n</item>"),
+                *(f"  <category>{escape(t)}</category>" for t in tags if t),
+                f"  <author>{escape(org)}</author>\n</item>",
+            ]
+        )
+
+    return {
+        endpoint: (
+            RSS,
+            rss(
+                "ReliefWeb - Jobs",
+                [
+                    job(
+                        8100001,
+                        "programme-manager-food-security",
+                        "Programme Manager, Food Security",
+                        "Ceiba Relief & Development",
+                        country="Côte d'Ivoire",
+                        date="Thu, 15 Oct 2026 13:27:17 +0000",
+                        closing="30 Oct 2026",
+                        body="<p>Lead a food security programme in Abidjan. Remote work is "
+                        "possible two days a week.</p>",
+                    ),
+                    job(
+                        8100002,
+                        "senior-grants-manager-home-based",
+                        "Senior Grants Manager (home-based)",
+                        "Alianza Verde International",
+                        country=None,
+                        date="Wed, 14 Oct 2026 09:00:00 +0000",
+                        closing="12 Nov 2026",
+                        body="<p>Home-based, any time zone in the Americas.</p>"
+                        "<p><strong>Salary: USD 70,000 - 82,000</strong></p>",
+                    ),
+                ],
+                ' xmlns:atom="http://www.w3.org/2005/Atom"',
+            ),
+        )
+    }
+
+
+def unvacancies(endpoints: list[str]) -> dict[str, Any]:
+    def job(slug: str, title: str, agency: str, date: str, summary: str) -> str:
+        url = f"https://unvacancies.org/jobs/{slug}"
+        tracking = "utm_source=rss&amp;utm_medium=feed&amp;utm_campaign=partner_feed"
+        return item(
+            title=escape(title),
+            link=f"{url}?{tracking}",
+            **{'guid isPermaLink="true"': url},
+            pubDate=date,
+            description=escape(summary),
+            category=escape(agency),
+        )
+
+    shared = job(
+        "programme-and-evaluation-specialist-PX-40021",
+        "Programme and Evaluation Specialist",
+        "UNFPA",
+        "Thu, 15 Oct 2026 00:00:00 GMT",
+        "UNFPA seeks a home-based specialist to plan and evaluate country programmes.",
+    )
+    feeds = [
+        [
+            job(
+                "senior-programme-consultant-water-sanitation-QZ-51003",
+                "Senior Programme Consultant, Water & Sanitation",
+                "UNICEF",
+                "Thu, 15 Oct 2026 00:00:00 GMT",
+                "UNICEF seeks a consultant to coordinate WASH programmes across Central America, "
+                "fully remote with two missions.",
+            ),
+            shared,
+        ],
+        [shared],
+    ]
+    return {
+        url: (
+            RSS,
+            rss("Remote UN jobs - unvacancies", items, ' xmlns:atom="http://www.w3.org/2005/Atom"'),
+        )
+        for url, items in zip(endpoints, feeds, strict=True)
     }
 
 
@@ -1008,6 +1111,186 @@ def remoteintech(endpoint: str, platforms: dict[str, str]) -> dict[str, Any]:
     }
 
 
+# A Workday board: the job list is POSTed a page at a time, each job's description is a GET.
+WORKDAY_TOKEN = "selvaaid.wd5.myworkdayjobs.com/selva_aid/Careers"
+WORKDAY_TITLES = [
+    "Program Manager, Rural Livelihoods",
+    "Driver",
+    "Monitoring and Evaluation Specialist",
+    "Grants Coordinator",
+]
+
+
+def workday(template: str) -> dict[str, Any]:
+    """22 jobs, so two pages of the list. Job 1 is fully remote from Guatemala, job 2 lists
+    three locations (the list only counts them), job 3 is on-site; the rest are fillers."""
+    api = api_url(template, WORKDAY_TOKEN)
+    base = api.removesuffix("/jobs")
+    items, details = [], {}
+    for n in range(1, 23):
+        title = WORKDAY_TITLES[(n - 1) % len(WORKDAY_TITLES)]
+        path = f"/job/Guatemala-City/{title.replace(' ', '-').replace(',', '')}_JR{1000 + n}"
+        located = {1: "Guatemala City, Guatemala", 2: "3 Locations", 3: "Nairobi, Kenya"}
+        items.append(
+            {
+                "title": title,
+                "externalPath": path,
+                "locationsText": located.get(n, "Panama City, Panama"),
+                "postedOn": "Posted 3 Days Ago",
+                "bulletFields": [f"JR{1000 + n}"],
+            }
+        )
+        details[f"{base}{path}"] = (
+            JSON,
+            {
+                "jobPostingInfo": {
+                    "id": f"{n:032x}",
+                    "title": title,
+                    "jobDescription": (
+                        f"<p>Selva Aid works with smallholder farmers.</p><p>{title}: lead the "
+                        "work with partner cooperatives.</p><p>Salary: USD 4,000 per month</p>"
+                    ),
+                    "location": "Guatemala City, Guatemala" if n != 3 else "Nairobi, Kenya",
+                    "additionalLocations": ["Tegucigalpa, Honduras"] if n == 2 else [],
+                    "postedOn": "Posted 3 Days Ago",
+                    "startDate": "2026-10-09",
+                    "timeType": "Part time" if n == 1 else "Full time",
+                    "jobReqId": f"JR{1000 + n}",
+                    "remoteType": {1: "Fully Remote", 3: "Fully Present"}.get(n, "Hybrid"),
+                    "externalUrl": f"https://selvaaid.wd5.myworkdayjobs.com/Careers{path}",
+                    "country": {"descriptor": "Guatemala", "id": "c0ffee"},
+                },
+                "hiringOrganization": {"name": "", "url": ""},
+                "userAuthenticated": False,
+            },
+        )
+    pages = {}
+    for offset in range(0, len(items), WORKDAY_PAGE_SIZE):
+        body = {"appliedFacets": {}, "limit": WORKDAY_PAGE_SIZE, "offset": offset, "searchText": ""}
+        pages[request_key("POST", api, body)] = (
+            JSON,
+            {
+                # Workday gives the real total on the first page only.
+                "total": len(items) if offset == 0 else 0,
+                "jobPostings": items[offset : offset + WORKDAY_PAGE_SIZE],
+                "facets": [{"facetParameter": "timeType", "values": []}],
+                "userAuthenticated": False,
+            },
+        )
+    return {**pages, **details}
+
+
+HTML = "text/html; charset=utf-8"
+JOBVITE_COMPANY = "pinoverde"
+ICIMS_PORTAL = "careers-milpa"
+
+
+def job_page(posting: dict[str, Any] | None, body: str = "") -> bytes:
+    """A job page as Jobvite and iCIMS serve them: the JobPosting in a JSON-LD script."""
+    ld = f'<script type="application/ld+json">{json.dumps(posting)}</script>' if posting else ""
+    return f"<html><head><title>Careers</title>{ld}</head><body>{body}</body></html>".encode()
+
+
+def job_posting(title: str, **fields: Any) -> dict[str, Any]:
+    return {
+        "@context": "https://schema.org/",
+        "@type": "JobPosting",
+        "title": title,
+        "description": f"&lt;p&gt;{title}: work with women's cooperatives.&lt;/p&gt;",
+        "datePosted": "2026-10-08",
+        "hiringOrganization": {"@type": "Organization", "name": "Synthetic Org, Inc."},
+        **fields,
+    }
+
+
+def job_boards_html(templates: dict[str, str]) -> dict[str, Any]:
+    """Jobvite: a jobs page (one job also under Featured Jobs) and its job pages; job 3's page
+    has no JobPosting. iCIMS: a sitemap and the framed views of its job pages."""
+    jobvite = api_url(templates["jobvite"], JOBVITE_COMPANY)
+    links = [
+        ("jv1", "Program Coordinator, Agroecology"),
+        ("jv2", "Driver"),
+        ("jv3", "Grants Manager"),
+    ]
+    rows = "".join(
+        f'<tr><td class="jv-job-list-name"><a href="/{JOBVITE_COMPANY}/job/{i}">{t}</a></td>'
+        f'<td class="jv-job-list-location">Guatemala City</td></tr>'
+        for i, t in links
+    )
+    featured = f'<div class="jv-featured-job-title"><a href="/{JOBVITE_COMPANY}/job/jv1">{links[0][1]}</a></div>'
+    responses: dict[str, Any] = {
+        jobvite: (HTML, f"<html><body>{featured}<table>{rows}</table></body></html>".encode()),
+        f"https://jobs.jobvite.com/{JOBVITE_COMPANY}/job/jv1": (
+            HTML,
+            job_page(
+                job_posting(
+                    "Program Coordinator, Agroecology",
+                    jobLocationType="TELECOMMUTE",
+                    applicantLocationRequirements=[{"@type": "Country", "name": "Guatemala"}],
+                    jobLocation=[
+                        {
+                            "@type": "Place",
+                            "address": {
+                                "@type": "PostalAddress",
+                                "addressLocality": "Guatemala City",
+                                "addressCountry": "GT",
+                            },
+                        }
+                    ],
+                    employmentType="PART_TIME",
+                    baseSalary={
+                        "@type": "MonetaryAmount",
+                        "currency": "USD",
+                        "value": {
+                            "@type": "QuantitativeValue",
+                            "minValue": 3500,
+                            "maxValue": 4200,
+                            "unitText": "MONTH",
+                        },
+                    },
+                )
+            ),
+        ),
+        f"https://jobs.jobvite.com/{JOBVITE_COMPANY}/job/jv3": (
+            HTML,
+            job_page(None, "<p>Gone.</p>"),
+        ),
+    }
+    icims = api_url(templates["icims"], ICIMS_PORTAL)
+    jobs = {"101": "monitoring-%26-evaluation-officer", "102": "finance-assistant"}
+    locs = "".join(
+        f"<url><loc>https://{ICIMS_PORTAL}.icims.com/jobs/{i}/{slug}/job</loc></url>"
+        for i, slug in jobs.items()
+    )
+    responses[icims] = (
+        "application/xml; charset=utf-8",
+        (
+            '<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+            f"<url><loc>https://{ICIMS_PORTAL}.icims.com/jobs/intro</loc></url>{locs}</urlset>"
+        ).encode(),
+    )
+    responses[f"https://{ICIMS_PORTAL}.icims.com/jobs/101/{jobs['101']}/job?in_iframe=1"] = (
+        HTML,
+        job_page(
+            job_posting(
+                "Monitoring & Evaluation Officer",
+                datePosted="2026-10-15T04:00:00.000Z",
+                employmentType="FULL_TIME",
+                jobLocation=[
+                    {
+                        "address": {
+                            "addressCountry": "HN",
+                            "addressLocality": "Tegucigalpa",
+                            "streetAddress": "UNAVAILABLE",
+                        }
+                    }
+                ],
+            )
+        ),
+    )
+    return responses
+
+
 def main() -> None:
     sources = load_config(ROOT / "config").sources
     endpoints = {s.id: s.endpoints for s in sources.sources}
@@ -1015,6 +1298,8 @@ def main() -> None:
         "4dayweek": fourdayweek(endpoints["4dayweek"][0]),
         "remoteok": remoteok(endpoints["remoteok"][0]),
         "remotive": remotive(endpoints["remotive"][0]),
+        "reliefweb": reliefweb(endpoints["reliefweb"][0]),
+        "unvacancies": unvacancies(endpoints["unvacancies"]),
         "workingnomads": workingnomads(endpoints["workingnomads"][0]),
         "weworkremotely": weworkremotely(endpoints["weworkremotely"]),
         "realworkfromanywhere": realworkfromanywhere(endpoints["realworkfromanywhere"]),
@@ -1027,6 +1312,10 @@ def main() -> None:
         "remoteintech": remoteintech(
             endpoints["remoteintech"][0], {k: v.api for k, v in sources.ats_platforms.items()}
         ),
+        "company_boards": {
+            **workday(sources.ats_platforms["workday"].api),
+            **job_boards_html({k: v.api for k, v in sources.ats_platforms.items()}),
+        },
     }
     shutil.rmtree(OUT, ignore_errors=True)
     for source_id, by_url in responses.items():

@@ -1,4 +1,5 @@
-"""Write fetched postings: drop already-seen ones, link cross-posted duplicates."""
+"""Write fetched postings: drop already-seen ones, link cross-posted duplicates, and fill in
+a job first stored without its description once a fetch brings it."""
 
 from __future__ import annotations
 
@@ -21,6 +22,7 @@ class StoreResult:
     new: int = 0  # first copy of a job
     duplicate: int = 0  # new posting linked to an earlier copy from any source
     seen: int = 0  # this source's posting was already stored; last_seen_at bumped
+    filled: int = 0  # of those, stored without a description and now given one
 
 
 def _key(job: Job, fields: Sequence[str]) -> str:
@@ -33,6 +35,29 @@ def _key(job: Job, fields: Sequence[str]) -> str:
 
 def _chunks[T](items: Sequence[T]) -> list[Sequence[T]]:
     return [items[i : i + _CHUNK] for i in range(0, len(items), _CHUNK)]
+
+
+# What identifies a job and groups its copies never changes once stored.
+_KEPT = frozenset({"source_job_id", "title", "dedupe_title", "company"})
+
+
+def _fill(session: Session, existing: dict[str, int], by_id: dict[str, Posting]) -> int:
+    """A job stored from a list without its details (a Workday title the filters dropped at
+    the time) gets them from a later fetch that has them."""
+    described = [sid for sid in existing if by_id[sid].description_text]
+    filled = 0
+    for chunk in _chunks(described):
+        bare = session.scalars(
+            select(Job).where(
+                Job.id.in_([existing[sid] for sid in chunk]), Job.description_text.is_(None)
+            )
+        )
+        for job in bare:
+            for name, value in by_id[job.source_job_id].model_dump().items():
+                if name not in _KEPT and value is not None:
+                    setattr(job, name, value)
+            filled += 1
+    return filled
 
 
 def store_postings(
@@ -58,6 +83,7 @@ def store_postings(
         existing.update({sid: jid for sid, jid in rows})
     for chunk in _chunks(list(existing.values())):
         session.execute(update(Job).where(Job.id.in_(chunk)).values(last_seen_at=now))
+    filled = _fill(session, existing, first_by_id)
 
     canonical: dict[str, int] = {}
     new = duplicate = 0
@@ -87,4 +113,4 @@ def store_postings(
             new += 1
         else:
             duplicate += 1
-    return StoreResult(new=new, duplicate=duplicate, seen=len(existing))
+    return StoreResult(new=new, duplicate=duplicate, seen=len(existing), filled=filled)

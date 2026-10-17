@@ -15,11 +15,13 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from job_scout.config import AppConfig
+from job_scout.config.profile import CORE_OUTPUT_KEYS, Profile
 from job_scout.config.secrets import secret
 from job_scout.config.settings import Digest as DigestSettings
 from job_scout.db.groups import Group, load_groups
@@ -27,7 +29,45 @@ from job_scout.db.models import Digest, Score, ScoreStatus, Source
 from job_scout.fetch.normalize import normalize_company
 from job_scout.fetch.runner import NOT_YET
 from job_scout.scoring.prompt import salary_line
-from job_scout.scoring.schema import ScoreResult
+from job_scout.scoring.schema import CoreResult
+
+# Fields the report templates show by name: the core ones and these, from the first
+# profile. Any other field a profile declares is listed generically ("Travel required: …")
+# and gets its own CSV column.
+NAMED_FIELDS = CORE_OUTPUT_KEYS | {
+    "job_id",
+    "location_notes",
+    "salary_usd_range",
+    "salary_notes",
+    "role_category",
+    "seniority",
+    "skill_fit",
+    "seniority_fit",
+    "four_day_week",
+    "wlb_positive",
+    "wlb_negative",
+    "employment_type",
+}
+
+
+def extra_output_fields(profile: Profile) -> list[str]:
+    """The profile's fields the reports have no named place for, in the profile's order."""
+    return [f.name for f in profile.output_fields if f.name not in NAMED_FIELDS]
+
+
+def field_label(name: str) -> str:
+    return name.replace("_", " ").capitalize()
+
+
+def field_text(value: Any) -> str | None:
+    """A field's value as report text; None when there's nothing to show."""
+    if value is None or value == "" or value == []:
+        return None
+    if isinstance(value, bool):
+        return "yes" if value else "no"
+    if isinstance(value, list):
+        return ", ".join(str(v) for v in value)
+    return str(value)
 
 
 @dataclass(frozen=True)
@@ -41,7 +81,7 @@ class Listing:
 class ReportItem:
     group: Group
     score: Score
-    result: ScoreResult
+    result: CoreResult
     watchlist: bool
 
     @property
@@ -76,6 +116,32 @@ class ReportItem:
     @property
     def posted_at(self) -> datetime | None:
         return self.group.canonical.posted_at
+
+    @property
+    def other_fields(self) -> list[tuple[str, str]]:
+        """(label, text) for the result's fields the templates don't name, in its order."""
+        extra = self.result.model_extra or {}
+        return [
+            (field_label(name), text)
+            for name, value in extra.items()
+            if name not in NAMED_FIELDS and (text := field_text(value)) is not None
+        ]
+
+    @property
+    def role_parts(self) -> list[str]:
+        """The role row's pieces a result has, for profiles without the first profile's
+        full set (role, seniority, skill and seniority fit, employment type)."""
+        fields = self.result.model_extra or {}
+        parts = [str(fields[k]) for k in ("role_category", "seniority") if fields.get(k)]
+        parts += [
+            f"{label} {fields[k]}/5"
+            for k, label in (("skill_fit", "skill fit"), ("seniority_fit", "seniority fit"))
+            if fields.get(k) is not None
+        ]
+        parts.append(f"remote: {self.result.remote}")
+        if fields.get("employment_type"):
+            parts.append(str(fields["employment_type"]))
+        return parts
 
 
 @dataclass
@@ -122,7 +188,7 @@ def scored_items(
             ReportItem(
                 group=group,
                 score=score,
-                result=ScoreResult.model_validate(score.result),
+                result=CoreResult.model_validate(score.result),
                 watchlist=any(j.company_normalized in watchlist for j in group.jobs),
             )
         )

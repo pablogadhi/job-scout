@@ -16,6 +16,7 @@ from job_scout.fetch.http import (
     RequestBudget,
     RobotsDisallowed,
     forbidden,
+    request_key,
 )
 from tests.conftest import fixture_transport
 
@@ -53,6 +54,28 @@ def test_robots_disallow_blocks_request(
         http.get("https://example.com/public", source=source, budget=RequestBudget())
         with pytest.raises(RobotsDisallowed):
             http.get("https://example.com/private/x", source=source, budget=RequestBudget())
+
+
+def test_ignore_robots_txt_skips_only_the_disallow_rules(
+    app_config: AppConfig, make_http: Callable[..., HttpClient]
+) -> None:
+    waits: list[float] = []
+    exempt = app_config.sources.get("reliefweb")  # ignore_robots_txt: true
+    assert exempt.ignore_robots_txt
+    overrides = {
+        "https://example.com/robots.txt": robots("User-agent: *\nDisallow: /\nCrawl-delay: 3"),
+        "https://example.com/": ok,
+    }
+    with make_http(overrides, sleep=waits.append) as http:
+        with pytest.raises(RobotsDisallowed):
+            http.get(
+                "https://example.com/feed",
+                source=app_config.sources.get("remoteok"),
+                budget=RequestBudget(),
+            )
+        for _ in range(2):
+            http.get("https://example.com/feed", source=exempt, budget=RequestBudget())
+    assert waits and waits[-1] > 2  # Crawl-delay still spaces the requests
 
 
 WILDCARD_ROBOTS = """User-agent: *
@@ -326,3 +349,55 @@ def test_timeouts_are_retryable(
         with pytest.raises(FetchError) as connect:
             http.get("https://example.com/refused", source=source, budget=RequestBudget())
         assert not connect.value.retryable
+
+
+def test_post_sends_json_with_every_check(
+    app_config: AppConfig, make_http: Callable[..., HttpClient]
+) -> None:
+    sent: list[tuple[str, object]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        sent.append((request.method, json.loads(request.content)))
+        return ok(request)
+
+    source = app_config.sources.get("remoteok")
+    overrides = {
+        "https://example.com/robots.txt": robots("User-agent: *\nDisallow: /private"),
+        "https://example.com/search": handler,
+    }
+    budget = RequestBudget(remaining=1)
+    with make_http(overrides) as http:
+        response = http.post(
+            "https://example.com/search", source=source, budget=budget, json={"offset": 20}
+        )
+        assert response.json() == {"ok": True}
+        with pytest.raises(RobotsDisallowed):
+            http.post("https://example.com/private", source=source, budget=budget, json={})
+        with pytest.raises(BudgetExhausted):
+            http.post("https://example.com/search", source=source, budget=budget, json={})
+    assert sent == [("POST", {"offset": 20})]
+
+
+def test_recorder_keys_posts_by_body(app_config: AppConfig, tmp_path: Path) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"offset": json.loads(request.content)["offset"]})
+
+    recorder = Recorder(tmp_path)
+    source = app_config.sources.get("remoteok")
+    transport = fixture_transport({"https://example.com/jobs": handler})
+    with HttpClient(
+        app_config.sources.defaults, transport=transport, recorder=recorder, sleep=lambda _: None
+    ) as http:
+        for offset in (0, 20):
+            http.post(
+                "https://example.com/jobs",
+                source=source,
+                budget=RequestBudget(),
+                json={"offset": offset, "limit": 20},
+            )
+    manifest = json.loads((tmp_path / "remoteok" / "manifest.json").read_text())
+    assert list(manifest) == [
+        'POST https://example.com/jobs {"limit":20,"offset":0}',
+        'POST https://example.com/jobs {"limit":20,"offset":20}',
+    ]
+    assert request_key("GET", "https://example.com/jobs") == "https://example.com/jobs"

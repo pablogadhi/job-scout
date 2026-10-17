@@ -9,6 +9,7 @@ from pathlib import Path
 
 import httpx
 import pytest
+import yaml
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 from typer.testing import CliRunner
@@ -20,18 +21,27 @@ from job_scout.ats.detect import (
     find_board,
     slug_candidates,
 )
-from job_scout.ats.platforms import api_url
+from job_scout.ats.fetcher import AtsFetcher
+from job_scout.ats.platforms import Board, api_url
 from job_scout.ats.refresh import refresh
 from job_scout.ats.seed import SeedCompany, keep, parse_seed
-from job_scout.ats.store import apply_watchlist, boards, save_detection, upsert_seed
+from job_scout.ats.store import (
+    apply_companies,
+    apply_watchlist,
+    boards,
+    save_detection,
+    upsert_seed,
+)
 from job_scout.cli import app
 from job_scout.config import AppConfig, ConfigError, load_config
+from job_scout.config.sources import CompanyEntry
 from job_scout.db import make_engine, make_session_factory
 from job_scout.db.models import AtsCompany, AtsMethod, AtsSeed, AtsStatus, Job
-from job_scout.fetch.http import HttpClient
+from job_scout.fetch.base import FetchContext
+from job_scout.fetch.http import HttpClient, RequestBudget
 from job_scout.fetch.runner import run_fetch
 from tests.conftest import HTTP_FIXTURES, TEST_CONFIG, edit
-from tests.test_fetchers import FIXTURE_BOARDS
+from tests.test_fetchers import FIXTURE_BOARDS, WORKDAY_BOARD, workday_board
 
 NOW = datetime(2026, 10, 13, 12, 0, tzinfo=UTC)
 SEED = (HTTP_FIXTURES / "remoteintech" / "01.tar.gz").read_bytes()
@@ -567,3 +577,343 @@ def test_ats_detect_command(
     (report,) = (tmp_path / "reports").glob("ats-unknown-*.csv")
     names = [row["company"] for row in csv.DictReader(report.open())]
     assert names == ["Nimbus Works", "Tikal Soft"]
+
+
+# --- Workday, and an instance's own companies ----------------------------------------------
+
+WORKDAY_TOKEN = WORKDAY_BOARD[3]
+WORKDAY_PAGE = html(
+    '<script>window.workday = window.workday || {tenant: "selva_aid", siteId: "Careers"};</script>'
+)
+
+
+@pytest.mark.parametrize(
+    ("url", "token"),
+    [
+        (
+            "https://osv-rtr.wd5.myworkdayjobs.com/en-US/RoomToRead",
+            "osv-rtr.wd5.myworkdayjobs.com/RoomToRead",
+        ),
+        (
+            "https://acme.wd1.myworkdayjobs.com/External/job/X_R1",
+            "acme.wd1.myworkdayjobs.com/External",
+        ),
+        (
+            "https://wd3.myworkdaysite.com/recruiting/wfp/job_openings",
+            "wd3.myworkdaysite.com/recruiting/wfp/job_openings",
+        ),
+        ("https://acme.wd1.myworkdayjobs.com/wday/cxs/acme/External/jobs", None),
+    ],
+)
+def test_workday_tokens_in_urls(app_config: AppConfig, url: str, token: str | None) -> None:
+    found = board_from_url(url, app_config.sources.ats_platforms)
+    assert found == (("workday", token) if token else None)
+
+
+def test_api_url_fills_a_token_part_per_placeholder(app_config: AppConfig) -> None:
+    template = app_config.sources.ats_platforms["workday"].api
+    assert api_url(template, "wd3.myworkdaysite.com/wfp/job_openings") == (
+        "https://wd3.myworkdaysite.com/wday/cxs/wfp/job_openings/jobs"
+    )
+    with pytest.raises(ValueError, match="doesn't fit"):
+        api_url(template, "wd3.myworkdaysite.com/job_openings")
+
+
+def test_detect_workday_reads_the_tenant_from_the_board_page(app_config: AppConfig) -> None:
+    api = api_url(app_config.sources.ats_platforms["workday"].api, WORKDAY_TOKEN)
+    d = detector(
+        app_config,
+        {
+            "https://selvaaid.example/careers": html(
+                '<a href="https://selvaaid.wd5.myworkdayjobs.com/en-US/Careers">Open positions</a>'
+            ),
+            # The host says selvaaid; the API only answers as selva_aid.
+            "https://selvaaid.wd5.myworkdayjobs.com/Careers": WORKDAY_PAGE,
+            api: lambda r: (
+                httpx.Response(200, json={"total": 0, "jobPostings": []})
+                if r.method == "POST"
+                else httpx.Response(405)
+            ),
+        },
+    )
+    result = d.detect(company("selva-aid", careers_url="https://selvaaid.example/careers"))
+    assert (result.ats, result.token, result.method) == (
+        "workday",
+        WORKDAY_TOKEN,
+        AtsMethod.CAREERS_PAGE,
+    )
+    assert d.budget.used == 3  # careers page, board page, the first page of the list
+
+
+def test_workday_is_never_probed(app_config: AppConfig) -> None:
+    requested: list[str] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        requested.append(str(request.url))
+        return httpx.Response(404)
+
+    http = HttpClient(
+        app_config.sources.defaults, transport=httpx.MockTransport(handle), sleep=lambda _s: None
+    )
+    with http:
+        d = Detector(http, app_config.sources.get("remoteintech"), app_config.sources.ats_platforms)
+        assert d.detect(company("selva-aid")).ats is None
+    assert requested and not [url for url in requested if "workday" in url]
+
+
+def board_ctx(
+    app_config: AppConfig, http: HttpClient, boards: list[Board] | None = None, **fields: object
+) -> FetchContext:
+    """A company_boards fetch of the given boards (the Workday fixture board by default)."""
+    return FetchContext(
+        source=app_config.sources.get("company_boards"),
+        http=http,
+        budget=RequestBudget(),
+        now=NOW,
+        boards=boards if boards is not None else [workday_board(app_config)],
+        **fields,  # type: ignore[arg-type]
+    )
+
+
+def test_workday_pages_and_details_only_for_new_wanted_jobs(
+    app_config: AppConfig, make_http: Callable[..., HttpClient]
+) -> None:
+    known = f"workday:{WORKDAY_TOKEN}:JR1005"
+    with make_http() as http:
+        ctx = board_ctx(
+            app_config, http, known_ids=frozenset({known}), title_ok=lambda t: t != "Driver"
+        )
+        postings = {p.source_job_id.rsplit(":", 1)[1]: p for p in AtsFetcher().fetch(ctx)}
+    assert len(postings) == 22 and ctx.board_results == {"selva-aid": None}
+    # Two list pages, then a description for each job but the 6 drivers and the known one.
+    assert ctx.budget.used == 2 + 22 - 6 - 1
+
+    remote = postings["JR1001"]
+    assert (remote.company, remote.title, remote.remote_raw) == (
+        "Selva Aid",
+        "Program Manager, Rural Livelihoods",
+        "Fully Remote",
+    )
+    assert remote.location_raw == "Guatemala City, Guatemala"
+    assert remote.canonical_url == (
+        "https://selvaaid.wd5.myworkdayjobs.com/Careers/job/Guatemala-City/"
+        "Program-Manager-Rural-Livelihoods_JR1001"
+    )
+    assert "partner cooperatives" in (remote.description_text or "")
+    assert (remote.salary_max, remote.salary_currency, remote.salary_period) == (
+        4000,
+        "USD",
+        "month",
+    )
+    assert remote.posted_at == datetime(2026, 10, 9, tzinfo=UTC)
+    assert "Part time" in remote.tags
+    assert postings["JR1003"].remote_raw == "Fully Present"
+
+    # A dropped title keeps the list's fields; "3 Locations" says nothing about where.
+    driver = postings["JR1002"]
+    assert (driver.description_text, driver.location_raw) == (None, None)
+    assert postings["JR1005"].description_text is None  # stored before: only marked seen
+
+
+def test_a_failed_workday_description_keeps_the_job(
+    app_config: AppConfig, make_http: Callable[..., HttpClient]
+) -> None:
+    api = api_url(app_config.sources.ats_platforms["workday"].api, WORKDAY_TOKEN)
+    failing = (
+        f"{api.removesuffix('/jobs')}/job/Guatemala-City/Program-Manager-Rural-Livelihoods_JR1001"
+    )
+    with make_http({failing: lambda r: httpx.Response(500)}) as http:
+        ctx = board_ctx(app_config, http)
+        postings = {p.source_job_id.rsplit(":", 1)[1]: p for p in AtsFetcher().fetch(ctx)}
+    assert ctx.board_results == {"selva-aid": None}
+    assert postings["JR1001"].description_text is None
+    assert postings["JR1004"].description_text
+
+
+def boards_only(config_dir: Path, companies: list[dict[str, str]]) -> AppConfig:
+    """The repo config with company_boards polling instead of remoteintech, no watchlist."""
+    path = config_dir / "sources.yaml"
+    data = yaml.safe_load(path.read_text())
+    for source in data["sources"]:
+        if source["id"] in ("remoteintech", "company_boards"):
+            source["enabled"] = source["id"] == "company_boards"
+    data["watchlist"], data["companies"] = [], companies
+    path.write_text(yaml.safe_dump(data, sort_keys=False))
+    return load_config(config_dir)
+
+
+def test_companies_are_detected_and_polled_without_the_seed(
+    config_dir: Path,
+    session_factory: sessionmaker[Session],
+    make_http: Callable[..., HttpClient],
+) -> None:
+    config = boards_only(
+        config_dir,
+        [{"company": "Selva Aid", "careers_url": "https://selvaaid.wd5.myworkdayjobs.com/Careers"}],
+    )
+    assert config.sources.board_source and config.sources.board_source.id == "company_boards"
+    api = api_url(config.sources.ats_platforms["workday"].api, WORKDAY_TOKEN)
+    pages: dict[str, httpx.Response | Route] = {
+        "https://selvaaid.wd5.myworkdayjobs.com/Careers": WORKDAY_PAGE,
+        api: lambda r: httpx.Response(200, json={"total": 1, "jobPostings": [{"title": "X"}]}),
+    }
+    http = HttpClient(config.sources.defaults, transport=web(pages), sleep=lambda _s: None)
+    with http:
+        report = refresh(config, session_factory, http, download_seed=True, now=NOW)
+    assert not report.seed_downloaded and report.companies == 1
+    row = rows(session_factory)["selva-aid"]
+    assert (row.source, row.status, row.ats, row.token, row.method) == (
+        AtsSeed.COMPANIES,
+        AtsStatus.OK,
+        "workday",
+        WORKDAY_TOKEN,
+        AtsMethod.CAREERS_URL,
+    )
+
+    with make_http() as http:
+        (outcome,) = run_fetch(config, session_factory, http, source_ids=["company_boards"])
+    # 22 jobs, 4 titles: the rest are copies of those 4 (same company and title)
+    assert (outcome.status, outcome.fetched, outcome.new, outcome.duplicate) == ("ok", 22, 4, 18)
+
+    # Off the list: no longer polled.
+    config = boards_only(config_dir, [])
+    with HttpClient(config.sources.defaults, transport=web({}), sleep=lambda _s: None) as http:
+        refresh(config, session_factory, http, now=NOW)
+    assert rows(session_factory)["selva-aid"].status == AtsStatus.NOT_IN_SEED
+
+
+def test_a_company_in_the_seed_takes_its_listed_careers_url(
+    session_factory: sessionmaker[Session],
+) -> None:
+    with session_factory.begin() as session:
+        upsert_seed(session, [company("selva-aid", careers_url="https://old.example/jobs")], NOW)
+        apply_companies(
+            session, [CompanyEntry(company="Selva Aid", careers_url="https://selva.example/jobs")]
+        )
+        upsert_seed(session, [company("selva-aid", careers_url="https://old.example/jobs")], NOW)
+    row = rows(session_factory)["selva-aid"]
+    assert (row.source, row.careers_url, row.detected_at) == (
+        AtsSeed.COMPANIES,
+        "https://selva.example/jobs",
+        None,
+    )
+
+
+def test_one_board_source_and_workday_watchlist_tokens(config_dir: Path) -> None:
+    sources = config_dir / "sources.yaml"
+    edit(
+        sources,
+        "    enabled: false          # remoteintech polls every board here",
+        "    enabled: true           # remoteintech polls every board here",
+    )
+    with pytest.raises(ConfigError, match="only one company-board source"):
+        load_config(config_dir)
+    edit(
+        sources,
+        "    enabled: true           # remoteintech polls every board here",
+        "    enabled: false          # remoteintech polls every board here",
+    )
+    edit(
+        sources,
+        "    ats: greenhouse\n    token: canonical",
+        "    ats: workday\n    token: canonical",
+    )
+    with pytest.raises(ConfigError, match="a workday token has 3 part"):
+        load_config(config_dir)
+
+
+# --- Jobvite and iCIMS: job pages with a schema.org JobPosting -----------------------------
+
+
+@pytest.mark.parametrize(
+    ("url", "board"),
+    [
+        ("https://jobs.jobvite.com/heifer/", ("jobvite", "heifer")),
+        ("https://jobs.jobvite.com/careers/heifer/jobs", ("jobvite", "heifer")),
+        ("https://careers-pactworld.icims.com/jobs/search?ss=1", ("icims", "careers-pactworld")),
+        ("https://cdn13.icims.com/icims-branding/0.6.0/assets/favicon.ico", None),
+    ],
+)
+def test_jobvite_and_icims_tokens(app_config: AppConfig, url: str, board: tuple | None) -> None:
+    assert board_from_url(url, app_config.sources.ats_platforms) == board
+
+
+def html_board(app_config: AppConfig, ats: str, token: str, company: str) -> Board:
+    return Board(
+        token, company, ats, token, api_url(app_config.sources.ats_platforms[ats].api, token)
+    )
+
+
+def test_job_pages_only_for_new_wanted_jobs(
+    app_config: AppConfig, make_http: Callable[..., HttpClient]
+) -> None:
+    boards = [
+        html_board(app_config, "jobvite", "pinoverde", "Pino Verde"),
+        html_board(app_config, "icims", "careers-milpa", "Milpa"),
+    ]
+    # The fixtures have no page for the driver or the finance assistant: asking for one fails.
+    with make_http() as http:
+        ctx = board_ctx(
+            app_config,
+            http,
+            boards=boards,
+            title_ok=lambda t: "driver" not in t.lower() and "finance" not in t.lower(),
+        )
+        postings = {p.source_job_id: p for p in AtsFetcher().fetch(ctx)}
+    assert ctx.board_results == {"pinoverde": None, "careers-milpa": None}
+    assert ctx.budget.used == 3 + 2  # jobs page and 2 job pages; sitemap and 1 job page
+    assert len(postings) == 5  # the job listed twice on the jobs page counts once
+
+    remote = postings["jobvite:pinoverde:jv1"]
+    assert (remote.title, remote.company, remote.remote_raw) == (
+        "Program Coordinator, Agroecology",
+        "Pino Verde",
+        "remote",
+    )
+    assert remote.location_raw == "Guatemala City, GT; Remote: Guatemala"
+    assert (remote.salary_min, remote.salary_max, remote.salary_period) == (3500, 4200, "month")
+    assert "women's cooperatives" in (remote.description_text or "")
+    assert remote.posted_at == datetime(2026, 10, 8, tzinfo=UTC)
+    assert "PART_TIME" in remote.tags
+    assert remote.canonical_url == "https://jobs.jobvite.com/pinoverde/job/jv1"
+    # A page without a JobPosting, and a dropped title: the list's fields.
+    assert postings["jobvite:pinoverde:jv3"].title == "Grants Manager"
+    assert postings["jobvite:pinoverde:jv3"].description_text is None
+
+    officer = postings["icims:careers-milpa:101"]
+    assert (officer.title, officer.location_raw) == (
+        "Monitoring & Evaluation Officer",
+        "Tegucigalpa, HN",
+    )
+    assert officer.canonical_url == (
+        "https://careers-milpa.icims.com/jobs/101/monitoring-%26-evaluation-officer/job"
+    )
+    assert officer.posted_at == datetime(2026, 10, 15, 4, tzinfo=UTC)
+    assert postings["icims:careers-milpa:102"].title == "finance assistant"  # from the URL
+
+
+def test_detect_jobvite_and_icims_from_careers_pages(app_config: AppConfig) -> None:
+    platforms = app_config.sources.ats_platforms
+    d = detector(
+        app_config,
+        {
+            "https://pinoverde.example/careers": html(
+                '<a href="https://jobs.jobvite.com/pinoverde/">Open roles</a>'
+            ),
+            api_url(platforms["jobvite"].api, "pinoverde"): html(
+                '<a href="/pinoverde/job/jv1">Program Coordinator</a>'
+            ),
+            "https://milpa.example/careers": html(
+                '<link rel="icon" href="https://cdn13.icims.com/favicon.ico">'
+                '<a href="https://careers-milpa.icims.com/jobs/search?ss=1">Jobs</a>'
+            ),
+            api_url(platforms["icims"].api, "careers-milpa"): httpx.Response(
+                200,
+                text="<urlset><url><loc>https://careers-milpa.icims.com/jobs/intro</loc></url></urlset>",
+            ),
+        },
+    )
+    jobvite = d.detect(company("pino-verde", careers_url="https://pinoverde.example/careers"))
+    assert (jobvite.ats, jobvite.token) == ("jobvite", "pinoverde")
+    icims = d.detect(company("milpa", careers_url="https://milpa.example/careers"))
+    assert (icims.ats, icims.token) == ("icims", "careers-milpa")

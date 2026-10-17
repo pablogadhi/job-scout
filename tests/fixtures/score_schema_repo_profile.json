@@ -1,0 +1,184 @@
+{
+ "$defs": {
+  "ScoreResult": {
+   "additionalProperties": false,
+   "properties": {
+    "job_id": {
+     "type": "integer"
+    },
+    "disqualified": {
+     "type": "boolean"
+    },
+    "disqualify_reason": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "remote": {
+     "enum": [
+      "yes",
+      "no",
+      "unclear"
+     ],
+     "type": "string"
+    },
+    "location_eligibility": {
+     "enum": [
+      "pass",
+      "fail",
+      "unclear"
+     ],
+     "type": "string"
+    },
+    "location_notes": {
+     "type": "string"
+    },
+    "salary": {
+     "enum": [
+      "meets",
+      "below",
+      "unlisted"
+     ],
+     "type": "string"
+    },
+    "salary_usd_range": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "salary_notes": {
+     "type": "string"
+    },
+    "role_category": {
+     "enum": [
+      "backend",
+      "full-stack",
+      "frontend",
+      "infrastructure",
+      "devops",
+      "platform",
+      "sre",
+      "tech-lead",
+      "data-engineering",
+      "iot",
+      "embedded",
+      "engineering-manager",
+      "mobile",
+      "other"
+     ],
+     "type": "string"
+    },
+    "seniority": {
+     "type": "string"
+    },
+    "skill_fit": {
+     "type": "integer"
+    },
+    "seniority_fit": {
+     "type": "integer"
+    },
+    "matched_skills": {
+     "items": {
+      "type": "string"
+     },
+     "type": "array"
+    },
+    "gaps": {
+     "items": {
+      "type": "string"
+     },
+     "type": "array"
+    },
+    "four_day_week": {
+     "enum": [
+      "yes",
+      "no",
+      "unknown"
+     ],
+     "type": "string"
+    },
+    "wlb_positive": {
+     "items": {
+      "type": "string"
+     },
+     "type": "array"
+    },
+    "wlb_negative": {
+     "items": {
+      "type": "string"
+     },
+     "type": "array"
+    },
+    "employment_type": {
+     "enum": [
+      "employee",
+      "eor",
+      "contractor",
+      "unknown"
+     ],
+     "type": "string"
+    },
+    "red_flags": {
+     "items": {
+      "type": "string"
+     },
+     "type": "array"
+    },
+    "overall_score": {
+     "type": "integer"
+    },
+    "summary": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "job_id",
+    "disqualified",
+    "disqualify_reason",
+    "remote",
+    "location_eligibility",
+    "location_notes",
+    "salary",
+    "salary_usd_range",
+    "salary_notes",
+    "role_category",
+    "seniority",
+    "skill_fit",
+    "seniority_fit",
+    "matched_skills",
+    "gaps",
+    "four_day_week",
+    "wlb_positive",
+    "wlb_negative",
+    "employment_type",
+    "red_flags",
+    "overall_score",
+    "summary"
+   ],
+   "type": "object"
+  }
+ },
+ "additionalProperties": false,
+ "properties": {
+  "results": {
+   "items": {
+    "$ref": "#/$defs/ScoreResult"
+   },
+   "type": "array"
+  }
+ },
+ "required": [
+  "results"
+ ],
+ "type": "object"
+}

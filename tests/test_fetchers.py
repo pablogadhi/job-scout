@@ -9,6 +9,7 @@ import pytest
 from job_scout.ats.platforms import Board, api_url
 from job_scout.cli.sources import with_max_pages
 from job_scout.config import AppConfig
+from job_scout.config.sources import BOARD_METHODS
 from job_scout.fetch.base import FetchContext
 from job_scout.fetch.hn import map_comment
 from job_scout.fetch.http import HttpClient, RequestBudget
@@ -27,11 +28,30 @@ FIXTURE_BOARDS = {
 }
 
 
+# The Workday board in tests/fixtures/http/company_boards (POSTed pages, a GET per job).
+WORKDAY_BOARD = (
+    "selva-aid",
+    "Selva Aid",
+    "workday",
+    "selvaaid.wd5.myworkdayjobs.com/selva_aid/Careers",
+)
+
+
+def workday_board(app_config: AppConfig) -> Board:
+    slug, company, ats, token = WORKDAY_BOARD
+    return Board(
+        slug, company, ats, token, api_url(app_config.sources.ats_platforms[ats].api, token)
+    )
+
+
 def fixture_boards(app_config: AppConfig) -> list[Board]:
     platforms = app_config.sources.ats_platforms
     return [
-        Board(slug, company, ats, token, api_url(platforms[ats].api, token))
-        for slug, (company, ats, token) in FIXTURE_BOARDS.items()
+        *(
+            Board(slug, company, ats, token, api_url(platforms[ats].api, token))
+            for slug, (company, ats, token) in FIXTURE_BOARDS.items()
+        ),
+        workday_board(app_config),
     ]
 
 
@@ -54,7 +74,7 @@ def fetch(
         now=NOW,
         last_success_at=last_success_at,
         environ=environ or {},
-        boards=fixture_boards(app_config) if source.method == "ats_seed" else [],
+        boards=fixture_boards(app_config) if source.method in BOARD_METHODS else [],
     )
     with http:
         postings = FETCHERS[source_id].fetch(ctx)
@@ -142,6 +162,32 @@ def test_remotive(app_config: AppConfig, make_http: Callable[..., HttpClient]) -
     assert (p.salary_min, p.salary_max) == (120_000, 150_000)  # from the description
     assert p.posted_at == datetime(2026, 10, 8, 21, 47, 32, tzinfo=UTC)
     assert by_title(postings, "Inside Sales Representative").salary_max is None
+
+
+def test_reliefweb(app_config: AppConfig, make_http: Callable[..., HttpClient]) -> None:
+    postings = fetch(app_config, make_http(), "reliefweb")
+    p = by_title(postings, "Programme Manager, Food Security")
+    assert p.source_job_id == "8100001"  # the API's id
+    assert (p.company, p.location_raw) == ("Ceiba Relief & Development", "Côte d'Ivoire")
+    assert {"Program/Project Management", "Job"} <= set(p.tags)
+    assert (p.description_text or "").startswith("Country: Côte d'Ivoire")
+    assert p.posted_at == datetime(2026, 10, 15, 13, 27, 17, tzinfo=UTC)
+    home = by_title(postings, "Senior Grants Manager (home-based)")
+    assert home.location_raw is None  # no country: the site's Remote / Roster / Roving list
+    assert (home.salary_min, home.salary_max) == (70_000, 82_000)
+
+
+def test_unvacancies(app_config: AppConfig, make_http: Callable[..., HttpClient]) -> None:
+    postings = fetch(app_config, make_http(), "unvacancies")
+    p = by_title(postings, "Senior Programme Consultant, Water & Sanitation")
+    url = "https://unvacancies.org/jobs/senior-programme-consultant-water-sanitation-QZ-51003"
+    assert (p.source_job_id, p.canonical_url) == (url, url)  # without the tracking parameters
+    assert (p.company, p.location_raw) == ("UNICEF", None)
+    assert p.remote_raw == "Remote and home-based"  # from the feed's remote=true filter
+    assert (p.description_text or "").startswith("UNICEF seeks a consultant")
+    assert p.posted_at == datetime(2026, 10, 15, tzinfo=UTC)
+    # A job under two functions comes in both feeds; the store keeps one copy.
+    assert [q.title for q in postings].count("Programme and Evaluation Specialist") == 2
 
 
 def test_weworkremotely(app_config: AppConfig, make_http: Callable[..., HttpClient]) -> None:
@@ -281,6 +327,26 @@ def test_working_nomads_keeps_development_only(
 ) -> None:
     postings = fetch(app_config, make_http(), "workingnomads")
     assert {p.raw["category_name"] for p in postings} == {"Development"}
+
+
+@pytest.mark.parametrize(
+    ("categories", "kept"),
+    [
+        (["Customer Success"], {"Customer Success"}),
+        ([], {"Development", "Customer Success"}),  # empty keeps every category
+    ],
+)
+def test_working_nomads_categories_come_from_config(
+    app_config: AppConfig,
+    make_http: Callable[..., HttpClient],
+    categories: list[str],
+    kept: set[str],
+) -> None:
+    source = app_config.sources.get("workingnomads").model_copy(update={"categories": categories})
+    ctx = FetchContext(source=source, http=make_http(), budget=RequestBudget(), now=NOW)
+    with ctx.http:
+        postings = FETCHERS["workingnomads"].fetch(ctx)
+    assert {p.raw["category_name"] for p in postings} == kept
 
 
 def test_findwork_sends_token_and_follows_pages(

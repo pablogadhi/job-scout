@@ -1,5 +1,8 @@
-"""Keep `ats_companies` current: download the seed, apply the watchlist, detect boards.
+"""Keep `ats_companies` current: download the seed, apply the watchlist and `companies`,
+detect boards.
 
+The seed is downloaded only when the enabled company-board source is remoteintech (method
+ats_seed); an instance polling with company_boards (ats_boards) has only its own lists.
 `ats detect` runs it in full; `run` calls it with a cap (settings.ats) so the daily run stays
 short. Each company's detection is committed on its own: an interrupted run loses nothing.
 """
@@ -18,6 +21,7 @@ from job_scout.ats.detect import Detector
 from job_scout.ats.seed import keep, parse_seed
 from job_scout.ats.store import (
     SeedChanges,
+    apply_companies,
     apply_watchlist,
     as_seed_company,
     last_seed_download,
@@ -25,7 +29,7 @@ from job_scout.ats.store import (
     save_detection,
     upsert_seed,
 )
-from job_scout.config import AppConfig, SourceConfig
+from job_scout.config import AppConfig
 from job_scout.db.models import AtsCompany
 from job_scout.db.types import utcnow
 from job_scout.fetch.http import FetchError, HttpClient, RequestBudget
@@ -40,6 +44,7 @@ class RefreshReport:
     seed_kept: int = 0  # after the region / remote-policy filter
     changes: SeedChanges = field(default_factory=SeedChanges)
     watchlist: int = 0
+    companies: int = 0  # sources.yaml `companies`
     detected: Counter[str] = field(default_factory=Counter)  # ats or "unknown" -> companies
     remaining: int = 0  # still needing detection (capped runs)
     requests: int = 0
@@ -47,10 +52,6 @@ class RefreshReport:
 
 def _row(session: Session, slug: str) -> AtsCompany:
     return session.scalars(select(AtsCompany).where(AtsCompany.slug == slug)).one()
-
-
-def seed_source(config: AppConfig) -> SourceConfig | None:
-    return next((s for s in config.sources.sources if s.method == "ats_seed"), None)
 
 
 def seed_due(session: Session, config: AppConfig, now: datetime) -> bool:
@@ -70,15 +71,16 @@ def refresh(
 ) -> RefreshReport:
     """download_seed: True/False, or None for "when due" (settings.ats.seed_refresh_days)."""
     now = now or utcnow()
-    source = seed_source(config)
+    source = config.sources.board_source
     if source is None:
-        raise FetchError("no ats_seed source in sources.yaml")
+        raise FetchError("no company-board source enabled (remoteintech or company_boards)")
     budget = RequestBudget()
     report = RefreshReport()
 
     with session_factory() as session:
         due = seed_due(session, config, now)
-    if download_seed or (download_seed is None and due):
+    seeded = source.method == "ats_seed"
+    if seeded and (download_seed or (download_seed is None and due)):
         if not source.endpoints:
             raise FetchError(f"{source.id}: no endpoint for the seed")
         tarball = http.get(source.endpoints[0], source=source, budget=budget).content
@@ -96,6 +98,7 @@ def refresh(
 
     with session_factory.begin() as session:
         report.watchlist = apply_watchlist(session, config.sources.watchlist, now)
+        report.companies = apply_companies(session, config.sources.companies)
 
     detector = Detector(http, source, config.sources.ats_platforms, budget)
     redetect_days = config.settings.ats.redetect_days

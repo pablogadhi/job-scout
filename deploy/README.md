@@ -15,6 +15,7 @@ Everything lives in your home directory; nothing runs as root.
 | `~/job-scout/data/` | gitignored: database, reports, exports, the claude CLI's home and work dir |
 | `~/job-scout/.env` | gitignored secrets and per-machine settings, mode 600 (template: `.env.example`) |
 | `~/.config/systemd/user/job-scout*` | the timer and the two services (`deploy/systemd/`), as user units |
+| `~/job-scout/instances/<name>/` | gitignored: another instance's `config/`, `data/` and `.env` ([below](#another-instance)) |
 
 Needs Docker with the compose plugin, your user in the `docker` group (the container runs as
 UID/GID 1000 and writes to `data/` as that user; rootless Docker would map it to another
@@ -95,6 +96,82 @@ curl -s -o /dev/null -w '%{http_code}\n' http://jobscout.lan:8765/f/1   # 403: n
 - If your phone runs Proton VPN at home, turn on its "Allow LAN connections" setting.
 - Changing the secret invalidates the links in earlier digests.
 
+## Another instance
+
+A second profile (another person's job search) runs from the same checkout and image, with
+its own config, database and digest, and its own feedback page if it uses votes. Everything
+it owns lives in `~/job-scout/instances/<name>/` (gitignored, never in git), laid out like
+the repo root:
+
+| Path | What |
+| --- | --- |
+| `instances/<name>/config/` | its four config files (`settings.yaml`, `sources.yaml`, `filters.yaml`, `profile.md`) |
+| `instances/<name>/data/` | its database, reports, exports |
+| `instances/<name>/.env` | its secrets and recipient, plus the three compose settings below (mode 600) |
+
+Its `.env` starts with the lines that make compose use the instance:
+
+```sh
+COMPOSE_PROJECT_NAME=job-scout-<name>          # its own containers and network
+JOB_SCOUT_INSTANCE_DIR=../instances/<name>     # relative to deploy/
+JOB_SCOUT_FEEDBACK_PORT=8766                   # a host port no other instance uses
+```
+
+Every compose command for the instance adds `--env-file ../instances/<name>/.env`. Don't
+export those three variables in your shell: shell values win over the file, and would
+point the command at the wrong instance. The ngo instance:
+
+```sh
+# 1. Copy the instance over from the laptop (it isn't in git), and create its data dir
+#    before compose runs (or Docker creates it owned by root)
+scp -r instances/ngo server:job-scout/instances/
+ssh server 'mkdir -p ~/job-scout/instances/ngo/data && chmod 600 ~/job-scout/instances/ngo/.env'
+
+# 2. Check it (the image is shared: no build needed if yours is current)
+cd ~/job-scout/deploy
+docker compose --env-file ../instances/ngo/.env run --rm -T job-scout sources check
+
+# 3. Its daily run: the template service plus the instance's own timer (08:30)
+cp ~/job-scout/deploy/systemd/job-scout@.service ~/job-scout/deploy/systemd/job-scout@ngo.timer \
+  ~/.config/systemd/user/
+systemd-analyze --user verify ~/.config/systemd/user/job-scout@ngo.timer \
+  ~/.config/systemd/user/job-scout@ngo.service
+systemctl --user daemon-reload
+systemctl --user enable --now job-scout@ngo.timer
+systemctl --user list-timers 'job-scout*'      # yours at 08:15, ngo at 08:30
+
+# 4. Only for an instance that uses votes: its feedback page, on its own port, with
+#    JOB_SCOUT_FEEDBACK_SECRET and a matching JOB_SCOUT_FEEDBACK__BASE_URL in its .env.
+#    ngo doesn't: without those two its digests carry no 👍/👎 links, so skip this.
+docker compose --env-file ../instances/<name>/.env up -d feedback
+```
+
+- Your instance's units don't change: `job-scout.service`, `job-scout.timer` and
+  `job-scout-failure.service` keep running it from the repo root.
+- `job-scout@.service` is the same run for any instance, selected by name
+  (`job-scout@ngo.service`); each instance has its own timer file, since a template can't
+  give each instance its own time.
+- Two instances never fetch at the same time: when both are due at once (the server booted
+  after both run times), an instance's run waits for yours to finish (`After=` in the
+  template). On a normal day, 08:15 and 08:30, it changes nothing.
+- A failed run of any instance is reported by `job-scout-failure.service`, which runs as
+  your instance: the failure email goes to you, never to the instance's recipient.
+- Logs: `journalctl --user -u job-scout@ngo.service`. Commands:
+  `docker compose --env-file ../instances/ngo/.env run --rm -T job-scout <command>`.
+- After an update, restart each feedback page on the new image: `docker compose up -d
+  feedback` for yours, and the same with the instance's `--env-file` for each instance
+  that runs one.
+
+On the laptop, run an instance's commands from its directory: relative paths (`config/`,
+`data/`) then point into the instance, and uv still finds the project.
+
+```sh
+cd instances/ngo
+uv run --env-file .env alembic -c ../../alembic.ini upgrade head
+uv run --env-file .env job-scout sources check
+uv run --env-file .env job-scout digest --dry-run   # data/reports/digest-preview.html
+```
+
 ## Check it works (Phase 6 acceptance)
 
 ```sh
@@ -124,7 +201,8 @@ journalctl --user -u job-scout-failure.service -n 20 --no-pager
   migrations run on the next command. Re-copy the units if `deploy/systemd`
   changed, then `systemctl --user daemon-reload`.
 - Changing the run time: edit `deploy/systemd/job-scout.timer` *and*
-  `schedule.daily_run_time` in `config/settings.yaml` (a test checks they match).
+  `schedule.daily_run_time` in `config/settings.yaml` (a test checks they match). For
+  another instance: `deploy/systemd/job-scout@<name>.timer` and its own `settings.yaml`.
 - Updating the claude CLI: bump `CLAUDE_CODE_VERSION` in `Dockerfile` on purpose (its flags
   can change between releases), rebuild, then check one call:
   `docker compose run --rm -T job-scout score --max-calls 1`.

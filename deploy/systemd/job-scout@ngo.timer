@@ -1,0 +1,12 @@
+# The ngo instance's daily run, at 08:30 Guatemala time: after yours (08:15), so the two runs
+# don't overlap. Persistent=true runs a missed run right after boot. Keep in sync with
+# schedule.daily_run_time in instances/ngo/config/settings.yaml (a test checks it there).
+[Unit]
+Description=Daily job-scout run for instance ngo
+
+[Timer]
+OnCalendar=*-*-* 08:30:00 America/Guatemala
+Persistent=true
+
+[Install]
+WantedBy=timers.target

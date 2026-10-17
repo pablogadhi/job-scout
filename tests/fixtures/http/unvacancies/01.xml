@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+<channel>
+<title>Remote UN jobs - unvacancies</title>
+<link>https://example.invalid/</link>
+<description>Synthetic fixture feed</description>
+<item>
+  <title>Senior Programme Consultant, Water &amp; Sanitation</title>
+  <link>https://unvacancies.org/jobs/senior-programme-consultant-water-sanitation-QZ-51003?utm_source=rss&amp;utm_medium=feed&amp;utm_campaign=partner_feed</link>
+  <guid isPermaLink="true">https://unvacancies.org/jobs/senior-programme-consultant-water-sanitation-QZ-51003</guid>
+  <pubDate>Thu, 15 Oct 2026 00:00:00 GMT</pubDate>
+  <description>UNICEF seeks a consultant to coordinate WASH programmes across Central America, fully remote with two missions.</description>
+  <category>UNICEF</category>
+</item>
+<item>
+  <title>Programme and Evaluation Specialist</title>
+  <link>https://unvacancies.org/jobs/programme-and-evaluation-specialist-PX-40021?utm_source=rss&amp;utm_medium=feed&amp;utm_campaign=partner_feed</link>
+  <guid isPermaLink="true">https://unvacancies.org/jobs/programme-and-evaluation-specialist-PX-40021</guid>
+  <pubDate>Thu, 15 Oct 2026 00:00:00 GMT</pubDate>
+  <description>UNFPA seeks a home-based specialist to plan and evaluate country programmes.</description>
+  <category>UNFPA</category>
+</item>
+</channel>
+</rss>

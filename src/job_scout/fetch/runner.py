@@ -15,12 +15,14 @@ from job_scout.ats.store import boards as ats_boards
 from job_scout.ats.store import record_polls
 from job_scout.config import AppConfig, SourceConfig
 from job_scout.config.secrets import secret
-from job_scout.db.models import Source, SourceRun, SourceRunKind, SourceRunStatus
+from job_scout.config.sources import BOARD_METHODS
+from job_scout.db.models import Job, Source, SourceRun, SourceRunKind, SourceRunStatus
 from job_scout.db.types import utcnow
 from job_scout.fetch.base import FetchContext
 from job_scout.fetch.http import FetchError, HttpClient, RequestBudget
 from job_scout.fetch.sources import FETCHERS
 from job_scout.fetch.store import store_postings
+from job_scout.prefilter.runner import build_prefilter
 
 log = logging.getLogger(__name__)
 
@@ -74,7 +76,7 @@ def _skip_reason(
         return "no fetcher registered"
     if source.auth_env and secret(environ, source.auth_env) is None:
         return f"{source.auth_env} is not set"
-    if source.method == "ats_seed" and not ats_boards(session, config.sources.ats_platforms):
+    if source.method in BOARD_METHODS and not ats_boards(session, config.sources.ats_platforms):
         return "no company boards yet: run `job-scout ats detect`"
     if respect_interval and state.last_run_at is not None:
         interval = timedelta(hours=config.sources.defaults.min_interval_hours)
@@ -149,10 +151,18 @@ def _run_one(
             return SourceOutcome(source.id, "skipped", reason)
         budget = _budget(session, source, now)
         last_success_at = state.last_success_at
-        boards = (
-            ats_boards(session, config.sources.ats_platforms) if source.method == "ats_seed" else []
-        )
+        boards, known_ids = [], frozenset[str]()
+        if source.method in BOARD_METHODS:
+            boards = ats_boards(session, config.sources.ats_platforms)
+            known_ids = frozenset(
+                session.scalars(
+                    select(Job.source_job_id).where(
+                        Job.source_id == source.id, Job.description_text.is_not(None)
+                    )
+                )
+            )
 
+    prefilter = build_prefilter(config)
     ctx = FetchContext(
         source=source,
         http=http,
@@ -161,6 +171,8 @@ def _run_one(
         last_success_at=last_success_at,
         environ=environ,
         boards=boards,
+        known_ids=known_ids,
+        title_ok=lambda title: prefilter.title_passes(source.id, title),
     )
     outcome = SourceOutcome(source.id, "ok")
     postings = []
@@ -205,6 +217,8 @@ def _run_one(
                     stored.seen,
                 )
                 run.items_new, run.items_duplicate = stored.new, stored.duplicate
+                if stored.filled:
+                    log.info("%s: %d stored jobs got their description", source.id, stored.filled)
                 state.last_success_at = now
                 state.last_item_count = len(postings)
                 state.consecutive_failures = 0

@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from job_scout.config import AppConfig, load_config
 from job_scout.db import make_engine, make_session_factory
-from job_scout.fetch.http import HttpClient
+from job_scout.fetch.http import HttpClient, request_key
 
 ROOT = Path(__file__).resolve().parent.parent
 REPO_CONFIG = ROOT / "config"
@@ -110,7 +110,8 @@ def app_config() -> AppConfig:
 
 
 def load_http_fixtures() -> dict[str, tuple[int, str, bytes]]:
-    """URL -> recorded response, from every tests/fixtures/http/*/manifest.json."""
+    """request_key (the URL, for a GET) -> recorded response, from every
+    tests/fixtures/http/*/manifest.json."""
     responses: dict[str, tuple[int, str, bytes]] = {}
     for manifest in HTTP_FIXTURES.glob("*/manifest.json"):
         for url, entry in json.loads(manifest.read_text()).items():
@@ -137,9 +138,11 @@ def fixture_transport(overrides: dict[str, Handler] | None = None) -> httpx.Mock
                 return handler(request)
         if request.url.path == "/robots.txt":
             return httpx.Response(404)
-        if url not in recorded:
-            raise AssertionError(f"unrecorded request: {url}")
-        status, content_type, body = recorded[url]
+        body = json.loads(request.content) if request.content else None
+        key = request_key(request.method, url, body)
+        if key not in recorded:
+            raise AssertionError(f"unrecorded request: {key}")
+        status, content_type, body = recorded[key]
         return httpx.Response(status, headers={"content-type": content_type}, content=body)
 
     return httpx.MockTransport(handle)

@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from job_scout.db.models import Feedback, Score, ScoreStatus, Vote
-from job_scout.scoring.schema import ScoreResult
+from job_scout.scoring.schema import CoreResult
 
 MAX_REASON_CHARS = 1000
 
@@ -38,7 +38,7 @@ def record_vote(
     if score is None or score.result is None:
         row.profile_hash = row.overall_score = row.disqualified = row.summary = None
     else:
-        result = ScoreResult.model_validate(score.result)
+        result = CoreResult.model_validate(score.result)
         row.profile_hash = score.profile_hash
         row.overall_score = result.overall_score
         row.disqualified = result.disqualified

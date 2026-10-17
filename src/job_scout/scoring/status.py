@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from job_scout.db.models import CallStatus, Run, ScoringCall
+from job_scout.db.models import Backend, CallStatus, Run, ScoringCall
 from job_scout.scoring.queue import pending_count
 
 TOKEN_VALIDITY = timedelta(days=365)  # `claude setup-token` tokens last one year
@@ -39,11 +39,16 @@ class ScoringStatus:
     calls_today: int
     spend_today_usd: float  # api backend: estimated billed cost
     cli_cost_today_usd: float  # cli backend: API-equivalent estimate, not billed on Pro
-    token_warning: str | None
+    token_warning: str | None  # cli backend only: the api backend uses no OAuth token
 
 
 def scoring_status(
-    session: Session, timezone: str, token_created: date | None, now: datetime
+    session: Session,
+    timezone: str,
+    token_created: date | None,
+    now: datetime,
+    *,
+    backend: Backend,
 ) -> ScoringStatus:
     tz = ZoneInfo(timezone)
     local_midnight = datetime.combine(now.astimezone(tz).date(), time(), tzinfo=tz)
@@ -69,5 +74,9 @@ def scoring_status(
         calls_today=session.scalar(select(func.count()).where(today)) or 0,
         spend_today_usd=cost("api"),
         cli_cost_today_usd=cost("cli"),
-        token_warning=token_warning(token_created, now.astimezone(tz).date()),
+        token_warning=(
+            token_warning(token_created, now.astimezone(tz).date())
+            if backend == Backend.CLI
+            else None
+        ),
     )

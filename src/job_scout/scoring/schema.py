@@ -1,82 +1,75 @@
-"""Claude's structured output: the schema in profile.md's "Output format" plus `job_id`.
+"""Claude's structured output: the fields in profile.md's "Output format" plus `job_id`.
 
-One schema for both backends and any batch size: `{"results": [ScoreResult, ...]}`.
+One schema for both backends and any batch size: `{"results": [ScoreResult, ...]}`. The
+models are built per profile (`score_schema`), in the profile's field order. The core
+fields keep `CoreResult`'s types, which the code relies on, and the profile must declare
+them the same way; every other field is typed from its example (config/profile.py).
 """
 
 from __future__ import annotations
 
 import copy
-from typing import Any, Literal
+import types
+from dataclasses import dataclass
+from typing import Any, Literal, Union, get_args, get_origin
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, create_model
 
-from job_scout.config.profile import Profile
-
-RoleCategory = Literal[
-    "backend",
-    "full-stack",
-    "frontend",
-    "infrastructure",
-    "devops",
-    "platform",
-    "sre",
-    "tech-lead",
-    "data-engineering",
-    "iot",
-    "embedded",
-    "engineering-manager",
-    "mobile",
-    "other",
-]
+from job_scout.config.profile import OutputField, Profile
 
 
-class ScoreResult(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+class CoreResult(BaseModel):
+    """A score as the code reads it: the core fields, typed. The profile's other fields stay
+    as they are (`model_extra`), so a stored result reads under any profile."""
 
-    job_id: int
+    model_config = ConfigDict(extra="allow")
+
     disqualified: bool
     disqualify_reason: str | None
     remote: Literal["yes", "no", "unclear"]
     location_eligibility: Literal["pass", "fail", "unclear"]
-    location_notes: str
     salary: Literal["meets", "below", "unlisted"]
-    salary_usd_range: str | None
-    salary_notes: str
-    role_category: RoleCategory
-    seniority: str
-    skill_fit: int = Field(ge=0, le=5)
-    seniority_fit: int = Field(ge=0, le=5)
     matched_skills: list[str]
     gaps: list[str]
-    four_day_week: Literal["yes", "no", "unknown"]
-    wlb_positive: list[str]
-    wlb_negative: list[str]
-    employment_type: Literal["employee", "eor", "contractor", "unknown"]
     red_flags: list[str]
     overall_score: int = Field(ge=0, le=100)
     summary: str
-
-
-class ScoreBatch(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    results: list[ScoreResult]
 
 
 class SchemaMismatch(ValueError):
     pass
 
 
-def check_profile_matches(profile: Profile) -> None:
-    """Fail loudly if profile.md's output format and ScoreResult drift apart."""
-    expected = set(profile.output_example)
-    actual = set(ScoreResult.model_fields) - {"job_id"}
-    if expected != actual:
-        raise SchemaMismatch(
-            "profile.md output format and ScoreResult differ: "
-            f"only in profile.md: {sorted(expected - actual)}; "
-            f"only in ScoreResult: {sorted(actual - expected)}"
-        )
+_SCALARS: dict[Any, Literal["bool", "int", "float", "str"]] = {
+    bool: "bool",
+    int: "int",
+    float: "float",
+    str: "str",
+}
+
+
+def _spec(name: str, annotation: Any) -> OutputField:
+    """The OutputField a profile must declare for a core field typed `annotation`."""
+    nullable = False
+    if get_origin(annotation) in (Union, types.UnionType) and type(None) in get_args(annotation):
+        nullable = True
+        annotation = next(a for a in get_args(annotation) if a is not type(None))
+    if get_origin(annotation) is Literal:
+        return OutputField(name, "enum", tuple(get_args(annotation)), nullable)
+    if get_origin(annotation) is list:
+        return OutputField(name, "list", nullable=nullable)
+    return OutputField(name, _SCALARS[annotation], nullable=nullable)
+
+
+def _annotation(field: OutputField) -> Any:
+    base: Any
+    if field.kind == "enum":
+        base = Literal[field.values]  # pyright: ignore[reportInvalidTypeForm]
+    elif field.kind == "list":
+        base = list[str]
+    else:
+        base = {"bool": bool, "int": int, "float": float, "str": str}[field.kind]
+    return base | None if field.nullable else base
 
 
 # Keywords structured outputs rejects; Pydantic still enforces them when parsing the reply.
@@ -99,6 +92,55 @@ def _strip(node: Any) -> Any:
     return node
 
 
-def output_json_schema() -> dict[str, Any]:
-    """JSON schema for `{"results": [...]}` that both the API and the CLI accept."""
-    return _strip(copy.deepcopy(ScoreBatch.model_json_schema()))
+@dataclass(frozen=True)
+class ScoreSchema:
+    """The models for one profile: a reply item (`result`) and the whole reply (`batch`)."""
+
+    result: type[BaseModel]
+    batch: type[BaseModel]
+
+    def json_schema(self) -> dict[str, Any]:
+        """JSON schema for `{"results": [...]}` that both the API and the CLI accept."""
+        return _strip(copy.deepcopy(self.batch.model_json_schema()))
+
+    def parse(self, item: Any) -> tuple[dict[str, Any], CoreResult]:
+        """Validate one reply item. Returns it as stored (the profile's field order, with
+        job_id) and its typed core. Raises pydantic's ValidationError."""
+        data = self.result.model_validate(item).model_dump()
+        return data, CoreResult.model_validate(data)
+
+
+_SCHEMAS: dict[str, ScoreSchema] = {}
+
+
+def score_schema(profile: Profile) -> ScoreSchema:
+    """The models for `profile`. Raises SchemaMismatch if a core field is declared differently
+    from `CoreResult` (e.g. another set of values for `remote`)."""
+    if cached := _SCHEMAS.get(profile.sha256):
+        return cached
+    core = CoreResult.model_fields
+    mismatched = [
+        f"{f.name} (expected {expected})"
+        for f in profile.output_fields
+        if f.name in core and f != (expected := _spec(f.name, core[f.name].annotation))
+    ]
+    if mismatched:
+        raise SchemaMismatch(
+            "profile.md output format declares core fields differently from the code: "
+            + "; ".join(mismatched)
+        )
+    fields: dict[str, Any] = {"job_id": (int, ...)}
+    for f in profile.output_fields:
+        if f.name in core:
+            fields[f.name] = (core[f.name].annotation, copy.copy(core[f.name]))
+        else:
+            fields[f.name] = (_annotation(f), ...)
+    forbid = ConfigDict(extra="forbid")
+    result = create_model("ScoreResult", __config__=forbid, **fields)
+    batch = create_model(
+        "ScoreBatch",
+        __config__=forbid,
+        results=(list[result], ...),  # pyright: ignore[reportInvalidTypeForm]
+    )
+    schema = _SCHEMAS[profile.sha256] = ScoreSchema(result, batch)
+    return schema

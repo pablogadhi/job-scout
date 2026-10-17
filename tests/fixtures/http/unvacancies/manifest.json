@@ -1,0 +1,12 @@
+{
+  "https://unvacancies.org/feed.xml?function=programme-management&remote=true": {
+    "file": "01.xml",
+    "status": 200,
+    "content_type": "application/rss+xml; charset=utf-8"
+  },
+  "https://unvacancies.org/feed.xml?function=monitoring-evaluation&remote=true": {
+    "file": "02.xml",
+    "status": 200,
+    "content_type": "application/rss+xml; charset=utf-8"
+  }
+}

@@ -3,9 +3,11 @@
 1. careers_url: the URL itself is a board (its host matches a platform's `detect` pattern).
 2. careers_page: the careers page (or, without one, the website and its careers link)
    links to or embeds a board.
-3. probe: the company slug answers on a platform's API with at least one job.
+3. probe: the company slug answers on a platform's API with at least one job (not on
+   platforms whose tokens can't be guessed, like Workday's).
 A board found by 1 or 2 must answer on its API too (with any number of jobs): a careers URL
-or page can still point to a board the company has since deleted.
+or page can still point to a board the company has since deleted. A token that needs the
+board page to be complete (Workday's tenant) is resolved first.
 Otherwise the company is unknown_ats, unless a check failed for a temporary reason (rate
 limit, server error, timeout): then the result is inconclusive (`retry`) and the company is
 detected again next run (store.save_detection caps the attempts).
@@ -19,6 +21,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urljoin, urlsplit
+
+import httpx
 
 from job_scout.ats.platforms import PLATFORMS, api_url, tokens_in
 from job_scout.ats.seed import SeedCompany
@@ -79,6 +83,24 @@ def slug_candidates(company: SeedCompany) -> list[str]:
     return list(dict.fromkeys(c for c in candidates if re.fullmatch(r"[a-z0-9][a-z0-9_.-]*", c)))
 
 
+@dataclass(frozen=True)
+class _Requests:
+    """platforms.Requests over the detector's client, source and budget."""
+
+    http: HttpClient
+    source: SourceConfig
+    budget: RequestBudget
+
+    def get(self, url: str) -> httpx.Response:
+        return self.http.get(url, source=self.source, budget=self.budget)
+
+    def get_json(self, url: str) -> Any:
+        return self.get(url).json()
+
+    def post_json(self, url: str, body: Any) -> Any:
+        return self.http.post(url, source=self.source, budget=self.budget, json=body).json()
+
+
 class Detector:
     def __init__(
         self,
@@ -91,6 +113,7 @@ class Detector:
         self.source = source
         self.platforms = dict(platforms)
         self.budget = budget or RequestBudget()
+        self.requests = _Requests(http, source, self.budget)
         self._blocked: set[str] = set()  # platforms whose API robots.txt disallows us
         self._inconclusive = False  # this company: a check failed temporarily
 
@@ -98,10 +121,10 @@ class Detector:
         self._inconclusive = False
         notes: list[str] = []
         hit = board_from_url(company.careers_url, self.platforms)
-        if hit and self._answers(hit, notes):
-            return Detection(*hit, AtsMethod.CAREERS_URL)
-        if (hit := self._from_pages(company, notes)) and self._answers(hit, notes):
-            return Detection(*hit, AtsMethod.CAREERS_PAGE)
+        if hit and (board := self._verified(hit, notes)):
+            return Detection(*board, AtsMethod.CAREERS_URL)
+        if (hit := self._from_pages(company, notes)) and (board := self._verified(hit, notes)):
+            return Detection(*board, AtsMethod.CAREERS_PAGE)
         if hit := self._probe(company, notes):
             return Detection(*hit, AtsMethod.PROBE)
         return Detection(note="; ".join(notes) or "no board found", retry=self._inconclusive)
@@ -146,10 +169,9 @@ class Detector:
         probing expects them)."""
         if name in self._blocked:
             return None
-        url = api_url(self.platforms[name].api, token)
         try:
-            payload = self.http.get(url, source=self.source, budget=self.budget).json()
-            return PLATFORMS[name].jobs(payload)
+            url = api_url(self.platforms[name].api, token)
+            return PLATFORMS[name].read(self.requests, url, first_page_only=True)
         except RobotsDisallowed as exc:
             self._blocked.add(name)
             notes.append(f"{name} API off: {exc}")
@@ -162,16 +184,27 @@ class Detector:
             notes.append(f"{name}:{token}: {exc}")
         return None
 
-    def _answers(self, hit: tuple[str, str], notes: list[str]) -> bool:
-        """A board found in a URL or page exists: its API answers, even with no jobs."""
-        if self._jobs(*hit, notes) is not None:
-            return True
-        notes.append(f"{hit[0]}:{hit[1]} doesn't answer on its API")
-        return False
+    def _verified(self, hit: tuple[str, str], notes: list[str]) -> tuple[str, str] | None:
+        """A board found in a URL or page, completed if its platform needs that, and only if
+        its API answers (even with no jobs)."""
+        name, token = hit
+        if resolve := PLATFORMS[name].resolve:
+            try:
+                token = resolve(self.requests, token)
+            except FetchError as exc:
+                self._failed(notes, f"{name}:{token}: {exc}", exc)
+                return None
+            except ValueError as exc:
+                notes.append(f"{name}:{token}: {exc}")
+                return None
+        if self._jobs(name, token, notes) is not None:
+            return name, token
+        notes.append(f"{name}:{token} doesn't answer on its API")
+        return None
 
     def _probe(self, company: SeedCompany, notes: list[str]) -> tuple[str, str] | None:
         for candidate in slug_candidates(company):
             for name in self.platforms:
-                if self._jobs(name, candidate, notes):
+                if PLATFORMS[name].probe and self._jobs(name, candidate, notes):
                     return name, candidate
         return None

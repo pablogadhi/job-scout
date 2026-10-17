@@ -18,6 +18,7 @@ from job_scout.config import DEFAULT_CONFIG_DIR, AppConfig, ConfigError, load_co
 from job_scout.db import SchemaOutdated, check_schema, make_engine, make_session_factory
 from job_scout.db.models import Backend
 from job_scout.log import setup_logging
+from job_scout.scoring.schema import SchemaMismatch, score_schema
 
 log = logging.getLogger(__name__)
 
@@ -66,6 +67,10 @@ def load(ctx: typer.Context, overrides: dict[str, Any] | None = None) -> AppConf
         config = load_config(state.config_dir, merged)
     except ConfigError as exc:
         raise fail(str(exc), label="config error") from exc
+    try:
+        score_schema(config.profile)  # the output format's core fields match the code
+    except SchemaMismatch as exc:
+        raise fail(f"{config.profile.path}: {exc}", label="config error") from exc
     setup_logging(config.settings.log_level)
     log.debug("config loaded from %s (profile %s)", state.config_dir, config.profile.sha256[:12])
     return config

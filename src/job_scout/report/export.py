@@ -1,7 +1,8 @@
 """`job-scout export`: everything as CSV for skimming, and an optional SQLite snapshot.
 
 CSV: one row per stored posting (duplicates included, linked by `group_id`), with its
-group's pre-filter verdict and the score under the current profile.
+group's pre-filter verdict and the score under the current profile. Fields a profile adds to
+its output format (beyond the ones the reports name) get a column each, after the fixed ones.
 Snapshot: SQLite's online backup API, consistent even while the pipeline writes (copying the
 .db file mid-write can give a broken or stale database).
 """
@@ -10,6 +11,7 @@ from __future__ import annotations
 
 import csv
 import sqlite3
+from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -19,6 +21,7 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 
 from job_scout.db.models import Job, PrefilterResult, Score
+from job_scout.report.data import field_text
 
 COLUMNS = [
     "job_id", "group_id", "duplicate", "source", "title", "company", "location", "remote",
@@ -45,15 +48,15 @@ def _cell(value: Any) -> Any:
     return value
 
 
-def export_csv(session: Session, path: Path) -> int:
-    """Write the CSV; return the number of rows."""
+def export_csv(session: Session, path: Path, extra_fields: Sequence[str] = ()) -> int:
+    """Write the CSV, with a column per name in `extra_fields`; return the number of rows."""
     verdicts = {r.job_id: r for r in session.scalars(select(PrefilterResult))}
     scores = {s.job_id: s for s in session.scalars(select(Score))}
     path.parent.mkdir(parents=True, exist_ok=True)
     rows = 0
     with path.open("w", newline="", encoding="utf-8") as fh:
         writer = csv.writer(fh)
-        writer.writerow(COLUMNS)
+        writer.writerow([*COLUMNS, *extra_fields])
         for job in session.scalars(select(Job).order_by(Job.id)).yield_per(500):
             group_id = job.duplicate_of or job.id
             verdict = verdicts.get(group_id)
@@ -89,6 +92,7 @@ def export_csv(session: Session, path: Path) -> int:
                     score.scored_at if score else None,
                     score.backend if score else None,
                     score.model if score else None,
+                    *(field_text(result.get(name)) for name in extra_fields),
                 )
             )
             rows += 1

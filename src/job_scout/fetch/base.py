@@ -29,6 +29,10 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
+def _any_title(_title: str) -> bool:
+    return True
+
+
 @dataclass
 class FetchContext:
     source: SourceConfig
@@ -38,20 +42,31 @@ class FetchContext:
     last_success_at: datetime | None = None
     environ: Mapping[str, str] = field(default_factory=dict)
     skipped_items: int = 0
-    # ats_seed sources only: the company boards to poll, and each one's outcome
-    # (slug -> None for success, else the error), which the runner stores.
+    # Company-board sources only (ats_seed, ats_boards): the boards to poll, and each one's
+    # outcome (slug -> None for success, else the error), which the runner stores.
     boards: list[Board] = field(default_factory=list)
     board_results: dict[str, str | None] = field(default_factory=dict)
+    # For platforms that pay a request per job for its details (Workday): this source's jobs
+    # already stored with a description, and the title rules of filters.yaml. A job stored
+    # without one gets its details once its title passes (the store fills them in).
+    known_ids: frozenset[str] = frozenset()
+    title_ok: Callable[[str], bool] = _any_title
 
     def get(self, url: str, **kwargs: Any) -> httpx.Response:
         return self.http.get(url, source=self.source, budget=self.budget, **kwargs)
 
     def get_json(self, url: str, **kwargs: Any) -> Any:
-        response = self.get(url, **kwargs)
-        try:
-            return response.json()
-        except ValueError as exc:
-            raise FetchError(f"invalid JSON from {url}: {exc}") from exc
+        return _json(self.get(url, **kwargs), url)
+
+    def post_json(self, url: str, body: Any) -> Any:
+        return _json(self.http.post(url, source=self.source, budget=self.budget, json=body), url)
+
+
+def _json(response: httpx.Response, url: str) -> Any:
+    try:
+        return response.json()
+    except ValueError as exc:
+        raise FetchError(f"invalid JSON from {url}: {exc}") from exc
 
 
 class Fetcher(Protocol):
@@ -138,7 +153,11 @@ def rss_posting(
 
 @dataclass
 class RssFetcher:
+    """`shared` gives the fields every item of one endpoint has, read from its URL (e.g. a
+    feed filtered to remote jobs whose items don't say so themselves)."""
+
     map_entry: Callable[[FeedEntry], Posting | None]
+    shared: Callable[[str], dict[str, Any]] | None = None
 
     def fetch(self, ctx: FetchContext) -> list[Posting]:
         postings: list[Posting] = []
@@ -146,7 +165,10 @@ class RssFetcher:
             feed = feedparser.parse(ctx.get(url).content)
             if not feed.entries and feed.get("bozo"):
                 raise FetchError(f"not a valid feed: {url} ({feed.get('bozo_exception')})")
-            postings.extend(collect(ctx, feed.entries, self.map_entry))
+            shared = self.shared(url) if self.shared else {}
+            postings.extend(
+                p.model_copy(update=shared) for p in collect(ctx, feed.entries, self.map_entry)
+            )
         return postings
 
 
@@ -157,17 +179,25 @@ class RssFetcher:
 class JsonFetcher:
     """GET each endpoint, pull the item list out of the payload, map each item.
 
-    `pages` yields the payloads for one endpoint; the default is a single GET.
+    `pages` yields the payloads for one endpoint; the default is a single GET. `keep` decides
+    from the source's config which items to map (e.g. its `categories`).
     """
 
     items: Callable[[Any], Iterable[Any]]
     map_item: Callable[[Any], Posting | None]
     pages: Callable[[FetchContext, str], Iterator[Any]] | None = None
+    keep: Callable[[FetchContext, Any], bool] | None = None
 
     def fetch(self, ctx: FetchContext) -> list[Posting]:
+        def mapper(item: Any) -> Posting | None:
+            # Inside collect(), so an item `keep` can't read is skipped like any other.
+            if self.keep and not self.keep(ctx, item):
+                return None
+            return self.map_item(item)
+
         postings: list[Posting] = []
         for url in ctx.source.endpoints:
             payloads = self.pages(ctx, url) if self.pages else iter([ctx.get_json(url)])
             for payload in payloads:
-                postings.extend(collect(ctx, self.items(payload), self.map_item))
+                postings.extend(collect(ctx, self.items(payload), mapper))
         return postings

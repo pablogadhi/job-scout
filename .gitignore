@@ -17,3 +17,6 @@ reports/
 .env
 .env.*
 !.env.example
+
+# Other instances (another person's profile): their config, data and secrets
+/instances/

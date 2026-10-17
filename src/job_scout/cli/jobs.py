@@ -23,6 +23,7 @@ from job_scout.prefilter.runner import (
     sample,
     source_report,
 )
+from job_scout.report.data import extra_output_fields
 from job_scout.report.export import export_csv, snapshot_sqlite
 
 
@@ -172,7 +173,7 @@ def export(
     stamp = f"{utcnow():%Y%m%dT%H%M%SZ}"
     with open_db(config)() as session:
         path = directory / f"jobs-{stamp}.csv"
-        rows = export_csv(session, path)
+        rows = export_csv(session, path, extra_output_fields(config.profile))
     console.print(f"{rows} postings -> {path}")
     if sqlite:
         try:

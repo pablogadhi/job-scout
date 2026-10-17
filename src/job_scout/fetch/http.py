@@ -1,9 +1,10 @@
 """The only place that talks to the network.
 
-Every request goes through `HttpClient.get`, which:
+Every request goes through `HttpClient.get` (or `post`, for the few APIs that only answer a
+POST, such as Workday's job search), which:
 - sends the configured User-Agent and timeout,
 - checks robots.txt with RFC 9309 matching (`*` and `$` patterns), cached per host for the
-  client's lifetime,
+  client's lifetime (a source with `ignore_robots_txt` skips the allow/disallow check only),
 - spaces requests to the same host by max(1s, robots Crawl-delay, the source's own interval),
 - enforces the source's request budget (e.g. Remotive's 4 calls per day),
 - on HTTP 429, waits (Retry-After, or a short backoff), retries, and slows down for that host,
@@ -137,19 +138,46 @@ class HttpClient:
     ) -> httpx.Response:
         # Merge, don't replace: endpoints in sources.yaml carry their own query strings.
         full_url = str(httpx.URL(url).copy_merge_params(params)) if params else url
+        return self._send("GET", full_url, source=source, budget=budget, headers=headers)
+
+    def post(
+        self,
+        url: str,
+        *,
+        source: SourceConfig,
+        budget: RequestBudget,
+        json: Any,
+        headers: dict[str, str] | None = None,
+    ) -> httpx.Response:
+        """A JSON POST, with every check a GET gets (robots.txt applies to its URL too)."""
+        return self._send("POST", url, source=source, budget=budget, headers=headers, body=json)
+
+    def _send(
+        self,
+        method: str,
+        full_url: str,
+        *,
+        source: SourceConfig,
+        budget: RequestBudget,
+        headers: dict[str, str] | None,
+        body: Any = None,
+    ) -> httpx.Response:
         if forbidden(full_url):
             raise ForbiddenHost(f"never fetched (ground rule): {full_url}")
         host = self._host(full_url)
-        robots = host.robots if self.defaults.respect_robots_txt else None
+        robots = host.robots if not source.ignore_robots_txt else None
         if robots is not None and not robots.can_fetch(full_url, self.defaults.user_agent):
             raise RobotsDisallowed(f"robots.txt disallows {full_url}")
         attempt = 0
         while True:
             budget.spend(full_url)
             self._wait(host, source)
-            log.debug("GET %s", full_url)
+            log.debug("%s %s", method, full_url)
             try:
-                response = self.client.get(full_url, headers=headers)
+                if method == "POST":
+                    response = self.client.post(full_url, headers=headers, json=body)
+                else:
+                    response = self.client.get(full_url, headers=headers)
             except httpx.HTTPError as exc:
                 raise FetchError(
                     f"{type(exc).__name__} for {full_url}: {exc}",
@@ -173,7 +201,7 @@ class HttpClient:
             self.sleep(delay)
             attempt += 1
         if self.recorder:
-            self.recorder.record(source.id, full_url, response)
+            self.recorder.record(source.id, request_key(method, full_url, body), response)
         if response.status_code >= 400:
             raise HttpStatusError(
                 f"HTTP {response.status_code} for {full_url}", response.status_code
@@ -226,8 +254,16 @@ def _retry_after(response: httpx.Response) -> float | None:
         return None
 
 
+def request_key(method: str, url: str, body: Any = None) -> str:
+    """How a recorded response is looked up: the URL for a GET; method, URL and the JSON body
+    (keys sorted) for a POST, whose pages differ only in their bodies."""
+    if method == "GET":
+        return url
+    return f"{method} {url} {json.dumps(body, sort_keys=True, separators=(',', ':'))}"
+
+
 class Recorder:
-    """Saves responses under DIR/<source_id>/ with a manifest mapping URL -> file.
+    """Saves responses under DIR/<source_id>/ with a manifest mapping request_key -> file.
 
     Large payloads are trimmed to `max_items` items so fixtures stay small; pagination
     fields are left as they were, so every recorded page is needed to replay a fetch.
@@ -237,19 +273,19 @@ class Recorder:
         self.directory = directory
         self.max_items = max_items
 
-    def record(self, source_id: str, url: str, response: httpx.Response) -> None:
+    def record(self, source_id: str, key: str, response: httpx.Response) -> None:
         target = self.directory / source_id
         target.mkdir(parents=True, exist_ok=True)
         manifest_path = target / "manifest.json"
         manifest = json.loads(manifest_path.read_text()) if manifest_path.exists() else {}
         content_type = response.headers.get("content-type", "")
         is_json = "json" in content_type
-        name = f"{len(manifest) + 1:02d}-{_slug(url)}.{'json' if is_json else 'xml'}"
+        name = f"{len(manifest) + 1:02d}-{_slug(key)}.{'json' if is_json else 'xml'}"
         body = _trim_json(response.content, self.max_items) if is_json else response.content
         if not is_json and response.status_code < 400:
             body = _trim_feed(body, self.max_items)
         (target / name).write_bytes(body)
-        manifest[url] = {
+        manifest[key] = {
             "file": name,
             "status": response.status_code,
             "content_type": content_type,
@@ -257,9 +293,12 @@ class Recorder:
         manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
 
 
-def _slug(url: str) -> str:
+def _slug(key: str) -> str:
+    method, _, rest = key.partition(" ") if key.startswith("POST ") else ("", "", key)
+    url, _, body = rest.partition(" ")
     parts = urlsplit(url)
-    return re.sub(r"[^a-z0-9]+", "-", f"{parts.path} {parts.query}".lower()).strip("-")[:60]
+    text = f"{method} {parts.path} {parts.query} {body}".lower()
+    return re.sub(r"[^a-z0-9]+", "-", text).strip("-")[:60]
 
 
 def _trim_json(content: bytes, max_items: int) -> bytes:

@@ -6,9 +6,4 @@ set -e
 
 uv run ruff check .
 uv run ruff format --check .
-
-if ! command -v pyright >/dev/null 2>&1; then
-    echo "pre-commit: pyright isn't on PATH (install it, or commit with --no-verify)" >&2
-    exit 1
-fi
-pyright  # src/ and tests/, per [tool.pyright] in pyproject.toml
+uv run pyright # src/ and tests/, per [tool.pyright] in pyproject.toml

@@ -58,30 +58,38 @@
   <h3><span class="score {{ score_class(item.overall) }}">{{ item.overall }}</span>
     <a href="{{ item.apply_url | http_url }}">{{ item.title }}</a> &mdash; {{ item.company }}
     {%- if item.watchlist %}<span class="badge">watchlist</span>{% endif %}
-    {%- if r.four_day_week == "yes" %}<span class="badge">4-day week</span>{% endif %}
+    {%- if r.four_day_week is defined and r.four_day_week == "yes" %}<span class="badge">4-day week</span>{% endif %}
   </h3>
   <div class="row">{{ r.summary }}</div>
   {%- if r.disqualified %}
   <div class="row flag"><span class="label">Disqualified:</span> {{ r.disqualify_reason or "yes" }}</div>
   {%- endif %}
-  <div class="row"><span class="label">Location ({{ r.location_eligibility }}):</span> {{ r.location_notes }}</div>
+  <div class="row"><span class="label">Location ({{ r.location_eligibility }}):</span>{% if r.location_notes is defined %} {{ r.location_notes }}{% endif %}</div>
   <div class="row"><span class="label">Salary ({{ r.salary }}):</span>
     {{ item.salary or "not stated" }}
-    {%- if r.salary_usd_range %} &middot; ~{{ r.salary_usd_range }} USD{% endif %}
-    {%- if r.salary_notes %} &middot; {{ r.salary_notes }}{% endif %}</div>
+    {%- if r.salary_usd_range is defined and r.salary_usd_range %} &middot; ~{{ r.salary_usd_range }} USD{% endif %}
+    {%- if r.salary_notes is defined and r.salary_notes %} &middot; {{ r.salary_notes }}{% endif %}</div>
+  {% if r.role_category is defined and r.seniority is defined and r.skill_fit is defined
+         and r.seniority_fit is defined and r.employment_type is defined %}
   <div class="row"><span class="label">Role:</span> {{ r.role_category }}, {{ r.seniority }}
     &middot; skill fit {{ r.skill_fit }}/5, seniority fit {{ r.seniority_fit }}/5
     &middot; remote: {{ r.remote }} &middot; {{ r.employment_type }}</div>
+  {%- else %}
+  <div class="row"><span class="label">Role:</span> {{ item.role_parts | join(" · ") }}</div>
+  {%- endif %}
   {%- if r.matched_skills %}
   <div class="row"><span class="label">Matched:</span> {{ r.matched_skills | join(", ") }}</div>
   {%- endif %}
   {%- if r.gaps %}<div class="row"><span class="label">Gaps:</span> {{ r.gaps | join(", ") }}</div>{% endif %}
-  {%- if r.wlb_positive %}
+  {%- if r.wlb_positive is defined and r.wlb_positive %}
   <div class="row"><span class="label">Work-life balance:</span> {{ r.wlb_positive | join(", ") }}</div>
   {%- endif %}
-  {%- if r.wlb_negative %}
+  {%- if r.wlb_negative is defined and r.wlb_negative %}
   <div class="row flag"><span class="label">WLB concerns:</span> {{ r.wlb_negative | join(", ") }}</div>
   {%- endif %}
+  {%- for label, value in item.other_fields %}
+  <div class="row"><span class="label">{{ label }}:</span> {{ value }}</div>
+  {%- endfor %}
   {%- if r.red_flags %}
   <div class="row flag"><span class="label">Red flags:</span> {{ r.red_flags | join(", ") }}</div>
   {%- endif %}

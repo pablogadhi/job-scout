@@ -199,6 +199,29 @@ def test_digest_email(tmp_path: Path, session_factory: sessionmaker[Session]) ->
     assert "Senior Backend Engineer 1" in body_of(message, "html")
 
 
+def test_plain_text_has_one_field_per_line(
+    tmp_path: Path, session_factory: sessionmaker[Session]
+) -> None:
+    config = config_with(tmp_path, min_score=50, email=EMAIL)
+    (job,) = seed_jobs(session_factory, 1)
+    score_jobs(
+        session_factory, config, {job: {"score": 80, "gaps": ["Go"], "red_flags": ["On-call"]}}
+    )
+    make_digest(config, session_factory, now=NOW, environ={TOKEN_ENV: "tok"}, smtp_factory=FakeSmtp)
+    lines = body_of(FakeSmtp.instances[0].messages[0], "plain").splitlines()
+    card = lines[lines.index("[80] Senior Backend Engineer 1 - Company 1") :]
+    assert [line.split(":")[0] for line in card[1:8]] == [
+        "  Synthetic posting that fits.",
+        "  Location (pass)",
+        "  Salary (unlisted)",
+        "  Matched",
+        "  Gaps",
+        "  Red flags",
+        "  Apply",
+    ]
+    assert lines[1].startswith("Generated ") and lines[2].endswith("with unclear location")
+
+
 def test_failed_email_is_not_recorded(
     tmp_path: Path, session_factory: sessionmaker[Session]
 ) -> None:

@@ -1532,3 +1532,463 @@ features planned; Phase 7 (Tier 2 scrapers) and the Findwork key are still open.
   to Claude as unclear location (a bare "Chile" is neither allowed nor excluded), a
   one-time ~15 scores, then a few a month. A synthetic fixture job (region "Chile",
   remote for all of LATAM) checks that it reaches Claude.
+
+## Phase 10: A second profile (branch `phase-10-second-profile`)
+
+The brief is `PLAN-phase-10.md`. Work happens in a separate worktree, step by step, with
+your approval between steps.
+
+### P10 Your decisions
+
+- **P10-U1 A second profile, for one other person, alongside yours.** Its own instance
+  (config, database, digest, feedback page) on the same server; the pipeline code is shared.
+  Several profiles in one database was ruled out as not worth it for two.
+- **P10-U2 The profile:** nonprofits and social development programs, an entirely different
+  industry; strongest experience as a Program Director. Guatemala, remote only, work-life
+  balance a priority.
+- **P10-U3 Their instance scores with the `api` backend,** not your Pro subscription.
+- **P10-U4 Research first:** the work starts with researching sources for this field
+  (Step 1, no code), then continues one step at a time with your checks and approval in
+  between.
+- **P10-U5 A separate agent works on it** in its own git worktree
+  (`~/Documents/Projects/job-scout-phase-10`), in a named session
+  (`phase-10-second-profile`).
+- **P10-U6 Remotive switches to its documented RSS feed** (`/remote-jobs/feed`, allowed by
+  robots.txt, same 15 jobs, same job ids), on `phase-9-refactor` since it changes the
+  running instance (P9-U18, P9-D19). It reaches this branch when phase 9 is merged in.
+- **P10-U7 Fix the robots.txt check (P10-B1)** on `phase-9-refactor`. Done there with
+  `protego` (P9-B8, P9-D20); this branch gets it with the phase 9 merge.
+- **P10-U8 Sources to build:** ReliefWeb (API) and unvacancies.org first (Step 5), Workday
+  as the first new ATS platform (Step 7). Step 1 is done.
+- **P10-U9 The second instance is `ngo`:** daily run at 08:30 (after yours at 08:15),
+  feedback page on host port 8766.
+- **P10-U10 You request the ReliefWeb appname** (P10-R1).
+- **P10-U11 The duplicate P9 IDs stay as they are** (P10-R8).
+- **P10-U12 `skill_fit` and `seniority_fit` stay unchecked for 0–5** (P10-D17): no range
+  notation in profile.md.
+- **P10-U13 The profile skill is a project skill,** not one of your user skills (replaces
+  P10-D23).
+- **P10-U14 The skill asks one question at a time.**
+- **P10-U16 The skill lives at the standard path,** `.claude/skills/job-scout-profile/`
+  (you moved it; replaces the symlink in P10-D23).
+- **P10-U15 Two instances never run at once.** Of the three options for shared rate limits,
+  only this one: no check that a capped source is enabled in one instance only, and no
+  shared request log across instances.
+- **P10-U17 Feed before API, then robots.txt:** when researching a source, look for RSS
+  first, then an API, then check robots.txt for each (now a convention in CLAUDE.md). You
+  proposed ReliefWeb's job search feed
+  (`/jobs/rss.xml?advanced-search=(TY263)_(CC6867)&search=remote`); robots.txt denies it
+  (P10-R1).
+- **P10-U18 Read ReliefWeb's feed despite robots.txt:** the feed is linked from every search
+  page, so the `Disallow: /*/rss.xml` rule doesn't apply to it here. Settles the feed side
+  of P10-R1; the API stays open.
+- **P10-U19 Look up unvacancies.org's feed filters** (P10-R5).
+- **P10-U20 Skip DevNetJobs.** Its terms don't allow its listings to be "stored or made
+  available … in electronic … media … without prior permission", and few would be lost
+  (P10-D38). It's under `skipped:` with that reason.
+- **P10-U21 Company boards: Workday first, then Jobvite and iCIMS** (Step 7, from P10-D39).
+  An instance lists its own organizations, and their boards are polled without the
+  remoteintech seed.
+- **P10-U22 The first real run for ngo (2026-10-16):** you set the instance's digest
+  recipient to the second person's address (in its gitignored `.env`), then had the
+  backlog scored on the api backend and the digest emailed to her (P10-D48).
+- **P10-U23 No feedback links for ngo.** Its votes won't be used, so its `.env` gets no
+  `JOB_SCOUT_FEEDBACK_SECRET` or base URL: its digests carry no 👍/👎 links and its feedback
+  service isn't started.
+- **P10-U24 No ReliefWeb API appname:** the feed is enough (closes P10-R1).
+- **P10-U25 Scrapers wait** until they're built for your profile (Phase 7's scrapers):
+  Step 6, unvacancies' job pages (P10-R10), the "unclear location" fixes for sources whose
+  feeds lack the full posting, and HTML-only boards such as Idealist and Impactpool (P10-R4).
+- **P10-U26 ngo's first digest looks right:** Step 5 is done (P10-R13). With Step 6
+  deferred (P10-U25) and Step 7 met (P10-D48), every step of the phase is done or deferred.
+- **P10-U27 The server setup waits** (P10-R7 stays open, for later).
+- **P10-U28 No Jobvite pagination watch** (closes P10-R12).
+
+### P10 Decisions (Claude)
+
+- **P10-D1 How Step 1 was researched.** Docs and terms with web search and fetch. Every
+  request that needed our User-Agent went through job-scout's `HttpClient` from a scratch
+  script outside the repo: at most 3–4 requests per site, robots.txt included, saved
+  only under the gitignored `data/recordings/phase10/`. Robots verdicts come from an RFC 9309
+  matcher, not `urllib.robotparser` (P10-B1). The deliverable is
+  `docs/phase-10-research.md`, with counts and structure only, no posting text. No code,
+  config or tests changed.
+- **P10-D2 Recommended first set: ReliefWeb (API) and unvacancies.org.** ReliefWeb is the
+  widest development and humanitarian board, with a remote/roster view and facets for
+  consultancy, program management and experience. unvacancies.org indexes 43 UN-system
+  portals plus World Vision, IRC, Save the Children and Oxfam, and invites feed reuse.
+  Together they cover the UN system, big NGOs and the consultancy market, in English and
+  Spanish.
+- **P10-D3 None of the general remote boards for this profile.** Working Nomads, Remote
+  OK, We Work Remotely, Remote First Jobs and 4dayweek have about 0–6 nonprofit postings per
+  100, mostly incidental. On the `api` backend each one would add pre-filter noise and
+  spend for maybe one fit a week.
+- **P10-D4 Skipped on terms or access, not on fit:** Idealist (terms forbid bots; API only
+  by agreement), Impactpool (terms forbid scraping without permission), UNjobs and UNDP
+  (robots `Disallow: /`), UN Talent, Devex, PND/Candid, Work for Good, DevelopmentAid and
+  Bond (bot walls or 403 to our client; Devex and DevelopmentAid are also paywalled).
+- **P10-D5 Skipped on fit:** 80,000 Hours, Probably Good, Escape the City (EA, UK-centred,
+  few LATAM program roles), CharityJob and Hacesfalta (UK and Spain markets), Toptrabajos
+  and Tecoloco (general Central American boards, almost no NGO postings). The "wrong field"
+  entries in `skipped:` stay skipped. UN Talent's reason would become "bot challenge" if the
+  list is touched.
+- **P10-D6 Workday first among new ATS platforms (Step 7).** 17 of the 40 sampled NGOs
+  have an identifiable ATS. Workday is the most common (Habitat, PATH, IRC, World Vision,
+  WFP). Its career sites allow robots, publish a sitemap per site, and serve job JSON. The
+  platforms job-scout supports today cover 1 of the 17 (GiveDirectly on Greenhouse). UKG's
+  search path is robots-disallowed, and ADP blocks us.
+
+### P10 Decisions (Claude, Step 2: instance support)
+
+- **P10-D7 One file selects an instance in compose.** An instance's `.env` sets
+  `COMPOSE_PROJECT_NAME`, `JOB_SCOUT_INSTANCE_DIR` and `JOB_SCOUT_FEEDBACK_PORT`, and
+  `docker compose --env-file ../instances/<name>/.env ...` uses it for its project, mounts,
+  secrets and port. Without the flag, every path resolves as before (`..`, the repo root).
+  Checked with `docker compose config`; `job-scout` ignores the extra variables in the
+  container. Shell exports win over the file, so the docs say not to export them.
+- **P10-D8 Your units stay as they are; other instances use a template.** The plan moved
+  yours to `job-scout@default`. That would need the repo-root instance special-cased (its
+  path and project name differ from `instances/<name>`), and moving a running timer risks
+  a missed or doubled run. Instead `job-scout@.service` runs any other instance, and a
+  test keeps it identical to `job-scout.service` apart from the `--env-file`, so a fix
+  can't land in only one of them.
+- **P10-D9 Every instance's failures go through your `job-scout-failure.service`**, which
+  runs as your instance: failure emails, with the run's log, go to you, never to the
+  instance's recipient. If two runs failed at the same moment, the second report could
+  merge into the first; the runs are 15 minutes apart.
+- **P10-D10 One timer file per instance, committed** (`job-scout@ngo.timer`: the name and
+  time aren't personal data). The test checks it against `instances/ngo/config/settings.yaml`
+  when the instance is on the machine and skips it otherwise. The plan's synthetic stand-in
+  instance was dropped: it would only have tested the test.
+- **P10-D11 Local commands run from the instance's directory**, where the relative
+  `config/` and `data/` paths point into the instance and uv still finds the project. No
+  new code or variable; `alembic -c ../../alembic.ini` for migrations.
+- **P10-D12 `instances/` is in `.gitignore` and `.dockerignore`.** No `COPY` takes it into
+  the image, but without the ignore the build would send the other person's `.env` and
+  database to the Docker daemon as build context.
+- **P10-D13 The local `ngo` instance** is a copy of your config with `backend: api` and the
+  08:30 run time, and a `.env` with only the three compose lines. Checked: migrate,
+  `sources check` and `digest --dry-run` from its directory, the deploy tests (its timer
+  matches its settings) and `docker compose config`. Not checked here: a real container
+  run and `systemd-analyze verify` (the sandbox reaches neither Docker nor a systemd
+  runtime directory).
+
+### P10 Decisions (Claude, Step 3: a scoring format for both profiles)
+
+- **P10-D14 Every output field is typed from its example in profile.md.** `"a | b"` is one
+  of those values, text is a string ("… or null" or `null` allows null), `["text"]` a list
+  of strings, and numbers and true/false keep their type. `role_category`'s values
+  therefore come from the profile like any other field's. Nested objects and other examples
+  fail at load. A profile can add any field without a code change.
+- **P10-D15 Core fields:** `disqualified`, `disqualify_reason`, `remote`,
+  `location_eligibility`, `salary`, `matched_skills`, `gaps`, `red_flags`,
+  `overall_score`, `summary`. The brief's list plus `disqualify_reason`, which the reports
+  show next to `disqualified`. A profile must declare them with the same values the code
+  types them with (`CoreResult`), or every command stops with a config error.
+  `role_category`, `skill_fit`, `seniority_fit` and `four_day_week`, required until now,
+  became your profile's own fields.
+- **P10-D16 Two models:** a strict one per profile for Claude's replies (built in the
+  profile's order, job_id first, extra keys rejected, cached per profile hash), and
+  `CoreResult` for reading any stored result: the core fields typed, every other field kept
+  as it is. Reports, feedback and export read with `CoreResult`, so a score made under an
+  older profile still reads. Stored results keep the profile's field order.
+- **P10-D17 Your profile's schema is unchanged, byte for byte** (key order included;
+  `tests/fixtures/score_schema_repo_profile.json` holds the old one, and a test compares).
+  One difference in validation: `skill_fit` and `seniority_fit` lost their 0–5 check. The
+  range is in profile.md's prose, which the code doesn't read, and the API already stripped
+  it from the schema, so what Claude sees is the same.
+- **P10-D18 Reports show a profile's own fields generically.** The templates keep their
+  rows for the fields they name (`NAMED_FIELDS`), now each guarded with `is defined`.
+  Any other field becomes a "Label: value" row after the work-life rows, and a CSV column
+  after the fixed ones. Your profile has no such field, so its outputs don't change. The
+  role row needs your profile's five role fields; a profile without them gets a short
+  form ("program-director · Director · remote: yes").
+- **P10-D19 Checked on your data:** the backlog report (HTML and text, all 190 scored
+  jobs), a dry-run digest (32 jobs, after clearing `digests` in a copy) and the CSV (4,089
+  rows) are byte-identical before and after, rendered from a copy of your laptop database
+  with a fixed clock and fixed feedback links.
+- **P10-D20 Working Nomads' categories are config:** `categories: [Development]` on the
+  source (empty keeps all). `JsonFetcher` got a `keep(ctx, item)` hook, run inside the
+  mapper so an item it can't read is skipped like any other.
+- **P10-D21 Tested end to end with a synthetic nonprofit profile** (`tests/test_profile_fields.py`):
+  own role categories, travel, contract length and donor fields, none of your profile's
+  extras. Claude is asked for exactly its fields; a reply with an unknown travel value is
+  rejected; the backlog report and the CSV show the new fields.
+
+### P10 Bugs found (not fixed: Step 1 changes no code)
+
+- **P10-B1 `HttpClient`'s robots.txt check ignores wildcards.** `urllib.robotparser`
+  compares rule paths as literal prefixes, so RFC 9309 rules like `Disallow: /api/*`,
+  `/*category=` or `/*/rss.xml` never match and the client fetches disallowed URLs. It also
+  doesn't strip a leading byte-order mark, which drops the first group's `User-agent` line.
+  Fix options in P10-R3.
+- **P10-B2 Remotive's robots.txt disallows both configured Remotive URLs** (`/api/*` and
+  `/*category=`). The `sources.yaml` note "robots.txt allows job-scout's UA" (2026-10-12)
+  comes from P10-B1. Every other existing endpoint, the ATS APIs included, is allowed
+  under RFC 9309.
+
+### P10 Decisions (Claude, Step 4: the profile skill)
+
+- **P10-D22 The skill is instructions and references, no code:** `skills/job-scout-profile/`
+  with `SKILL.md` (the workflow: read the CV, draft, interview one question at a
+  time, write the three files, check, hand over) and `references/` (the questions,
+  each with where its answer goes; a profile.md template; a filters guide with a full
+  example for program roles in English and Spanish). Ground rules in the skill: the CV and
+  everything generated stay in `instances/<name>/`, no spending or email without a yes,
+  network only through `job-scout fetch`, posting text is untrusted.
+- ~~**P10-D23 Installed by a chezmoi symlink** into `~/.claude/skills/`.~~ Replaced by
+  P10-U13: the files stay in `skills/job-scout-profile/` (the sandbox can't write under
+  `.claude/skills`, so that's where they can be edited and tested), and a committed relative
+  symlink, `.claude/skills/job-scout-profile` → `../../skills/job-scout-profile`, makes it a
+  project skill. Your session cleanup hook only removes empty read-only stub files directly
+  in `.claude/`, so it leaves the link alone.
+- **P10-D24 Proposed sources go into an instance's `sources.yaml` with `enabled: false`** and
+  a note. The fetch runner skips a source without a fetcher ("no fetcher registered"), so
+  they're harmless until Step 5 builds them.
+- **P10-D25 Request budgets count per instance database.** A source with
+  `max_requests_per_day` enabled in two instances gets both budgets from the same site. The
+  skill keeps such sources in one instance, or halves the budget in each.
+- **P10-D26 `hn_whoishiring` should be off for a profile outside tech:** its
+  `remote_mention_only` mode skips the title rules, so every remote-mentioning post would
+  reach Claude (54% of HN posts passed the example filters in the smoke test).
+- **P10-D27 Checked:** tests keep the references valid (the template loads and declares
+  the core fields as the code types them; the filters example validates and keeps or drops
+  ten sample titles as intended). A throwaway instance built from the references passed
+  `sources check`, and its filters ran over the 3,468 postings in a copy of your database
+  (all tech boards): 6% passed, mostly program and lead titles. The throwaway instance and
+  the copy were deleted. Not done: a run with the real CV, which is yours (P10-R9).
+
+- **P10-D29 With the skill in `.claude/skills/`:** Claude Code's Bash sandbox mounts that
+  directory read-only (it's one of the sandbox's protected paths; while it didn't exist, the
+  sandbox blocked the path entirely, which is what looked like "unreadable" before). So the
+  skill's test reads it as before, in Claude's sessions too, and shell commands can't
+  change it. The docs say no `allowWrite` entry or `Edit` rule exempts a protected path;
+  only `filesystem.disabled` (every path, and not settable in a project's settings) turns it
+  off. Claude changes the skill with its Edit and Write tools, which run outside the sandbox
+  and ask you first (or once per session for the project's `.claude/`). `skills/README.md`
+  is gone; CLAUDE.md describes the layout.
+- **P10-D28 How:** `After=job-scout.service` on `job-scout@.service`. Each instance counts
+  its request budgets in its own database, and the spacing between requests to a host lives
+  in each run's process, so two runs fetching at once don't see each other's requests. That
+  only happens when the server boots after both run times: `Persistent=true` then fires both
+  timers together, and `After=` makes the instance's run start once yours has finished (for a
+  oneshot service, once its command exits). On a normal day it changes nothing. After a late
+  boot, the instance's digest waits for your whole run (up to its 2h timeout). The test that
+  keeps the template equal to `job-scout.service` now expects this one extra line.
+
+### P10 Decisions (Claude, Step 5: ReliefWeb)
+
+- **P10-D30 `ignore_robots_txt` is per source** (`sources.yaml`, default false), not a host
+  or URL list: the exemption is visible where the source is defined and covers only its
+  requests. It skips the allow/disallow rules only: robots.txt is still read and its
+  Crawl-delay, the 1s spacing and the budget still apply. Budget 4 requests a day.
+- **P10-D31 The `reliefweb` source is in the repo's `config/sources.yaml` with
+  `enabled: false`,** so your instance doesn't fetch it, and the ngo instance's copy turns
+  it on. Its endpoint is your saved search (type Job, category Program/Project Management,
+  text "remote"); others can be added as more endpoints.
+- **P10-D32 Mapping:** `source_job_id` is the numeric job id from the link (the API's id,
+  so a later switch to the API still matches stored jobs); company from `<author>`; the
+  duty-station country from the description's `Country:` line as `location_raw`. No country
+  means the site's Remote / Roster / Roving list, left as no location (unclear, so Claude
+  judges it). Checked on the 20 live items of 2026-10-15 (recorded in the gitignored
+  `data/recordings/`): 17 have a country, 3 don't; most are on-site jobs that mention remote
+  work, since "remote" is a full-text search.
+
+- **P10-D33 unvacancies' feed filters** come from its partner kit's script (the page that
+  builds feed URLs for partners): `remote=true`, `function`, `contract_type`, `grade`,
+  `location`, `organization`, sorted. robots.txt allows `/feed.xml` with any of them.
+  Requests made: robots.txt, the partners page, its script chunks, the plain and three
+  filtered feeds, `/jobs/function` and one job page.
+- **P10-D34 One feed per function, remote only:** each feed holds its 50 newest items, and
+  the plain remote feed had 37 from one day, so a daily run could miss jobs. Starting
+  functions: programme-management and monitoring-evaluation (the categories the Step 1
+  research matched to the profile); the profile skill picks the instance's final list.
+  `sources.yaml` lists every function and filter. Budget 12 requests a day. In the repo's
+  config it's `enabled: false`, on in ngo (like reliefweb). First fetch: 51 jobs (the
+  remote M&E feed had 1).
+- **P10-D35 `RssFetcher(shared=...)`:** the fields every item of one endpoint shares, read
+  from its URL. Items don't say they're remote; the feed's `remote=true` does, so they get
+  `remote_raw` "Remote and home-based" (the site's label), which Claude sees and no remote
+  rule drops. The guid (the link without its `utm_` parameters) is the id and the URL; the
+  agency (`category`) is the company.
+
+### P10 Decisions (Claude, the ngo profile and more sources)
+
+- **P10-D36 The profile skill ran with the real CV** (P10-R9). The operator answered the
+  interview; the generated `profile.md`, `filters.yaml` and `sources.yaml` stay in the
+  gitignored instance. Findings that apply beyond it: filter rules match one field at a time,
+  so a profile that accepts hybrid work in one country can't drop "hybrid" by regex (the
+  remote field and the location field are matched separately); and the general remote
+  boards stay off for a nonprofit profile, as P10-D3 found.
+- **P10-D37 More feeds for the ngo instance, each checked with a recorded fetch.**
+  ReliefWeb's advanced search joins groups with `_` (AND) and values within a group with `.`
+  (OR), and its full-text `search` takes `OR` and quoted phrases; facet IDs come from the
+  search page (type: Job TY263, Consultancy TY264; career category: Program/Project
+  Management CC6867, Monitoring and Evaluation CC6868, Donor Relations/Grants Management
+  CC20966; country: Guatemala C109; theme: Agriculture T4587, Education T4592, Food and
+  Nutrition T4593, Gender T4594, Climate Change and Environment T4588). Every recorded item
+  carried the requested facets. unvacancies' feed ignores `location=` with the site's own
+  place names (the "Guatemala City, Guatemala" feed was the unfiltered one, from New York to
+  Addis Ababa), so that feed was dropped and the repo's comment says so.
+- **P10-D38 DevNetJobs measured before deciding.** robots.txt allows it (`Allow: /`). Its
+  recorded home page (2026-10-14) had 90 listings: 46 pass the ngo title filter, but nearly
+  all are on-site in a named city; 5 say remote (1 already in the ngo database from
+  ReliefWeb) and 3 say "Regional / Global". None in Latin America. Terms: `termsofuse.aspx`.
+- **P10-D39 Company boards for this field are spread over many job systems.** The careers
+  pages of 38 organizations that fit the ngo profile, read through `HttpClient`: Jobvite
+  (Heifer), iCIMS (Pact; ACDI/VOCA by web search), Workday (Room to Read), Zoho Recruit
+  (Fundación Capital), Taleo (CARE), UKG (Rainforest Alliance), ADP (Grameen Foundation,
+  Global Communities, DAI). 13 answered HTTP 403 to our client (TechnoServe, Root Capital,
+  CRS, IDB, Chemonics among them); the rest list jobs on their own pages or load them with
+  JavaScript. IDB's vacancies are on an Impactpool career site, whose terms forbid scraping
+  (P10-R4).
+
+### P10 Decisions (Claude, Step 7: company boards, Workday)
+
+- **P10-D40 `HttpClient.post`** for APIs that only answer a POST: the same checks as a GET
+  (forbidden hosts, robots.txt on its URL, spacing, budget, 429 retries). A recorded POST is
+  keyed by method, URL and JSON body (`request_key`), since Workday's pages differ only in
+  their bodies; the fixture transport looks requests up the same way.
+- **P10-D41 Workday, checked live on two NGO boards (2026-10-15).** A token is
+  `host/tenant/site`; an API template may have several placeholders, filled from the
+  token's parts. The tenant comes from the board page's config (`tenant`, `siteId`): the
+  API's isn't always the host's (Room to Read's host says `osv-rtr`, its API answers only
+  as `osv_rtr`, HTTP 422 otherwise), so detection reads the page once. The list is POSTed 20
+  at a time (at most 50 pages); only the first page's `total` is used. No slug probing: a
+  board's host (wd1, wd3, wd5…) and site name can't be guessed. robots.txt is read per host
+  (Room to Read: `Allow: /RoomToRead/`, the API path not disallowed; myworkdaysite.com
+  answers robots.txt with HTTP 422, which RFC 9309 treats as allowed). No Workday-wide terms
+  for career-site visitors turned up; terms are each employer's.
+- **P10-D42 A description costs a request per job, so only for jobs that need it:** not
+  stored with a description yet, and a title that passes filters.yaml (`Prefilter.
+  title_passes`). The others are stored from the list (a dropped title never reaches
+  Claude) or only marked seen. When the rules change and a job stored without a description
+  now passes, the next fetch gets its details and the store fills in the missing fields
+  (never the source id, title or company). First run of the ngo instance's six boards: 863
+  jobs, 350 requests, 9 minutes; the next run, after loosening its title rules: 80 requests,
+  33 jobs filled in.
+- **P10-D43 An instance's own companies, polled without the seed.** `companies:` in
+  `sources.yaml` (company and careers URL) is detected like seed companies; a watchlist entry
+  for the same company wins, and a company taken off the list goes back to the seed or stops
+  being polled. A new source `company_boards` (method `ats_boards`) polls `companies` and the
+  watchlist; `remoteintech` (`ats_seed`) polls them too, with the seed. At most one is
+  enabled (config error otherwise), so no board is polled twice: off in the repo's config,
+  on in ngo, where remoteintech is off.
+- **P10-D44 The ngo instance's company boards.** Detected: Room to Read, WFP, World Vision
+  International, Habitat for Humanity (its jobs site and its consultancies site) and IRC,
+  all on Workday. World Vision's careers page answers 403 to us, so its careers URL is the
+  board found by a web search; IRC's careers site names no board, so its URL is the board
+  from the Step 1 recordings. Heifer, Pact and ACDI/VOCA are unknown until Jobvite and iCIMS
+  are supported. First filter: 294 of 732 board jobs pass (40%). Overlap with unvacancies is
+  small: one WFP and one World Vision job under both names ("WFP" vs "World Food Programme").
+
+- **P10-D45 Jobvite and iCIMS, checked live on Heifer's and Pact's boards (2026-10-15).**
+  Neither has a public jobs API. Jobvite's board page (`jobs.jobvite.com/<company>/jobs`)
+  links every job with its title; iCIMS's sitemap (`<portal>.icims.com/sitemap.xml`) lists
+  every open job's page, whose slug stands in for the title. Each job page carries a
+  schema.org JobPosting in JSON-LD (iCIMS's in its `?in_iframe=1` view), read by one shared
+  mapper, under P10-D42's rule (only new jobs whose titles pass). Robots: jobs.jobvite.com
+  has no robots.txt; iCIMS disallows only login, referral and candidate paths. Neither is
+  slug-probed. Jobvite's pagination wasn't seen (Heifer has 7 jobs): a board page showing
+  it is logged, and only its first page is read. The iCIMS token pattern skips its CDN
+  hosts, which careers pages also link.
+- **P10-D46 The ngo instance's boards, final:** six Workday (P10-D44), Heifer (Jobvite) and
+  Pact (iCIMS). ACDI/VOCA is off the list: its site answers 403 and both of its iCIMS
+  portals are gone. A third fetch filled in Heifer's "Manager - MELS" after its filters
+  learned "MELS". 312 of 754 board jobs pass the pre-filter; scoring every passing job of
+  the instance is estimated at $0.31 (459 calls, `score --dry-run`).
+
+- **P10-D47 Paid check of the ngo profile (your yes, 2026-10-15):** `calibrate` on 10 job
+  groups, Haiku one posting per call against five per call, $0.012 in all. The reference
+  scores read right: on-site and local-only roles disqualified (8–10), a remote GEF
+  consultancy 60, an M&E consultancy roster 45 (location and pay unclear), a remote English
+  tutoring job 22. Five per call disagreed on hard requirements (up to 22 points, rank
+  agreement 0.81), so the instance stays at one posting per call. Before it, Workday's
+  explicit on-site jobs are dropped by a remote rule in ngo's filters.yaml (your yes to
+  P10-R11): 69 groups, 390 still pass.
+
+### P10 Decisions (Claude, the first real run)
+
+- **P10-D48 What the run did:** 390 calls, one posting each (claude-haiku-5-5), $0.25
+  estimated, 0 failures. The digest (2026-10-16 03:44 UTC) had 2 top matches and 40 with
+  unclear location, and its source health lists `company_boards` with 886 items, which is
+  Step 7's "done when". Most unclear locations are unvacancies jobs: its feed gives only a
+  one-line summary, so eligibility can't be read (deferred, P10-U25).
+- **P10-D49 Deploy docs: an instance's feedback page is optional** (`deploy/README.md`,
+  step 4 and the update note), and ngo doesn't run one (P10-U23).
+
+### P10 Bugs found and fixed (Step 7)
+
+- **P10-B5 The profile skill's paid check couldn't run.** It gave `calibrate` one config;
+  `calibrate` compares, so it needs a reference and at least one more. The skill now
+  passes two (one and five postings per call).
+
+- **P10-B4 `run` would have downloaded the remoteintech seed in an instance that turned it
+  off.** The weekly upkeep took the first `ats_seed` source, enabled or not, so the ngo
+  instance's first `run` would have downloaded the seed and detected 40 tech companies a
+  run. Never happened (ngo has never run `run`). Now the seed is downloaded only while
+  `remoteintech` is the enabled board source.
+
+- **P10-B6 The digest warned about the Claude Code token on the api backend.** ngo's first
+  digest said "CLAUDE_CODE_OAUTH_TOKEN creation date unknown", though the api backend uses no
+  OAuth token. `scoring_status` now takes the backend and warns only for `cli`; `status` and
+  the digest pass it.
+
+### P10 Bugs found and fixed (Step 3)
+
+- **P10-B3 The plain-text report ran its lines together.** The text part of every digest
+  email (and the backlog report's text) read "…Vercel  Strong backend fit…" and "Salary
+  (meets): … USD  Matched: …  Gaps: …  Apply: …" on one line, with no blank line
+  between jobs. `report.txt` places its own newlines, as Jinja does by default, but it was
+  rendered with the HTML template's settings, which trim the newline after every block
+  tag. It now has its own environment with the defaults; the template itself is
+  unchanged. Found while comparing Step 3's output; a test checks one field per line.
+  HTML mail clients show the HTML part, which was never affected.
+
+### P10 For you to review
+
+- ~~**P10-R1 ReliefWeb access.**~~ The API needs a pre-approved `appname` (request form on
+  reliefweb.int; yours to submit), and `api.reliefweb.int/robots.txt` disallows everything
+  while the docs invite API use. Recommended: ask about the robots rule in the appname
+  request, and exempt that host from the robots check once approved. The RSS feeds are no
+  way around it: `reliefweb.int/robots.txt` has `Disallow: /*/rss.xml` for every agent
+  (checked again on 2026-10-15), so `HttpClient` refuses `/jobs/rss.xml`. Robots allows the
+  first page of a filtered `/jobs?...` listing (`&page=` is disallowed), which a scraper
+  could read. Feed side decided: read it anyway (P10-U18); the API part is still open.
+  Closed: no appname (P10-U24).
+- ~~**P10-R2 Remotive in the existing instance.**~~ Decided: read its RSS feed instead
+  (P10-U6).
+- ~~**P10-R3 The robots fix (P10-B1).**~~ Decided: fix it on `phase-9-refactor` (P10-U7).
+- ~~**P10-R4 Idealist and Impactpool:** ask either for permission or an API agreement, or
+  leave them out.~~ Deferred with the scrapers (P10-U25).
+- ~~**P10-R5 unvacancies.org's feed filters aren't documented.**~~ Decided (P10-U19);
+  found (P10-D33).
+- ~~**P10-R6 Choose the sources to build.**~~ Decided (P10-U8).
+- **P10-R7 On the server**, later (P10-U27) (`deploy/README.md`, "Another instance"):
+  copy `instances/ngo` over, `sources check` through compose, install `job-scout@.service`
+  and `job-scout@ngo.timer`, run `systemd-analyze --user verify` on them, and check
+  `list-timers` shows both runs. Rebuild the image first (protego, ReliefWeb, unvacancies,
+  Workday, Jobvite and iCIMS).
+- ~~**P10-R8 Five P9 IDs are defined twice** (P9-B7, B8, U18, D19, D20).~~ Decided: leave
+  them (P10-U11).
+- ~~**P10-R9 Run the profile skill with the real CV** (Step 4's "done when"): put the CV in
+  `instances/ngo/`, start a new Claude Code session in this worktree and ask for it
+  (`/job-scout-profile`). Then review the generated `profile.md`, `filters.yaml` and
+  `sources.yaml`.~~ Done (P10-D36).
+- ~~**P10-R11 Drop Workday's explicit on-site jobs in ngo?** 65 of the 294 board jobs that
+  pass say "In Person" or "Fully Present" in Workday's work-mode field, which the ngo
+  profile disqualifies. A remote rule matching that whole field
+  (`'^(in person|fully present|on-site)$'`) would drop them before scoring (about 65 calls
+  once, a few a day after). The profile skill tightens filters only on the operator's say-so.~~
+  Done (P10-D47).
+- ~~**P10-R12 Jobvite pagination:** only a board's first page is read (P10-D45). If the log
+  ever says a Jobvite board "has more pages", record that board and model its next pages.~~
+  Dropped (P10-U28).
+- ~~**P10-R10 unvacancies job pages:** feed items carry only a one-line summary, so Claude
+  scores them on little more than the title. Each job page has the full notice, work mode,
+  duty station and deadline (robots allows `/jobs/`). Reading them is one request per new
+  job (a few a day per feed): a small scraper, which needs your approval.~~ Deferred with
+  the scrapers (P10-U25).
+- ~~**P10-R13 Your verdict on ngo's first digest** (Step 5's "done when": "a real digest for
+  the second profile looks right to me"):
+  `instances/ngo/data/reports/digest-20261016T034412Z.html`.~~ It looks right (P10-U26).

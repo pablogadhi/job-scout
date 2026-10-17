@@ -101,6 +101,16 @@ class Prefilter:
             return None
         return top * self.per_year[job.salary_period]
 
+    def title_passes(self, source_id: str, title: str) -> bool:
+        """The title rules alone, as `evaluate` applies them: for fetchers that pay a request
+        per job for its details (Workday boards)."""
+        if self.modes.get(source_id, "full") == "remote_mention_only":
+            return True
+        fields = {"title": title}
+        return bool(_first_match(self.title_include, fields)) and not _first_match(
+            self.title_exclude, fields
+        )
+
     def evaluate(self, job: Job) -> Verdict:
         if self.modes.get(job.source_id, "full") == "remote_mention_only":
             text = " ".join(filter(None, [job.title, job.description_text]))

@@ -110,6 +110,7 @@ class AtsMethod(enum.StrEnum):
 class AtsSeed(enum.StrEnum):
     REMOTEINTECH = "remoteintech"
     WATCHLIST = "watchlist"
+    COMPANIES = "companies"  # sources.yaml `companies`: an instance's own organizations
 
 
 def _enum(cls: type[enum.StrEnum]) -> Enum:

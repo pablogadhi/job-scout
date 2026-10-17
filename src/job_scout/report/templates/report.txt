@@ -5,16 +5,19 @@ Generated {{ generated_at }}, threshold {{ settings.min_score }} (watchlist {{ s
 {%- macro job(item) %}
 {%- set r = item.result %}
 
-[{{ item.overall }}] {{ item.title }} - {{ item.company }}{% if item.watchlist %} (watchlist){% endif %}{% if r.four_day_week == "yes" %} (4-day week){% endif %}
+[{{ item.overall }}] {{ item.title }} - {{ item.company }}{% if item.watchlist %} (watchlist){% endif %}{% if r.four_day_week is defined and r.four_day_week == "yes" %} (4-day week){% endif %}
   {{ r.summary }}
-  Location ({{ r.location_eligibility }}): {{ r.location_notes }}
-  Salary ({{ r.salary }}): {{ item.salary or "not stated" }}{% if r.salary_usd_range %}, ~{{ r.salary_usd_range }} USD{% endif %}
+  Location ({{ r.location_eligibility }}):{% if r.location_notes is defined %} {{ r.location_notes }}{% endif %}
+  Salary ({{ r.salary }}): {{ item.salary or "not stated" }}{% if r.salary_usd_range is defined and r.salary_usd_range %}, ~{{ r.salary_usd_range }} USD{% endif %}
 {%- if r.matched_skills %}
   Matched: {{ r.matched_skills | join(", ") }}
 {%- endif %}
 {%- if r.gaps %}
   Gaps: {{ r.gaps | join(", ") }}
 {%- endif %}
+{%- for label, value in item.other_fields %}
+  {{ label }}: {{ value }}
+{%- endfor %}
 {%- if r.red_flags %}
   Red flags: {{ r.red_flags | join(", ") }}
 {%- endif %}

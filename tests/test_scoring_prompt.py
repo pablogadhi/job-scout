@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -13,33 +14,48 @@ from job_scout.fetch.models import Posting
 from job_scout.fetch.store import store_postings
 from job_scout.scoring.planner import BatchPlanner, Limits
 from job_scout.scoring.prompt import PostingInput, render_posting, system_prompt, user_message
-from job_scout.scoring.schema import (
-    SchemaMismatch,
-    ScoreBatch,
-    check_profile_matches,
-    output_json_schema,
-)
+from job_scout.scoring.schema import SchemaMismatch, score_schema
 from tests.conftest import edit
 from tests.scoring_helpers import T0, result_for
 
+FIXTURES = Path(__file__).resolve().parent / "fixtures"
+
 
 def test_score_model_matches_profile(app_config: AppConfig) -> None:
-    check_profile_matches(app_config.profile)
-    ScoreBatch.model_validate({"results": [result_for(1)]})
+    score_schema(app_config.profile).batch.model_validate({"results": [result_for(1)]})
 
 
-def test_profile_drift_is_detected(config_dir: Path) -> None:
+def test_repo_profile_schema_is_unchanged(app_config: AppConfig) -> None:
+    """The schema derived from your profile.md is the one the hand-written model produced,
+    byte for byte (key order included): Claude sees exactly the same output format."""
+    expected = (FIXTURES / "score_schema_repo_profile.json").read_text()
+    assert json.dumps(score_schema(app_config.profile).json_schema(), indent=1) + "\n" == expected
+
+
+def test_a_new_field_is_typed_from_its_example(config_dir: Path) -> None:
     edit(
         config_dir / "profile.md",
         '"red_flags": ["string"],',
-        '"red_flags": ["string"],\n  "vibe": "string",',
+        '"red_flags": ["string"],\n  "vibe": "calm | busy",',
     )
-    with pytest.raises(SchemaMismatch, match="vibe"):
-        check_profile_matches(load_config(config_dir).profile)
+    schema = score_schema(load_config(config_dir).profile)
+    vibe = schema.json_schema()["$defs"]["ScoreResult"]["properties"]["vibe"]
+    assert vibe["enum"] == ["calm", "busy"]
+    schema.batch.model_validate({"results": [result_for(1, vibe="calm")]})
+    with pytest.raises(ValidationError):
+        schema.result.model_validate(result_for(1, vibe="loud"))
+    with pytest.raises(ValidationError):  # declared fields are required
+        schema.result.model_validate(result_for(1))
 
 
-def test_output_schema_has_only_supported_keywords() -> None:
-    schema = output_json_schema()
+def test_core_field_declared_differently_is_rejected(config_dir: Path) -> None:
+    edit(config_dir / "profile.md", '"remote": "yes | no | unclear"', '"remote": "yes | no"')
+    with pytest.raises(SchemaMismatch, match=r"remote \(expected"):
+        score_schema(load_config(config_dir).profile)
+
+
+def test_output_schema_has_only_supported_keywords(app_config: AppConfig) -> None:
+    schema = score_schema(app_config.profile).json_schema()
     text = json.dumps(schema)
     for keyword in ("minimum", "maximum", "minLength", '"title"', '"default"'):
         assert keyword not in text

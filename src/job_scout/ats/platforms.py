@@ -1,22 +1,29 @@
 """Per-ATS knowledge: where a board's token appears in URLs/HTML, and how its jobs map.
 
 API URL templates live in sources.yaml (`ats_platforms`); this module knows the payloads.
-Shapes checked against live responses on 2026-10-12 (Greenhouse also 2026-10-09).
+Shapes checked against live responses on 2026-10-12 (Greenhouse also 2026-10-09; Workday,
+Jobvite and iCIMS 2026-10-15).
 """
 
 from __future__ import annotations
 
 import html
+import json
+import logging
 import re
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any
-from urllib.parse import quote
+from typing import Any, Protocol
+from urllib.parse import quote, unquote
+
+import httpx
 
 from job_scout.fetch.base import labelled_salary
 from job_scout.fetch.models import Posting
 from job_scout.fetch.normalize import Salary, as_float, html_to_text, iso_to_utc
+
+log = logging.getLogger(__name__)
 
 _TOKEN = r"([A-Za-z0-9][A-Za-z0-9_.-]*)"
 # Path segments and subdomains that look like a token but aren't one: apply.workable.com/j/<job>,
@@ -38,23 +45,50 @@ class Board:
     api_url: str
 
 
+class Requests(Protocol):
+    """How a platform reads a board: FetchContext when polling, the Detector when detecting."""
+
+    def get(self, url: str) -> httpx.Response: ...
+    def get_json(self, url: str) -> Any: ...
+    def post_json(self, url: str, body: Any) -> Any: ...
+
+
 @dataclass(frozen=True)
 class Platform:
     name: str
     token_patterns: tuple[re.Pattern[str], ...]
     jobs: Callable[[Any], list[Any]]
     map_job: Callable[[Any, Board], Posting | None]
+    # A board whose API isn't one GET (Workday: POST pages): (requests, api url, first page
+    # only) -> the board's jobs.
+    list_jobs: Callable[[Requests, str, bool], list[Any]] | None = None
+    # Completes a token found in a URL (Workday's API tenant is on the board page).
+    resolve: Callable[[Requests, str], str] | None = None
+    # One more request per job for what the list lacks (Workday: the description).
+    details: Callable[[Requests, Board, Any], Any] | None = None
+    probe: bool = True  # a company slug can be tried as a token
+
+    def read(self, requests: Requests, api: str, *, first_page_only: bool = False) -> list[Any]:
+        if self.list_jobs:
+            return self.list_jobs(requests, api, first_page_only)
+        return self.jobs(requests.get_json(api))
 
 
 def api_url(template: str, token: str) -> str:
-    """Fill the template's single {placeholder} with the URL-quoted token."""
-    return re.sub(r"\{\w+\}", lambda _: quote(token, safe=""), template, count=1)
+    """Fill the template's placeholders with the URL-quoted token: a single placeholder takes
+    the whole token, several take its "/"-separated parts in order (Workday: host/tenant/site)."""
+    placeholders = re.findall(r"\{\w+\}", template)
+    parts = [token] if len(placeholders) == 1 else token.split("/")
+    if len(parts) != len(placeholders):
+        raise ValueError(f"token {token!r} doesn't fit {template}")
+    values = iter(parts)
+    return re.sub(r"\{\w+\}", lambda _: quote(next(values), safe=""), template)
 
 
 def tokens_in(text: str, platform: Platform) -> Iterable[str]:
     for pattern in platform.token_patterns:
         for match in pattern.finditer(text):
-            token = match.group(1).rstrip(".")
+            token = "/".join(group.rstrip(".") for group in match.groups() if group)
             if token.lower() not in _NOT_TOKENS:
                 yield token
 
@@ -296,6 +330,221 @@ def _map_recruitee(job: dict[str, Any], board: Board) -> Posting | None:
     )
 
 
+# --- Workday -----------------------------------------------------------------------------
+# POST https://{host}/wday/cxs/{tenant}/{site}/jobs with {"appliedFacets": {}, "limit": 20,
+# "offset": n, "searchText": ""} -> {"total": N, "jobPostings": [...]}, 20 at most per page;
+# only the first page's total is used. List items have title, externalPath, locationsText
+# ("10 Locations" when there are several) and a relative postedOn. A job's description:
+# GET https://{host}/wday/cxs/{tenant}/{site}{externalPath} -> {"jobPostingInfo": {...}}.
+# The API's tenant isn't always the host's (osv-rtr.wd5.myworkdayjobs.com answers as
+# osv_rtr), so it is read from the board page's config. No slug probing: a board's host
+# (wd1, wd3, wd5 …) and site name can't be guessed.
+
+WORKDAY_PAGE_SIZE = 20
+WORKDAY_MAX_PAGES = 50  # 1,000 jobs
+_WORKDAY_CONFIG = {key: re.compile(rf'\b{key}:\s*"([^"]+)"') for key in ("tenant", "siteId")}
+_WORKDAY_LOCATION_COUNT = re.compile(r"^\d+ Locations?$", re.I)
+
+
+def _workday_jobs(requests: Requests, api: str, first_page_only: bool) -> list[Any]:
+    items: list[Any] = []
+    total: int | None = None
+    for _ in range(WORKDAY_MAX_PAGES):
+        body = {
+            "appliedFacets": {},
+            "limit": WORKDAY_PAGE_SIZE,
+            "offset": len(items),
+            "searchText": "",
+        }
+        payload = requests.post_json(api, body) or {}
+        page = payload.get("jobPostings")
+        if not isinstance(page, list):
+            raise ValueError("expected a list under 'jobPostings'")
+        if total is None:
+            total = int(payload.get("total") or 0)
+        items.extend(page)
+        if first_page_only or not page or len(items) >= total:
+            break
+    return items
+
+
+def _workday_resolve(requests: Requests, token: str) -> str:
+    """host/site or host/recruiting/tenant/site, as found in a URL -> host/tenant/site, from
+    the board page. A complete token comes back as it is."""
+    parts = token.split("/")
+    if len(parts) == 3:
+        return token
+    page = requests.get(f"https://{token}").text
+    tenant, site = (_WORKDAY_CONFIG[key].search(page) for key in ("tenant", "siteId"))
+    if not (tenant and site):
+        raise ValueError(f"no Workday tenant and site on https://{token}")
+    return f"{parts[0]}/{tenant.group(1)}/{site.group(1)}"
+
+
+def _workday_details(requests: Requests, board: Board, job: dict[str, Any]) -> dict[str, Any]:
+    payload = requests.get_json(f"{board.api_url.removesuffix('/jobs')}{job['externalPath']}")
+    return {**job, "detail": (payload or {}).get("jobPostingInfo") or {}}
+
+
+def _workday_page_url(board: Board, path: str) -> str:
+    host, tenant, site = board.token.split("/")
+    recruiting = f"recruiting/{tenant}/" if host.endswith(".myworkdaysite.com") else ""
+    return f"https://{host}/{recruiting}{site}{path}"
+
+
+def _map_workday(job: dict[str, Any], board: Board) -> Posting:
+    """Without details (a job already stored, or a title the filters drop) only the list's
+    fields: no description, and no location when the list just counts them."""
+    info: dict[str, Any] = job.get("detail") or {}
+    path = job["externalPath"]
+    url = info.get("externalUrl") or _workday_page_url(board, path)
+    listed = job.get("locationsText")
+    locations = (
+        [info.get("location"), *(info.get("additionalLocations") or [])]
+        if info
+        else [listed if listed and not _WORKDAY_LOCATION_COUNT.match(listed) else None]
+    )
+    start = info.get("startDate")
+    details = {k: v for k, v in info.items() if k != "jobDescription"}
+    posting = Posting(
+        source_job_id=f"workday:{board.token}:{path.rsplit('_', 1)[-1]}",
+        canonical_url=url,
+        apply_url=url,
+        company=board.company,
+        title=job["title"],
+        location_raw=_join(locations),
+        remote_raw=info.get("remoteType") or job.get("remoteType"),
+        description_text=html_to_text(info.get("jobDescription")),
+        tags=_tags("ats: workday", info.get("timeType")),
+        posted_at=iso_to_utc(f"{start}T00:00:00+00:00") if start else None,
+        raw={**{k: v for k, v in job.items() if k != "detail"}, "detail": details},
+    )
+    return _with_salary(posting, None)
+
+
+# --- Job pages with a schema.org JobPosting (Jobvite, iCIMS) ----------------------------
+# Neither has a public jobs API: the board lists its jobs (Jobvite's jobs page, iCIMS's
+# sitemap), and each job's page carries a JobPosting in JSON-LD (title, description,
+# datePosted, jobLocation, employmentType, sometimes baseSalary and jobLocationType). A list
+# item: {"id", "title", "url" (the job's page), "page" (what to fetch for its JobPosting)}.
+
+_JSON_LD = re.compile(r"<script[^>]*application/ld\+json[^>]*>(.*?)</script>", re.S | re.I)
+_SCHEMA_PERIODS = {"YEAR": "year", "MONTH": "month", "WEEK": "week", "DAY": "day", "HOUR": "hour"}
+
+
+def job_posting_ld(page: str) -> dict[str, Any] | None:
+    """The page's schema.org JobPosting, if it has one."""
+    for block in _JSON_LD.findall(page):
+        try:
+            data = json.loads(block)
+        except ValueError:
+            continue
+        for item in data if isinstance(data, list) else [data]:
+            if isinstance(item, dict) and item.get("@type") == "JobPosting":
+                return item
+    return None
+
+
+def _page_posting(requests: Requests, board: Board, job: dict[str, Any]) -> dict[str, Any]:
+    return {**job, "posting": job_posting_ld(requests.get(job["page"]).text) or {}}
+
+
+def _place(place: Any) -> str | None:
+    address = _dict(place).get("address")
+    if isinstance(address, str):
+        return address
+    address = _dict(address)
+    country = address.get("addressCountry")
+    if isinstance(country, dict):
+        country = _dict(country).get("name")
+    parts = [address.get("addressLocality"), address.get("addressRegion"), country]
+    return ", ".join(str(p) for p in parts if p and p != "UNAVAILABLE") or None
+
+
+def _as_list(value: Any) -> list[Any]:
+    return value if isinstance(value, list) else [value] if value else []
+
+
+def _dict(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _map_job_page(job: dict[str, Any], board: Board) -> Posting:
+    """Without its page's JobPosting (a job already stored, or a title the filters drop) only
+    the list's fields."""
+    ld: dict[str, Any] = job.get("posting") or {}
+    applicants = [
+        f"Remote: {a.get('name')}"
+        for a in _as_list(ld.get("applicantLocationRequirements"))
+        if isinstance(a, dict) and a.get("name")
+    ]
+    salary = _dict(ld.get("baseSalary"))
+    value = _dict(salary.get("value"))
+    description = ld.get("description")
+    posting = Posting(
+        source_job_id=f"{board.ats}:{board.token}:{job['id']}",
+        canonical_url=job["url"],
+        apply_url=job["url"],
+        company=board.company,
+        title=html.unescape(ld.get("title") or job["title"]),
+        location_raw=_join([*(_place(p) for p in _as_list(ld.get("jobLocation"))), *applicants]),
+        remote_raw="remote" if ld.get("jobLocationType") == "TELECOMMUTE" else None,
+        description_text=html_to_text(html.unescape(description)) if description else None,
+        tags=_tags(f"ats: {board.ats}", *_as_list(ld.get("employmentType"))),
+        posted_at=iso_to_utc(ld.get("datePosted")),
+        raw={
+            **{k: v for k, v in job.items() if k != "posting"},
+            "posting": {k: v for k, v in ld.items() if k != "description"},
+        },
+    )
+    return _with_salary(
+        posting,
+        _salary(
+            value.get("minValue") or value.get("value"),
+            value.get("maxValue"),
+            salary.get("currency"),
+            _SCHEMA_PERIODS.get(str(value.get("unitText") or "").upper()),
+        ),
+    )
+
+
+# Jobvite: GET jobs.jobvite.com/{company}/jobs, an HTML page linking every job as
+# <a href="/{company}/job/{id}">Title</a>. Only that page is read: a board long enough for
+# Jobvite's pagination is logged, since its next pages were never seen to model.
+_JOBVITE_LINK = re.compile(r'<a[^>]+href="(/[^/"]+/job/([A-Za-z0-9]+))"[^>]*>\s*([^<]+?)\s*</a>')
+
+
+def _jobvite_jobs(requests: Requests, api: str, first_page_only: bool) -> list[Any]:
+    page = requests.get(api).text
+    if "jv-pagination" in page:
+        log.warning("%s has more pages; only the first is read", api)
+    jobs: dict[str, dict[str, Any]] = {}
+    for path, job_id, title in _JOBVITE_LINK.findall(page):
+        url = f"https://jobs.jobvite.com{path}"
+        jobs.setdefault(
+            job_id, {"id": job_id, "title": html.unescape(title), "url": url, "page": url}
+        )
+    return list(jobs.values())
+
+
+# iCIMS: GET {portal}.icims.com/sitemap.xml lists every open job as
+# https://{portal}.icims.com/jobs/{id}/{slug}/job; the page's JobPosting is in its
+# ?in_iframe=1 view (the page itself only frames it). The slug stands in for the title
+# until then (filters.yaml matches it case-insensitively).
+_ICIMS_JOB = re.compile(r"<loc>\s*(https?://[^<\s]+/jobs/(\d+)/([^/<\s]+)/job)\s*</loc>")
+
+
+def _icims_jobs(requests: Requests, api: str, first_page_only: bool) -> list[Any]:
+    jobs: dict[str, dict[str, Any]] = {}
+    for url, job_id, slug in _ICIMS_JOB.findall(requests.get(api).text):
+        url = html.unescape(url)
+        title = unquote(slug).replace("-", " ")
+        jobs.setdefault(
+            job_id, {"id": job_id, "title": title, "url": url, "page": f"{url}?in_iframe=1"}
+        )
+    return list(jobs.values())
+
+
 def _list(key: str | None) -> Callable[[Any], list[Any]]:
     def jobs(payload: Any) -> list[Any]:
         items = payload if key is None else (payload or {}).get(key)
@@ -349,5 +598,38 @@ PLATFORMS: dict[str, Platform] = {
         _patterns(r"//([A-Za-z0-9-]+)\.recruitee\.com"),
         _list("offers"),
         _map_recruitee,
+    ),
+    "workday": Platform(
+        "workday",
+        # host, then the site (optionally after a locale), or recruiting/<tenant>/<site>
+        _patterns(
+            r"//((?:[a-z0-9-]+\.)?wd\d+\.myworkday(?:jobs|site)\.com)/(?:[a-z]{2}-[a-z]{2}/)?"
+            r"(?!wday/)((?:recruiting/[a-z0-9_-]+/)?[a-z0-9_-]+)"
+        ),
+        _list("jobPostings"),
+        _map_workday,
+        list_jobs=_workday_jobs,
+        resolve=_workday_resolve,
+        details=_workday_details,
+        probe=False,
+    ),
+    "jobvite": Platform(
+        "jobvite",
+        _patterns(r"jobs\.jobvite\.com/(?:careers/)?([A-Za-z0-9_-]+)"),
+        _list(None),
+        _map_job_page,
+        list_jobs=_jobvite_jobs,
+        details=_page_posting,
+        probe=False,
+    ),
+    "icims": Platform(
+        "icims",
+        # careers-<org>.icims.com, not the CDN hosts its pages load from
+        _patterns(r"//((?!cdn\d*\.)[A-Za-z0-9-]+)\.icims\.com"),
+        _list(None),
+        _map_job_page,
+        list_jobs=_icims_jobs,
+        details=_page_posting,
+        probe=False,
     ),
 }

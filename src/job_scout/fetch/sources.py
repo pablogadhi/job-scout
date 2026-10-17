@@ -6,10 +6,12 @@ on 2026-10-12; recorded samples live in tests/fixtures/http/<source_id>/.
 
 from __future__ import annotations
 
+import html
 import math
 import re
 from collections.abc import Iterator
 from typing import Any
+from urllib.parse import parse_qs, urlsplit
 
 from job_scout.ats.fetcher import AtsFetcher
 from job_scout.config.secrets import secret
@@ -140,12 +142,13 @@ def _map_remoteok(item: dict[str, Any]) -> Posting | None:
 
 # --- Working Nomads (JSON, all jobs in one array) -------------------------------------------
 
-WORKINGNOMADS_CATEGORIES = {"Development"}
+
+def _workingnomads_keep(ctx: FetchContext, item: dict[str, Any]) -> bool:
+    wanted = ctx.source.categories
+    return not wanted or item.get("category_name") in wanted
 
 
 def _map_workingnomads(item: dict[str, Any]) -> Posting | None:
-    if item.get("category_name") not in WORKINGNOMADS_CATEGORIES:
-        return None
     match = re.search(r"/job/go/(\d+)", item["url"])
     description = html_to_text(item.get("description"))
     return Posting(
@@ -311,15 +314,58 @@ def _map_findjobit(entry: FeedEntry) -> Posting:
     )
 
 
+# --- ReliefWeb (RSS) -----------------------------------------------------------------------
+
+# The description opens with the duty station ("Country: Kenya") and the organization. A job
+# with no country is in the site's "Remote / Roster / Roving" list.
+_RELIEFWEB_COUNTRY = re.compile(r'<div class="tag country">Country:\s*(?P<country>[^<]+)</div>')
+_RELIEFWEB_JOB_ID = re.compile(r"/job/(?P<id>\d+)")
+
+
+def _map_reliefweb(entry: FeedEntry) -> Posting:
+    country = _RELIEFWEB_COUNTRY.search(entry.get("summary") or "")
+    # The numeric id is the one the ReliefWeb API uses.
+    job_id = _RELIEFWEB_JOB_ID.search(entry["link"])
+    return rss_posting(
+        entry,
+        title=entry["title"],
+        company=entry.get("author"),
+        source_job_id=job_id["id"] if job_id else entry["link"],
+        location_raw=html.unescape(country["country"]) if country else None,
+    )
+
+
+# --- unvacancies.org (RSS) ---------------------------------------------------------------
+
+# Feed filters as the site's partner kit builds them: remote, function, contract_type, grade,
+# location, organization. Items carry only a title, the agency and a one-line summary.
+
+
+def _map_unvacancies(entry: FeedEntry) -> Posting:
+    agency = next((t["term"] for t in entry.get("tags", []) if t.get("term")), None)
+    # The guid is the link without its tracking parameters.
+    url = entry.get("id") or entry["link"]
+    return rss_posting(entry, title=entry["title"], company=agency, canonical_url=url)
+
+
+def _unvacancies_shared(url: str) -> dict[str, Any]:
+    if parse_qs(urlsplit(url).query).get("remote") == ["true"]:
+        return {"remote_raw": "Remote and home-based"}  # the site's label for this filter
+    return {}
+
+
 # --- Registry ------------------------------------------------------------------------------
-# remoteintech polls the company boards found by `ats detect` (job_scout.ats).
+# remoteintech (with its seed) or company_boards (without) polls the company boards found by
+# `ats detect` (job_scout.ats); sources.yaml enables at most one of them.
 
 FETCHERS: dict[str, Fetcher] = {
     "4dayweek": JsonFetcher(
         items=lambda p: p["data"], map_item=_map_fourdayweek, pages=_fourdayweek_pages
     ),
     "remoteok": JsonFetcher(items=lambda p: p, map_item=_map_remoteok),
-    "workingnomads": JsonFetcher(items=lambda p: p, map_item=_map_workingnomads),
+    "workingnomads": JsonFetcher(
+        items=lambda p: p, map_item=_map_workingnomads, keep=_workingnomads_keep
+    ),
     "findwork": JsonFetcher(
         items=lambda p: p["results"], map_item=_map_findwork, pages=_findwork_pages
     ),
@@ -332,5 +378,8 @@ FETCHERS: dict[str, Fetcher] = {
     "remotegamejobs": RssFetcher(_map_remotegamejobs),
     "findjobit": RssFetcher(_map_findjobit),
     "remotive": RssFetcher(_map_remotive),
+    "reliefweb": RssFetcher(_map_reliefweb),
+    "unvacancies": RssFetcher(_map_unvacancies, shared=_unvacancies_shared),
     "remoteintech": AtsFetcher(),
+    "company_boards": AtsFetcher(),
 }

@@ -347,6 +347,11 @@ current one's acceptance check passes.
   on the delivery channel).
 - Feed a handful of my recent judgments into the scoring prompt as examples.
 
+### Phase 10: A second profile
+- Run job-scout for a second person (nonprofits and social development programs, Program
+  Director, Guatemala, remote only, `api` backend) as a separate instance on the same server.
+- Full brief, steps and approval gates: `PLAN-phase-10.md`.
+
 ## 11. Ground rules
 
 - Respect robots.txt and each source's terms in `sources.yaml` (attribution, no reposting,

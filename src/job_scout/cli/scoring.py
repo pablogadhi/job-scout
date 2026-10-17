@@ -114,6 +114,7 @@ def status(ctx: typer.Context) -> None:
             settings.schedule.timezone,
             settings.scoring.cli.token_created,
             utcnow(),
+            backend=settings.scoring.backend,
         )
     console.print(f"backend: {settings.scoring.backend}  model: {settings.scoring.model}")
     console.print(f"pending job groups: {st.pending}  batches in flight: {st.batches_in_flight}")

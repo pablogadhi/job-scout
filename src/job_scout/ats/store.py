@@ -1,4 +1,5 @@
-"""The `ats_companies` table: seed upserts, the watchlist, and what to detect or poll."""
+"""The `ats_companies` table: seed upserts, the watchlist, sources.yaml `companies`, and what
+to detect or poll."""
 
 from __future__ import annotations
 
@@ -13,7 +14,7 @@ from sqlalchemy.orm import Session
 from job_scout.ats.detect import Detection
 from job_scout.ats.platforms import Board, api_url
 from job_scout.ats.seed import SeedCompany
-from job_scout.config.sources import AtsPlatform, WatchlistEntry
+from job_scout.config.sources import AtsPlatform, CompanyEntry, WatchlistEntry
 from job_scout.db.models import AtsCompany, AtsMethod, AtsSeed, AtsStatus
 
 # Inconclusive detections (rate limit, server error, timeout) in a row before giving up.
@@ -55,7 +56,8 @@ def upsert_seed(session: Session, companies: Iterable[SeedCompany], now: datetim
             if row.status == AtsStatus.NOT_IN_SEED:
                 row.status = AtsStatus.PENDING
             changes.updated += 1
-        row.website, row.careers_url = company.website, company.careers_url
+        if row.source != AtsSeed.COMPANIES:  # the instance's own careers URL wins
+            row.website, row.careers_url = company.website, company.careers_url
         row.region, row.remote_policy = company.region, company.remote_policy
         if row.source == AtsSeed.REMOTEINTECH:
             row.company = company.name
@@ -99,6 +101,38 @@ def apply_watchlist(session: Session, entries: Iterable[WatchlistEntry], now: da
     return count
 
 
+def apply_companies(session: Session, entries: Iterable[CompanyEntry]) -> int:
+    """sources.yaml `companies`: an instance's own organizations, detected like seed companies
+    (a seed company of the same name becomes one of them). A watchlist entry for the same
+    company wins. A company removed from the list goes back to the seed, or stops being
+    polled. Run after apply_watchlist, which may hand a company back."""
+    listed = {slugify(e.company): e for e in entries}
+    for row in session.scalars(select(AtsCompany).where(AtsCompany.source == AtsSeed.COMPANIES)):
+        if row.slug not in listed:
+            row.source = AtsSeed.REMOTEINTECH
+            row.method, row.detected_at = None, None
+            row.status = AtsStatus.PENDING if row.seen_in_seed_at else AtsStatus.NOT_IN_SEED
+    for slug, entry in listed.items():
+        row = session.scalars(select(AtsCompany).where(AtsCompany.slug == slug)).one_or_none()
+        if row is None:
+            row = AtsCompany(
+                slug=slug, company=entry.company, status=AtsStatus.PENDING, source=AtsSeed.COMPANIES
+            )
+            session.add(row)
+        elif row.source == AtsSeed.WATCHLIST:
+            continue
+        if row.source != AtsSeed.COMPANIES or row.careers_url != entry.careers_url:
+            row.detected_at = None  # detect (again)
+            if row.status == AtsStatus.NOT_IN_SEED:
+                row.status = AtsStatus.PENDING
+        row.company, row.careers_url, row.source = (
+            entry.company,
+            entry.careers_url,
+            AtsSeed.COMPANIES,
+        )
+    return len(listed)
+
+
 def needing_detection(
     session: Session,
     now: datetime,
@@ -107,9 +141,11 @@ def needing_detection(
     *,
     everything: bool = False,
 ) -> list[AtsCompany]:
-    """Seed companies never detected or detected too long ago (all of them with `everything`)."""
+    """Seed and `companies` entries never detected or detected too long ago (all of them with
+    `everything`)."""
     query = select(AtsCompany).where(
-        AtsCompany.source == AtsSeed.REMOTEINTECH, AtsCompany.status != AtsStatus.NOT_IN_SEED
+        AtsCompany.source.in_([AtsSeed.REMOTEINTECH, AtsSeed.COMPANIES]),
+        AtsCompany.status != AtsStatus.NOT_IN_SEED,
     )
     if not everything:
         stale = now - timedelta(days=redetect_days)
