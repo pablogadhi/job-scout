@@ -6,9 +6,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from job_scout.config import AppConfig, load_config
-from job_scout.config.settings import ApiLimits, CliLimits
+from job_scout.config.settings import CliLimits
 from job_scout.db.groups import load_groups
-from job_scout.db.models import Job, Source
+from job_scout.db.models import Backend, Job, ScoringMode, Source
 from job_scout.fetch.models import Posting
 from job_scout.fetch.store import store_postings
 from job_scout.scoring.planner import BatchPlanner, Limits
@@ -158,13 +158,10 @@ def test_planner_output_budget() -> None:
     assert [len(c) for c in BatchPlanner(limits, 0).plan(_postings(*[10] * 60))] == [26, 26, 8]
 
 
-def test_limits_from_settings() -> None:
-    cli = CliLimits(
-        postings_per_call=7,
-        max_calls=3,
-        max_input_tokens_per_call=900,
-        max_output_tokens_per_call=80,
-    )
-    assert Limits.from_settings(cli) == Limits(7, 3, 900, 80)
-    api = ApiLimits(postings_per_call=2, max_calls=11, use_batches_api=True)
-    assert Limits.from_settings(api) == Limits(2, 11, None, None)
+def test_limits_from_settings(app_config: AppConfig) -> None:
+    daily = app_config.settings.scoring.limits(ScoringMode.DAILY, Backend.CLI)
+    assert isinstance(daily, CliLimits)
+    assert Limits.from_settings(daily) == Limits(20, 5, 60_000, 12_000)
+    assert Limits.from_settings(
+        app_config.settings.scoring.limits(ScoringMode.BACKLOG, Backend.API)
+    ) == Limits(1, 10_000, None, None)

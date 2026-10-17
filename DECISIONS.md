@@ -1509,8 +1509,9 @@ features planned; Phase 7 (Tier 2 scrapers) and the Findwork key are still open.
   Their `max_calls: 10` broke `test_limits_from_settings`.
 - **P9-D29 How:** tests load `tests/fixtures/config/`, a pinned `settings.yaml` (the
   committed values before P9-U25, comments dropped) plus symlinks to the real
-  `sources.yaml`, `filters.yaml` and `profile.md`. `test_limits_from_settings` now builds
-  its own limits. `test_repo_config_is_valid` still loads the real `config/` but no longer
+  `sources.yaml`, `filters.yaml` and `profile.md`. `test_limits_from_settings` reads the
+  pinned settings, as it read the real ones before (the user: a test that builds its own
+  limits checks nothing). `test_repo_config_is_valid` still loads the real `config/` but no longer
   asserts its backend and model. The deploy tests override `app_config` with the real
   config, since the timer, ports and paths must match what gets deployed. Checked by
   bumping every number and flipping every flag in a copy of `config/settings.yaml`: 15
