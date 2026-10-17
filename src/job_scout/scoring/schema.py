@@ -67,9 +67,20 @@ def _annotation(field: OutputField) -> Any:
         base = Literal[field.values]  # pyright: ignore[reportInvalidTypeForm]
     elif field.kind == "list":
         base = list[str]
+    elif field.kind == "objects":
+        fields: dict[str, Any] = {f.name: (_annotation(f), ...) for f in field.fields}
+        item = create_model(
+            _model_name(field.name), __config__=ConfigDict(extra="forbid"), **fields
+        )
+        base = list[item]  # pyright: ignore[reportInvalidTypeForm]
     else:
         base = {"bool": bool, "int": int, "float": float, "str": str}[field.kind]
     return base | None if field.nullable else base
+
+
+def _model_name(field_name: str) -> str:
+    """`requirements` -> `RequirementsItem`: the item's name in the JSON schema's $defs."""
+    return "".join(part.capitalize() for part in field_name.split("_")) + "Item"
 
 
 # Keywords structured outputs rejects; Pydantic still enforces them when parsing the reply.

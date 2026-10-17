@@ -69,7 +69,8 @@ instance; an instance's files never go into git.
   everywhere, so typos fail at startup with exit code 2. `profile.md` is validated for its
   `## Output format` JSON block and hashed (SHA-256 of the raw bytes = `profile_hash`). Each
   output field is typed from its example (`"a | b"`, text, "… or null", a list, a number,
-  true/false; `profile.py`); the core fields (`CORE_OUTPUT_KEYS`) must be there.
+  true/false, or a list holding one example object of flat, non-null fields; `profile.py`);
+  the core fields (`CORE_OUTPUT_KEYS`) must be there.
   `secrets.py`: `secret(environ, name)`, the one way to read a secret.
 - `src/job_scout/db/`: SQLAlchemy 2.0 typed ORM models (`models.py`), engine with SQLite
   pragmas (`__init__.py`), `UTCDateTime` type (`types.py`). `groups.py`: duplicate groups

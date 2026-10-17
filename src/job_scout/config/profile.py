@@ -5,6 +5,8 @@ field's type comes from its example value:
 - `"a | b | c"`: one of those values
 - `"text"`: a string; `null`, or a string ending in "or null", allows null
 - `["text"]`: a list of strings
+- `[{"name": "text", "level": "a | b"}]`: a list of objects with those fields, each typed
+  like a top-level field but never a list, an object or null
 - `true`/`false`, a whole number, a decimal: a boolean, an integer, a number
 The core fields (`CORE_OUTPUT_KEYS`) must be there; the code relies on them. Every other
 field is the profile's own and is shown as it is.
@@ -15,7 +17,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Literal
 
@@ -38,7 +40,7 @@ CORE_OUTPUT_KEYS = frozenset(
 _OUTPUT_BLOCK = re.compile(r"^## Output format\b.*?^```json\n(.*?)^```", re.DOTALL | re.MULTILINE)
 _OR_NULL = re.compile(r"\bor null\s*$")
 
-FieldKind = Literal["bool", "int", "float", "str", "enum", "list"]
+FieldKind = Literal["bool", "int", "float", "str", "enum", "list", "objects"]
 
 
 class ProfileError(ValueError):
@@ -53,6 +55,7 @@ class OutputField:
     kind: FieldKind
     values: tuple[str, ...] = ()  # kind "enum": the allowed values, in the profile's order
     nullable: bool = False
+    fields: tuple[OutputField, ...] = ()  # kind "objects": each object's fields, in order
 
 
 @dataclass(frozen=True)
@@ -82,10 +85,27 @@ def output_field(name: str, example: Any) -> OutputField:
         return OutputField(name, "str", nullable=bool(_OR_NULL.search(example)))
     if isinstance(example, list) and all(isinstance(v, str) for v in example):
         return OutputField(name, "list")
+    if isinstance(example, list) and len(example) == 1 and isinstance(example[0], dict):
+        if not example[0]:
+            raise ProfileError(f"{name}: the example object has no fields")
+        return OutputField(
+            name, "objects", fields=tuple(_object_field(name, k, v) for k, v in example[0].items())
+        )
     raise ProfileError(
         f"{name}: unsupported example {example!r} (use text, 'a | b', a list of text, "
-        "true/false, a number or null)"
+        "a list holding one example object, true/false, a number or null)"
     )
+
+
+def _object_field(parent: str, name: str, example: Any) -> OutputField:
+    # Flat and never null: each nullable field is a union, and the API limits those.
+    field = output_field(f"{parent}.{name}", example)
+    if field.kind in ("list", "objects") or field.nullable:
+        raise ProfileError(
+            f"{parent}.{name}: fields of a list of objects are text, 'a | b', true/false "
+            "or a number, never a list, an object or null"
+        )
+    return replace(field, name=name)
 
 
 def load_profile(path: Path) -> Profile:

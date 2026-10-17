@@ -66,8 +66,21 @@ def field_text(value: Any) -> str | None:
     if isinstance(value, bool):
         return "yes" if value else "no"
     if isinstance(value, list):
-        return ", ".join(str(v) for v in value)
+        return ("; " if any(isinstance(v, dict) for v in value) else ", ").join(
+            _object_text(v) if isinstance(v, dict) else str(v) for v in value
+        )
     return str(value)
+
+
+def _object_text(item: dict[str, Any]) -> str:
+    """One object of a list of objects: its first value, then the others in brackets
+    (a true flag by its name, a false one left out)."""
+    values = list(item.items())
+    if not values:
+        return ""
+    rest = [k if v is True else str(v) for k, v in values[1:] if v is not False and v != ""]
+    head = str(values[0][1])
+    return f"{head} ({', '.join(rest)})" if rest else head
 
 
 @dataclass(frozen=True)

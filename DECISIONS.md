@@ -1992,3 +1992,41 @@ your approval between steps.
 - ~~**P10-R13 Your verdict on ngo's first digest** (Step 5's "done when": "a real digest for
   the second profile looks right to me"):
   `instances/ngo/data/reports/digest-20261016T034412Z.html`.~~ It looks right (P10-U26).
+
+## Phase 12: A points score computed by code (branch `phase-12-points-score`)
+
+The plan was approved on 2026-10-16. Claude extracts facts from each posting (requirements
+with match levels, signals with quotes, seniority, role, remote, location, salary), and
+the code computes the score from a points table in `config/scoring.yaml`. Phase 11 (ATS
+boards from postings) stays deferred and keeps its number. Work goes step by step, with
+your approval between steps.
+
+### P12 Your decisions
+
+- **P12-U1 A score whose calculation is visible.** You: "I feel like the scoring right now
+  is a bit arbitrary... Can you think of a more deterministic way to do the scoring, one
+  where it's clear how the score was calculated because of the things found in the job
+  posting?" Measured on the local DB: jobs with the same skill fit, seniority fit, salary
+  and location verdicts got scores from 28 to 60 (8 jobs at 4/4, unlisted, unclear) and
+  35 to 66 (15 jobs at 3/4).
+- **P12-U2 Start after Phase 10,** from its branch. The branch starts at `d4b2bc0`
+  (`phase-10`), which already contains `phase-9-refactor`, so the planned merge of the
+  phase-9 fixes wasn't needed.
+- **P12-U3 Every stored score is redone once** under the new format (an approved backlog
+  run), instead of keeping Claude's old numbers alongside.
+- **P12-U4 After a weight change, an old unreported job reaches a digest only if it was
+  first seen within the last 14 days,** so a change can't flood a digest.
+
+### P12 Decisions (Claude, Step 1: a list-of-objects field)
+
+- **P12-D1 Step 1 adds only the new field type;** the core fields move later. Removing
+  `overall_score`, `disqualified` and `disqualify_reason` from the core before
+  `profile.md` is rewritten would fail every command at startup, so that change lands
+  with the profile rewrite.
+- **P12-D2 A list of objects is declared by one example object:** `[{"skill": "text",
+  "match": "core | missing", "primary": false}]`. Its fields are typed like top-level
+  ones but must be flat and never null: a nullable field is a union, and the API limits
+  unions in a schema. Each becomes a nested model (`extra="forbid"`, named
+  `<Field>Item` in the JSON schema's `$defs`), so Claude can't add or drop keys. In
+  reports and the CSV, an item reads "first value (the others)", with a true flag shown
+  by its name and a false one left out: "M&E (required, primary)".

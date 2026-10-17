@@ -4,11 +4,13 @@ storage, the reports and the CSV export. Synthetic profile and postings only."""
 import csv
 import json
 import re
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import pytest
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -16,11 +18,12 @@ from job_scout.config import AppConfig, load_config
 from job_scout.config.profile import OutputField, ProfileError, load_profile, output_field
 from job_scout.db.models import Score, ScoreStatus, ScoringMode
 from job_scout.report.build import make_backlog_report
-from job_scout.report.data import extra_output_fields
+from job_scout.report.data import extra_output_fields, field_text
 from job_scout.report.export import export_csv
 from job_scout.scoring.backends.base import CallRequest, CallResult
 from job_scout.scoring.planner import Limits
 from job_scout.scoring.runner import RunOptions, ScoringRunner
+from job_scout.scoring.schema import score_schema
 from tests.scoring_helpers import FakeScorer, seed_jobs
 
 NOW = datetime(2026, 10, 15, 14, 0, tzinfo=UTC)
@@ -164,16 +167,73 @@ def test_scored_reported_and_exported(
         (True, OutputField("f", "bool")),
         (0, OutputField("f", "int")),
         (0.5, OutputField("f", "float")),
+        (
+            [{"skill": "text", "match": "core | missing", "primary": False, "weight": 1}],
+            OutputField(
+                "f",
+                "objects",
+                fields=(
+                    OutputField("skill", "str"),
+                    OutputField("match", "enum", ("core", "missing")),
+                    OutputField("primary", "bool"),
+                    OutputField("weight", "int"),
+                ),
+            ),
+        ),
     ],
 )
 def test_field_types_come_from_examples(example: Any, expected: OutputField) -> None:
     assert output_field("f", example) == expected
 
 
-@pytest.mark.parametrize("example", [{"nested": "object"}, [1, 2], "a | | b", "a | a"])
+@pytest.mark.parametrize(
+    "example",
+    [
+        {"nested": "object"},
+        [1, 2],
+        "a | | b",
+        "a | a",
+        [{}],
+        [{"a": "text"}, {"a": "text"}],  # one example object, not several
+    ],
+)
 def test_unsupported_examples_fail_at_load(example: Any) -> None:
     with pytest.raises(ProfileError, match="f:"):
         output_field("f", example)
+
+
+@pytest.mark.parametrize("inner", [["text"], [{"x": "text"}], {"x": "text"}, None, "text or null"])
+def test_objects_hold_only_flat_non_null_fields(inner: Any) -> None:
+    with pytest.raises(ProfileError, match=r"f\.inner: "):
+        output_field("f", [{"name": "text", "inner": inner}])
+
+
+def test_a_list_of_objects_is_validated_and_shown(program_config: AppConfig) -> None:
+    profile = replace(
+        program_config.profile,
+        sha256="objects-profile",
+        output_fields=(
+            *program_config.profile.output_fields,
+            output_field(
+                "requirements",
+                [{"skill": "text", "importance": "required | nice-to-have", "primary": False}],
+            ),
+        ),
+    )
+    schema = score_schema(profile)
+    item = {"skill": "M&E", "importance": "required", "primary": True}
+    data, _ = schema.parse(program_result(1, requirements=[item]))
+    assert data["requirements"] == [item]
+    for bad in ({**item, "extra": 1}, {**item, "importance": "maybe"}, {"skill": "M&E"}):
+        with pytest.raises(ValidationError):
+            schema.parse(program_result(1, requirements=[bad]))
+    defs = schema.json_schema()["$defs"]["RequirementsItem"]
+    assert defs["additionalProperties"] is False
+    assert defs["required"] == ["skill", "importance", "primary"]
+
+    assert field_text(
+        [item, {"skill": "Spanish", "importance": "nice-to-have", "primary": False}]
+    ) == ("M&E (required, primary); Spanish (nice-to-have)")
 
 
 def test_core_fields_are_required_and_job_id_is_ours(config_dir: Path) -> None:
