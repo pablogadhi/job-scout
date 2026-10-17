@@ -47,10 +47,12 @@ sources.yaml                  filters.yaml     profile.md
 
 ## 4. Config files (already written, in `config/`)
 
-- **`config/profile.md`**: my profile and the scoring instructions. Used verbatim as the
-  system prompt for scoring. Contains hard requirements, preferences, skills with depth
-  levels, gap-handling rules, the gaming interest, the scoring rubric, and the **exact JSON
-  output schema**. Derive the Pydantic model for the score from that schema.
+- **`config/profile.md`**: my profile and what to report about a posting. Used verbatim as
+  the system prompt for scoring. Contains hard requirements, signals, skills with depth
+  levels and match levels, the gaming interest, seniority levels, and the **exact JSON
+  output schema**. Derive the Pydantic model for the reply from that schema.
+- **`config/scoring.yaml`** (Phase 12): the points for the facts Claude reports, caps and
+  disqualify rules. The code computes the score with it; Claude never sees it.
 - **`config/filters.yaml`**: code-side pre-filters (title include/exclude, remote, location
   allow/exclude, salary floor, dedupe key). All regexes are case-insensitive.
   Rule: anything ambiguous passes through to Claude.
@@ -144,6 +146,10 @@ BatchPlanner       # packs pending postings into calls using the active mode's l
 - **One output schema**: `{"results": [ScoreResult, ...]}` where `ScoreResult` matches the
   schema in `profile.md` plus a `job_id` field. Generate the JSON schema from the Pydantic model.
   The same schema works for 1 posting or 50.
+- **The score is computed, not given** (Phase 12): Claude reports facts (requirements with
+  match levels, signals with quotes, seniority, role, location, pay) and the code turns them
+  into `overall_score`, `disqualified` and a breakdown with `config/scoring.yaml`. Changing
+  a weight re-ranks the stored scores without calling Claude.
 - **Validation**: every job id sent must come back exactly once. Missing ids go back to
   `pending`; unknown ids are discarded and logged.
 - **Failure handling**: on refusal, truncated output or schema validation failure, split the
@@ -226,8 +232,9 @@ reports show scores from both backends together; `explain` shows which one score
 ## 8. Digest
 
 - Contents: new jobs scored since the last digest with `overall_score >= 60` (configurable),
-  sorted by score. Each item: title, company, score, one-line summary, salary, location
-  notes, 4-day-week flag, matched skills, gaps, red flags, apply link.
+  sorted by score. Each item: title, company, score and how it was computed, one-line
+  summary, salary, location notes, badges (4-day week, gaming), requirements matched or
+  missing, signals, red flags, apply link.
 - Separate sections: **Watchlist matches** first (any score above disqualified),
   then **Top matches**, then a collapsed **Unclear location** list (score ≥ 60 but
   `location_eligibility: unclear`), since those are worth a manual look.
@@ -351,6 +358,13 @@ current one's acceptance check passes.
 - Run job-scout for a second person (nonprofits and social development programs, Program
   Director, Guatemala, remote only, `api` backend) as a separate instance on the same server.
 - Full brief, steps and approval gates: `PLAN-phase-10.md`.
+
+### Phase 12: A points score
+- Claude extracts facts; the code computes the score from `config/scoring.yaml`, and the
+  digest, `explain` and the CSV show how it was reached. `simulate` tries a changed table
+  on the stored scores for free; `rescore --legacy` re-extracts jobs scored before points.
+- Both profiles converted (the second one's `scoring.yaml` written with me).
+- CLI calls carry 15 postings (20 dropped a result with the longer replies).
 
 ## 11. Ground rules
 
