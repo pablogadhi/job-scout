@@ -1,1 +1,96 @@
-../../../config/filters.yaml
+# Pinned for the tests, like settings.yaml here: the real file is config/filters.yaml, which
+# you edit at will. Tests assert against this copy; change it only with the tests.
+# Hard pre-filters applied in code BEFORE any LLM call.
+# Rule of thumb: only drop postings that are CLEARLY out. Anything ambiguous goes to Claude,
+# which has the full profile (profile.md) and can judge context that regexes can't.
+# All patterns are case-insensitive regexes matched against title, location and description.
+
+titles:
+  # A posting must match at least one of these in its title.
+  include_any:
+    - '\bsoftware (engineer|developer)\b'
+    - '\b(back[- ]?end|full[- ]?stack)\b'
+    - '\b(python|django|typescript|node(\.js)?)\b.*\b(engineer|developer)\b'
+    - '\b(devops|dev ops|devsecops)\b'
+    - '\b(site reliability|sre)\b'
+    - '\b(infrastructure|platform|cloud|systems) engineer\b'
+    - '\b(kubernetes|k8s|cloud[- ]native|gitops)\b.*\b(engineer|specialist|developer)\b'
+    - '\b(observability|reliability|production) engineer\b'
+    - '\b(tech(nical)? lead|lead engineer|lead developer)\b'
+    - '\bproduct engineer\b'
+    # Game studios often say "programmer" instead of "engineer"
+    - '\bprogrammer\b'
+    - '\b(live ?ops|online services|game server|build|release) engineer\b'
+    # Secondary role types (Claude scores these lower)
+    - '\bdata (engineer|platform engineer)\b'
+    - '\b(iot|internet of things)\b'
+    - '\b(embedded|firmware)\b.*\b(engineer|developer)\b'
+    # Titles without engineer/developer that still name the work ("Team Lead, Software
+    # Development", "Software Development Specialist II"), unless they're management or sales.
+    - '^(?!.*\b(manager|director|head of|vp|vice president|sales|alliances?)\b).*\bsoftware\b'
+    - '^(?!.*\b(manager|director|head of|vp|vice president|sales|alliances?)\b).*\b(engineering|software|python|backend|platform|infrastructure) (team )?lead\b'
+    # Architects: the role often fits a senior IC who owns architecture.
+    - '\b(software|platform|infrastructure|cloud|technical) architect\b'
+    # AI labs' name for engineers ("Member of Technical Staff, ML Platform")
+    - '\bmember of (the )?technical staff\b'
+    # Spanish and Portuguese titles
+    - '\b(desarrollador|programador|desenvolvedor)\b'
+    # Any other engineer/developer title: ambiguous ones ("Forward Deployed Engineer",
+    # "Staff Engineer", "Senior Integration Engineer") go to Claude rather than being
+    # dropped. The exclude list below still removes the clear non-fits.
+    - '\b(engineer|developer)s?\b'
+  # Drop if the title matches any of these.
+  exclude_any:
+    - '\b(junior|jr\.?|intern(ship)?|entry[- ]level|graduate|trainee|apprentice)\b'
+    - '\b(sales|solutions?|support|field|pre[- ]?sales|customer) engineer\b'
+    - '\b(qa|quality assurance|test automation|sdet)\b'
+    - '\b(mechanical|electrical|civil|chemical)\b'
+    - '\bhardware engineer\b'
+    - '\b(asic|fpga|rtl|physical design)\b'
+    - '\b(recruiter|designer|product manager|marketing|account)\b'
+
+remote:
+  # Drop if the posting clearly is not fully remote.
+  exclude_any:
+    - '\bhybrid\b'
+    - '\bon[- ]?site\b'
+    - '\bin[- ]office\b'
+    - '\b\d\s*days? (a|per) week in (the )?office\b'
+    - '\brelocation (is )?required\b'
+
+location:
+  # If any of these match, the posting passes the location filter outright.
+  allow_any:
+    - '\b(worldwide|anywhere|global(ly)?|international)\b'
+    - '\b(latam|latin america|south america|central america)\b'
+    - '\bamericas\b'
+    - '\bguatemala\b'
+  # If none of the allow patterns matched and one of these does, drop the posting.
+  # Drop only when it's explicit that the applicant must be in a place that excludes
+  # Guatemala: "USA only", "US/Canada only", "EU applicants only", "must reside in the US",
+  # "US citizenship required". A bare place ("USA", "Remote - US", "Canada (remote)", "EMEA")
+  # is unclear and goes to Claude, which reads the description (profile.md, location
+  # eligibility). "North America only" is not in the place list: Guatemala is in North America.
+  # "US" must be upper case, so "join us only ..." doesn't match.
+  exclude_any:
+    # "<place> only", "<place>/<place> only", "<place> residents only", "US-only"
+    - '\b((?-i:US|U\.S\.)|usa|u\.s\.a\.|united states|uk|u\.k\.|united kingdom|britain|ireland|eu|europe|european union|canada|australia|new zealand|india|germany|france|spain|portugal|netherlands|poland|emea|apac|asia|africa|brazil|argentina|mexico|colombia|chile)(\s*(/|,|&|\band\b|\bor\b)\s*((?-i:US|U\.S\.)|usa|u\.s\.a\.|united states|uk|u\.k\.|united kingdom|britain|ireland|eu|europe|european union|canada|australia|new zealand|india|germany|france|spain|portugal|netherlands|poland|emea|apac|asia|africa|brazil|argentina|mexico|colombia|chile))*\)?[\s-]+((based|applicants?|residents?|citizens?|candidates?)\s+)?only\b'
+    - '\bmust (be located|be based|reside|live|be a resident) in (the )?((?-i:US|U\.S\.)|usa|u\.s\.a\.|united states|uk|u\.k\.|united kingdom|britain|ireland|eu|europe|european union|canada|australia|new zealand|india|germany|france|spain|portugal|netherlands|poland|emea|apac|asia|africa|brazil|argentina|mexico|colombia|chile)(?![a-z])'
+    - '(?<!\bno )\b((?-i:US|U\.S\.)|usa|united states|uk|canada|eu) (work authori[sz]ation|work permit|citizenship|citizens?|persons?|residency)( is)? required\b'
+    - '(?<!\bno )\b(security clearance|clearance required)\b'
+  # Everything else ("Remote", "North America", "US time zones", no location) goes to Claude.
+  on_unclear: pass_to_llm
+
+salary:
+  currency: USD
+  min_annual: 120000
+  hours_per_year: 2080      # hourly → annual
+  months_per_year: 12       # monthly → annual
+  # Drop only when a range is stated AND its maximum is below min_annual.
+  rule: drop_if_max_below_min
+  on_unlisted: pass_to_llm
+
+dedupe:
+  # Postings with the same key are treated as the same job. No URL in the key: the same job
+  # cross-posted on two boards has two different URLs.
+  key: [company_normalized, title_normalized]

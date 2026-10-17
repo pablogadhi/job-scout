@@ -1519,7 +1519,7 @@ features planned; Phase 7 (Tier 2 scrapers) and the Findwork key are still open.
 - **P9-R5 Tests still read the real `sources.yaml`, `filters.yaml` and `profile.md`.** Some
   assert their content (the watchlist's first entry is Canonical, Findwork's `max_pages`
   is 5, the dedupe key). Not pinned yet, since the user asked about settings; left for
-  review.
+  review. Resolved in Phase 12 (P12-D27).
 - **P9-U27 Findjobit reads every job, not only the Guatemala feed.** The user: "What if
   eventually some posts a remote job in another country though. Even if we don't find any
   right now, doesn't mean that there won't be any". A poster ticks the countries a job is
@@ -2236,3 +2236,27 @@ Its files are in the gitignored `instances/ngo/config/`; nothing personal is log
   again. The legacy rescore's estimate went from $0.92 to $1.20.
 - **P12-U14 No rescore on the laptop.** You: "I'll do that with the server data, we only
   have a subset here". The laptop's 19 new-format scores are from P12-D25.
+- **P12-U15 The digest no longer lists "Language: english-or-spanish".** You chose it (it
+  showed on every job). `UNLISTED_FIELDS` in `report/data.py` keeps a field out of the
+  reports but in the CSV; `language` is its only member, since a required other language
+  already shows as the disqualify reason.
+- **P12-D27 All five test config files are pinned copies** (resolves P9-R5): `sources.yaml`,
+  `filters.yaml` and `profile.md` in `tests/fixtures/config/` were links to `config/`, now
+  copies with a header saying so. The tests asserting their content (the watchlist's first
+  entry, tier-1 defaults, the dedupe key, a skipped reason) read the pinned copies, and so
+  do the backend test's schema and the HTTP fixture generator (the regenerated fixtures
+  came out identical). Only `test_repo_config_is_valid` (your files load and agree, as at
+  startup, now including the scoring.yaml check), the deploy checks and the live email
+  test read `config/`. Checked: the suite passes with the real `sources.yaml` edited. A
+  new source now goes into the pinned `sources.yaml` too (CLAUDE.md says so).
+- **P12-D28 Repeatability: the same API config twice on 10 job groups** ($0.024). 7 of 10
+  within 10 points, mean difference 11.7, rank agreement 0.675. Same value per field:
+  salary, language and seniority 1.0; remote, location and employment type 0.9; role 0.8;
+  signals overlap 0.9; requirement names overlap 0.38 (mostly spelling and granularity:
+  "Kubernetes (K8s)" vs "Kubernetes"). Where the facts agreed the scores agreed within 1–7
+  points. The two big swings were hard-requirement calls on ambiguous postings: "REMOTE (US
+  or Canada)" with no residency rule in the text (unclear vs fail, 60 vs 20), and a posting
+  tagged remote whose body says "This is a hybrid role" (unclear vs no, 72 vs 20). Two more
+  differed by an empty requirements list (worth half the skill points) against a few vague
+  ones ("APIs", "Databases"): 36 vs 53. API output was about 1,910 tokens per posting,
+  thinking included.

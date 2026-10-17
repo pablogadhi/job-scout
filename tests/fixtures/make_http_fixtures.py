@@ -1292,7 +1292,7 @@ def job_boards_html(templates: dict[str, str]) -> dict[str, Any]:
 
 
 def main() -> None:
-    sources = load_config(ROOT / "config").sources
+    sources = load_config(ROOT / "tests" / "fixtures" / "config").sources  # the pinned copy
     endpoints = {s.id: s.endpoints for s in sources.sources}
     responses = {
         "4dayweek": fourdayweek(endpoints["4dayweek"][0]),

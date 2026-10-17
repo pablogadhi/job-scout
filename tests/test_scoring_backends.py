@@ -23,14 +23,14 @@ from job_scout.scoring.backends.api import (
 from job_scout.scoring.backends.base import CallRequest
 from job_scout.scoring.backends.cli import CliScorer, parse_output, subprocess_env
 from job_scout.scoring.schema import score_schema
-from tests.conftest import REPO_CONFIG
+from tests.conftest import TEST_CONFIG
 from tests.scoring_helpers import result_for
 
 REQUEST = CallRequest(
     system="SYSTEM PROMPT",
     user="Score the following 1 job posting.",
     job_ids=(7,),
-    schema=score_schema(load_profile(REPO_CONFIG / "profile.md")).json_schema(),
+    schema=score_schema(load_profile(TEST_CONFIG / "profile.md")).json_schema(),
     max_output_tokens=1_900,
 )
 HAIKU = ModelPrices(input=1.0, output=5.0, cache_write=1.25, cache_read=0.1)

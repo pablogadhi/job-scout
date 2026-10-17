@@ -8,23 +8,31 @@ from job_scout.config import ConfigError, load_config, load_settings_only
 from job_scout.config.points import PointsTable
 from job_scout.config.settings import ApiLimits
 from job_scout.db.models import Backend, ScoringMode
+from job_scout.scoring.points import check_points
 from tests.conftest import REPO_CONFIG, TEST_CONFIG, edit
 
 
 def test_repo_config_is_valid() -> None:
+    """Your config/ loads and its files agree, as at startup; its content is yours to change."""
     config = load_config(REPO_CONFIG)
+    check_points(config.points, config.profile)
     assert (
         config.profile.sha256
         == hashlib.sha256((REPO_CONFIG / "profile.md").read_bytes()).hexdigest()
     )
+
+
+def test_test_config_is_valid() -> None:
+    config = load_config(TEST_CONFIG)
+    check_points(config.points, config.profile)
     assert {"requirements", "signals"} <= config.profile.output_example.keys()
     assert config.sources.watchlist[0].company == "Canonical"
-    yaml_table = yaml.safe_load((REPO_CONFIG / "scoring.yaml").read_text(encoding="utf-8"))
+    yaml_table = yaml.safe_load((TEST_CONFIG / "scoring.yaml").read_text(encoding="utf-8"))
     PointsTable.model_validate(yaml_table)
 
 
 def test_only_tier_1_enabled_by_default() -> None:
-    sources = load_config(REPO_CONFIG).sources
+    sources = load_config(TEST_CONFIG).sources
     enabled = sources.enabled()
     assert {s.tier for s in enabled} == {1}
     assert "remoteok" in {s.id for s in enabled}
@@ -40,11 +48,11 @@ def test_enabled_flag_overrides_tier(config_dir: Path) -> None:
 
 
 def test_dedupe_key_has_no_url() -> None:
-    assert load_config(REPO_CONFIG).filters.dedupe.key == ["company_normalized", "title_normalized"]
+    assert load_config(TEST_CONFIG).filters.dedupe.key == ["company_normalized", "title_normalized"]
 
 
 def test_skipped_reasons_with_commas_are_whole() -> None:
-    skipped = {s.name: s.reason for s in load_config(REPO_CONFIG).sources.skipped}
+    skipped = {s.name: s.reason for s in load_config(TEST_CONFIG).sources.skipped}
     assert skipped["FoundRole"] == "job-search tool, not a job board"
 
 

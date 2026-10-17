@@ -140,10 +140,11 @@ instance; an instance's files never go into git.
   sandbox mounts it read-only (a protected path that can't be exempted): tests read it,
   and Claude edits it with its file tools, which ask you first.
 - `tests/`: pytest; `conftest.py` clears `JOB_SCOUT_*` env vars. Tests load
-  `tests/fixtures/config/` (`app_config`, and a writable copy via `config_dir`): a pinned
-  `settings.yaml`, plus links to the real `sources.yaml`, `filters.yaml` and `profile.md`.
-  Editing `config/settings.yaml` never breaks a test, except the deploy checks, which read
-  the real settings on purpose. A test that needs a setting value asserts the pinned one.
+  `tests/fixtures/config/` (`app_config`, and a writable copy via `config_dir`): pinned
+  copies of all five config files. Editing `config/` never breaks a test, except
+  `test_repo_config_is_valid` (your files must load and agree, as at startup) and the deploy
+  checks, which read the real settings on purpose. A test that needs a config value asserts
+  the pinned one.
 
 ## Conventions
 
@@ -164,7 +165,8 @@ instance; an instance's files never go into git.
   recorded, so its jobs carry over. The below-threshold list is never recorded.
 - **A profile's own output fields** (beyond the core ones and those the templates name,
   `NAMED_FIELDS` in `report/data.py`) are listed generically in the digest and backlog
-  report ("Travel required: frequent") and get a CSV column each. Templates guard every
+  report ("Travel required: frequent") and get a CSV column each; `UNLISTED_FIELDS` only
+  get the column (`language`, whose only use is a disqualify reason). Templates guard every
   non-core field with `is defined` (they use `StrictUndefined`).
 - **Reports are untrusted-content HTML:** Jinja2 autoescape stays on, links go through the
   `http_url` filter (http/https only), and CSV cells that start like a formula get a `'`.
@@ -248,8 +250,9 @@ instance; an instance's files never go into git.
   RSS icon or link, `/feed`, `/rss.xml`, per-search feeds), then an API, then HTML. For
   each way in, check robots.txt for that exact URL (protego, our User-Agent) and say plainly
   in the recommendation which ones it allows and which it denies.
-- **Adding an API/RSS source:** add it to `sources.yaml`, write a mapper in `fetch/sources.py`,
-  register it in `FETCHERS`. Study the live shape with
+- **Adding an API/RSS source:** add it to `sources.yaml` (and the pinned
+  `tests/fixtures/config/sources.yaml`, which the fixture generator and the tests read), write
+  a mapper in `fetch/sources.py`, register it in `FETCHERS`. Study the live shape with
   `job-scout fetch --source ID --force --record data/recordings` (hidden flag; trims each
   payload to 5 items), then add synthetic responses with the same structure to
   `tests/fixtures/make_http_fixtures.py` and run it. Tests replay them with

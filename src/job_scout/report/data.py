@@ -58,6 +58,10 @@ NAMED_FIELDS = (
     }
 )
 
+# Fields the reports leave out but the CSV keeps: `language` only decides a disqualification,
+# whose reason the score's breakdown already shows.
+UNLISTED_FIELDS = {"language"}
+
 
 def extra_output_fields(profile: Profile) -> list[str]:
     """The profile's fields the reports have no named place for, in the profile's order."""
@@ -190,7 +194,7 @@ class ReportItem:
         return [
             (field_label(name), text)
             for name, value in extra.items()
-            if name not in NAMED_FIELDS
+            if name not in NAMED_FIELDS | UNLISTED_FIELDS
             and not (self.breakdown and _objects(value))  # shown as requirements and signals
             and (text := field_text(value)) is not None
         ]

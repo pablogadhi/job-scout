@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from job_scout.config import AppConfig, load_config
 from job_scout.db.models import Digest, DigestKind, Job, Score, ScoreStatus
 from job_scout.report.build import make_backlog_report, make_digest
-from job_scout.report.data import build_sections, scored_items
+from job_scout.report.data import build_sections, extra_output_fields, scored_items
 from job_scout.report.export import export_csv, snapshot_sqlite
 from job_scout.report.mailer import TOKEN_ENV
 from job_scout.report.render import http_url
@@ -209,14 +209,13 @@ def test_plain_text_has_one_field_per_line(
     make_digest(config, session_factory, now=NOW, environ={TOKEN_ENV: "tok"}, smtp_factory=FakeSmtp)
     lines = body_of(FakeSmtp.instances[0].messages[0], "plain").splitlines()
     card = lines[lines.index("[80] Senior Backend Engineer 1 - Company 1") :]
-    assert [line.split(":")[0] for line in card[1:10]] == [
+    assert [line.split(":")[0] for line in card[1:9]] == [
         "  Synthetic posting that fits.",
         "  Score",
         "  Location (pass)",
         "  Salary (unlisted)",
         "  Skills",
         "  Signals",
-        "  Language",  # the profile's own field
         "  Red flags",
         "  Apply",
     ]
@@ -318,9 +317,10 @@ def test_export_csv_and_snapshot(
     score_jobs(session_factory, config, {first: {"score": 77}})
     path = tmp_path / "out" / "jobs.csv"
     with session_factory() as session:
-        assert export_csv(session, path) == 2
+        assert export_csv(session, path, extra_output_fields(config.profile)) == 2
     rows = list(csv.DictReader(path.open()))
     assert rows[0]["score"] == "77" and rows[0]["prefilter"] == "passed"
+    assert rows[0]["language"] == "english-or-spanish"  # left out of the reports, kept here
     assert rows[0]["summary"] == "Synthetic posting that fits."
     assert rows[1]["title"] == "'=HYPERLINK(1)" and rows[1]["score"] == ""
 

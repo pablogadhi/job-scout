@@ -1,6 +1,6 @@
 # Settings for the offline tests, pinned so tests don't depend on config/settings.yaml,
 # which you edit at will. Values here are what the tests assert against; anything left out
-# takes the built-in default. The other config files link to the real ones in config/.
+# takes the built-in default. The other config files here are pinned copies too.
 scoring:
   backend: cli
   model: claude-haiku-5-5
