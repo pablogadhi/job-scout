@@ -1495,3 +1495,7 @@ features planned; Phase 7 (Tier 2 scrapers) and the Findwork key are still open.
   are capped at 1,900 + 8,000 thinking headroom = 9,900 output tokens, ~6× a typical
   reply, so that cap stays too. The spend-guard test's budget went from $0.004 to $0.01
   so it still admits part of the batch.
+- **P9-D28 The cost estimate is 1,100 output tokens per posting, not 1,500.** The user ran
+  the check on the server: the API backlog averaged 1,115 output tokens per posting over
+  2,767 single-posting requests. That's the backend that bills, so it replaces the CLI
+  figure (CLI calls hold 20 postings and ran longer per posting).
