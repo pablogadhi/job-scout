@@ -1470,3 +1470,14 @@ features planned; Phase 7 (Tier 2 scrapers) and the Findwork key are still open.
   ("25%+", monthly or weekly trips) is a mild negative, never a disqualifier. Occasional
   travel never makes a role hybrid. Editing the profile re-scores nothing: jobs already
   scored keep their old travel flags.
+- **P9-U23 Descriptions are cut at 20,000 characters instead of 6,000.** Measured on the
+  local DB: 732 of 1,711 groups that passed the pre-filter were longer than 6,000, and in
+  150 of them the salary, in 143 a location rule, appeared only in the part that was cut
+  (one US-only security clearance among them). At 20,000 only the longest few are cut.
+  Extra input is about 400k tokens for the whole backlog, ~$0.04 on Haiku 5.5.
+- **P9-D26 The CLI's call limits stay as they are.** A packing simulation of the 1,531
+  pending groups: per posting the median stays ~1,570 tokens, p90 goes from 1,660 to
+  2,420, the max from 2,000 to 5,500. Calls stay at 20 postings (77 calls either way);
+  the median call grows from 32k to 36k input tokens and the largest reaches 59k, so the
+  60k input budget splits just one call. Whether a near-60k call behaves (time, results
+  returned) needs one live CLI call; left for the user's approval.

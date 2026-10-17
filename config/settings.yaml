@@ -17,7 +17,7 @@ scoring:
   # Override: JOB_SCOUT_SCORING__EFFORT=low
   effort: null
 
-  description_max_chars: 6000 # posting description is truncated to this before scoring
+  description_max_chars: 20000 # posting description is truncated to this before scoring
 
   # Batching. A "call" is one CLI invocation or one API request.
   # Postings are packed into a call until ANY limit is reached:
