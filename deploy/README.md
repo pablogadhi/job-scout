@@ -105,7 +105,7 @@ the repo root:
 
 | Path | What |
 | --- | --- |
-| `instances/<name>/config/` | its four config files (`settings.yaml`, `sources.yaml`, `filters.yaml`, `profile.md`) |
+| `instances/<name>/config/` | its five config files (`settings.yaml`, `sources.yaml`, `filters.yaml`, `profile.md`, `scoring.yaml`) |
 | `instances/<name>/data/` | its database, reports, exports |
 | `instances/<name>/.env` | its secrets and recipient, plus the three compose settings below (mode 600) |
 
