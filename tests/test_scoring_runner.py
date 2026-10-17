@@ -3,7 +3,7 @@
 import json
 import re
 from dataclasses import replace
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
 
@@ -294,6 +294,24 @@ def test_rescore_queues_top_and_recent(
             for s in session.scalars(select(Score).where(Score.status == ScoreStatus.PENDING))
         }
     assert top_two == set(ids[-2:])
+
+
+def test_a_rescore_keeps_when_the_job_was_first_scored(
+    app_config: AppConfig, session_factory: sessionmaker[Session]
+) -> None:
+    (job_id,) = seed_jobs(session_factory, 1)
+    runner(app_config, session_factory, FakeScorer()).run(options())
+    first = datetime(2026, 10, 1, tzinfo=UTC)
+    with session_factory.begin() as session:
+        score = session.scalars(select(Score).where(Score.job_id == job_id)).one()
+        assert score.first_scored_at == score.scored_at
+        score.first_scored_at = score.scored_at = first
+        assert requeue_for_rescore(session, app_config.profile.sha256, top=1) == 1
+    runner(app_config, session_factory, FakeScorer()).run(options())
+    with session_factory() as session:
+        score = session.scalars(select(Score).where(Score.job_id == job_id)).one()
+        assert score.first_scored_at == first and score.scored_at is not None
+        assert score.scored_at > first
 
 
 def test_editing_the_profile_rescores_nothing(

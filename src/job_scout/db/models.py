@@ -276,11 +276,16 @@ class Score(Base):
     backend: Mapped[Backend | None]  # set once a backend has scored it
     model: Mapped[str | None] = mapped_column(String(100))
     result: Mapped[dict[str, Any] | None]
+    # Computed from `result` and config/scoring.yaml (scoring/points.py); a result in the
+    # format before points keeps Claude's own number here and has no breakdown.
     overall_score: Mapped[int | None] = mapped_column(index=True)
     disqualified: Mapped[bool | None] = mapped_column(Boolean)
+    breakdown: Mapped[dict[str, Any] | None]
+    score_fingerprint: Mapped[str | None] = mapped_column(String(64))  # the table it used
     status: Mapped[ScoreStatus] = mapped_column(default=ScoreStatus.PENDING, index=True)
     attempts: Mapped[int] = mapped_column(default=0, server_default="0")  # failed calls so far
     scored_at: Mapped[datetime | None]
+    first_scored_at: Mapped[datetime | None]  # kept when the job is scored again
     call_id: Mapped[int | None] = mapped_column(ForeignKey("scoring_calls.id"), index=True)
     input_tokens: Mapped[int | None]
     output_tokens: Mapped[int | None]

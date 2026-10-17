@@ -1,0 +1,118 @@
+# Pinned for the tests, like settings.yaml here: the real table is config/scoring.yaml.
+# Points for the facts Claude extracts from each posting (profile.md, "Output format").
+# The code adds them up; Claude never sees this file. Changing a number re-ranks every
+# stored score on the next command, without calling Claude.
+#
+# Score = the components added up, then the caps, then the disqualify rules, kept in 0-100.
+# Each enum map must list every value its field allows, so a new value in profile.md
+# needs a decision here. `explain JOB_ID` shows how a job's score was reached.
+
+components:
+  skills:
+    kind: requirements
+    field: requirements
+    item: skill
+    evidence: evidence
+    max: 40
+    # Share matched = sum(weight x match) / sum(weight) over the listed requirements.
+    weight:
+      subfield: importance
+      values: {required: 3, nice-to-have: 1}
+    match:
+      subfield: match
+      values: {core: 1.0, solid: 0.85, equivalent: 0.75, partial: 0.4, missing: 0.0}
+    if_empty: 0.5 # nothing listed: count half
+    primary_missing: # the role's main language or platform isn't his
+      subfield: primary
+      when_match: [missing]
+      component_max: 10
+      total_max: 45
+      reason: main stack missing
+
+  seniority:
+    kind: enum
+    field: seniority_level
+    points: {intern: 0, junior: 0, mid: 6, senior: 20, lead: 20, staff: 15, principal: 8, unstated: 14}
+
+  role:
+    kind: enum
+    field: role_category
+    points:
+      backend: 15
+      full-stack: 15
+      infrastructure: 15
+      devops: 15
+      platform: 15
+      sre: 15
+      tech-lead: 15
+      data-engineering: 5 # secondary targets
+      iot: 5
+      embedded: 5
+      engineering-manager: 0 # not of interest (also capped below)
+      frontend: 0
+      mobile: 0
+      other: 0
+
+  salary:
+    kind: enum
+    field: salary
+    points: {meets: 10, unlisted: 6, below: 0}
+
+  location:
+    kind: enum
+    field: location_eligibility
+    points: {pass: 5, unclear: 1, fail: 0}
+
+  remote:
+    kind: enum
+    field: remote
+    points: {"yes": 0, unclear: -5, "no": 0} # "no" is disqualified below
+
+  signals:
+    kind: signals
+    field: signals
+    subfield: signal
+    evidence: evidence
+    min: -20
+    max: 20
+    points:
+      four_day_week: {points: 12, label: 4-day week, badge: true}
+      async_first: {points: 4, label: async-first}
+      flexible_hours: {points: 3, label: flexible hours}
+      pto_minimum: {points: 3, label: PTO minimum}
+      sabbatical: 2
+      after_hours_limits: {points: 3, label: after-hours limits}
+      sustainable_pace: {points: 3, label: sustainable pace}
+      remote_handbook: {points: 2, label: remote handbook}
+      spanish_valued: {points: 3, label: Spanish}
+      domain_fintech: {points: 2, label: fintech}
+      domain_healthcare: {points: 2, label: healthcare}
+      domain_crm: {points: 1, label: CRM}
+      domain_b2b_platforms: {points: 1, label: B2B platforms}
+      gaming_role_fit: {points: 8, label: gaming, badge: true}
+      fast_paced: {points: -4, label: fast-paced}
+      hustle: -6
+      long_hours: {points: -8, label: long hours}
+      many_hats_early_stage: {points: -4, label: many hats (early stage)}
+      high_intensity: {points: -5, label: high intensity}
+      we_are_a_family: {points: -3, label: '"we are a family"'}
+      growth_at_all_costs: {points: -4, label: growth at all costs}
+      pays_local_rates: {points: -5, label: pays local rates}
+      frequent_travel: {points: -3, label: frequent travel} # beyond ~6 trips a year
+
+caps:
+  - when: {role_category: [frontend, mobile, engineering-manager]}
+    max: 45
+    reason: not a target role type
+  - when: {seniority_level: [intern, junior, mid]}
+    max: 49
+    reason: below target seniority
+
+disqualify:
+  - when: {location_eligibility: [fail]}
+    reason: location not open to Guatemala
+  - when: {remote: ["no"]}
+    reason: not fully remote
+  - when: {salary: [below]}
+    reason: salary below the minimum
+disqualified_max: 20

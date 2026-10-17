@@ -305,6 +305,8 @@ class ScoringRunner:
             score.model = self.scorer.model
             score.call_id = scoring_call.id
             score.scored_at = now
+            if score.first_scored_at is None:
+                score.first_scored_at = now
             score.input_tokens = result.input_tokens // share if result.input_tokens else None
             score.output_tokens = result.output_tokens // share if result.output_tokens else None
             score.cost_usd_estimate = result.cost_usd / share if result.cost_usd else None

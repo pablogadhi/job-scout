@@ -2030,3 +2030,45 @@ your approval between steps.
   `<Field>Item` in the JSON schema's `$defs`), so Claude can't add or drop keys. In
   reports and the CSV, an item reads "first value (the others)", with a true flag shown
   by its name and a false one left out: "M&E (required, primary)".
+
+### P12 Decisions (Claude, Step 2: the points engine)
+
+- **P12-D3 The engine works on output fields, not on engineering terms,** so the second
+  profile can use it with its own vocabulary. `config/scoring.yaml` has three component
+  kinds: `enum` (points per value), `requirements` (`max` × the weighted share matched,
+  over a list of objects) and `signals` (points per signal, summed and clamped), plus
+  `caps` and `disqualify` rules over enum fields. Each enum map must list every value its
+  field allows, so a new value in profile.md forces a decision on its points;
+  `check_points` (exit code 2 once it's wired) names what's missing or unknown.
+- **P12-D4 First weights,** chosen to land where the old rubric's bands did: skills 40
+  (required weighs 3, nice-to-have 1; core 1, solid 0.85, equivalent 0.75, partial 0.4,
+  missing 0; nothing listed counts half), seniority 20 (senior and lead 20, staff 15,
+  unstated 14, principal 8, mid 6), role 15 (target roles 15; data engineering, IoT and
+  embedded 5, replacing the "subtract 15" rule), salary 10 (meets 10, unlisted 6),
+  location 5 (pass 5, unclear 1), remote unclear -5, signals clamped to ±20 (4-day week
+  +12, gaming +8, async-first +4, long hours -8, frequent travel -3...). Caps: frontend,
+  mobile and manager roles 45; intern to mid 49; a missing main stack 45 (and skills at
+  most 10). A disqualify rule (location fail, not remote, salary below) caps at 20. A
+  good fit with no signals scores 80 and 85+ needs signals; the tests pin these bands.
+- **P12-D5 Values the table doesn't know count 0 with a note** instead of failing: a
+  stored result can outlive a vocabulary change in profile.md. A result without a field
+  the table reads (the format before points) gets no breakdown and keeps Claude's number.
+- **P12-D6 Rounding is half up** (`floor(x + 0.5)`), not Python's half-to-even `round()`,
+  so 2.5 points is always 3.
+- **P12-D7 The fingerprint** is a hash of `SCORING_VERSION` and the parsed table, so YAML
+  comments and layout never trigger a recompute. `refresh` recomputes scored rows whose
+  fingerprint differs; old-format rows get the fingerprint too, so they're looked at again
+  only when the table changes.
+- **P12-D8 New `scores` columns:** `breakdown` (JSON, null for old-format rows),
+  `score_fingerprint`, and `first_scored_at`, which a rescore keeps (`scored_at` changes
+  with every rescore). The migration back-fills `first_scored_at` from `scored_at`. The
+  runner sets it from now on; computing the score at ingest comes with Step 3.
+- **P12-D9 `tests/fixtures/config/scoring.yaml` is a pinned copy,** like the test
+  settings, so the archetype tests don't follow your weight edits;
+  `test_repo_config_is_valid` checks your real table validates.
+
+### P12 Bugs found and fixed (Step 2)
+
+- **P12-B1 `test_one_score_per_job_migration_keeps_the_best_row` wrote old-schema rows
+  through the ORM,** so any new `scores` column broke it. It inserts only the columns that
+  schema had now, as does the new back-fill test.

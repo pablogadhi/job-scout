@@ -97,7 +97,10 @@ instance; an instance's files never go into git.
   `prompt.py` (the one prompt builder), `planner.py` (packs calls),
   `queue.py` (what needs a score), `runner.py` (a scoring run, both backends, Batches API),
   `backends/cli.py` (`claude -p`), `backends/api.py` (Anthropic SDK), `calibrate.py`,
-  `status.py`.
+  `status.py`, `points.py` (the score computed from a stored result and the points table
+  in `config/scoring.yaml`, modelled in `config/points.py`: `check_points` against the
+  profile, `compute` → `Breakdown`, `fingerprint`, `refresh` of stored scores; Phase 12,
+  not wired into the commands yet).
 - `src/job_scout/ats/`: company job boards. `seed.py` (remoteintech tarball, filtered by
   `seed_regions`/`seed_remote_policies`), `platforms.py` (per-ATS token patterns and job
   mappers; Workday's tokens are `host/tenant/site`, its list is POSTed a page at a time and

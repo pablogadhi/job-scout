@@ -6,7 +6,7 @@ from alembic import command
 from alembic.autogenerate import compare_metadata
 from alembic.config import Config
 from alembic.migration import MigrationContext
-from sqlalchemy import Engine, inspect, text
+from sqlalchemy import Engine, insert, inspect, text
 from sqlalchemy.exc import StatementError
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -80,6 +80,27 @@ def test_foreign_keys_enforced(session_factory: sessionmaker[Session]) -> None:
             session.commit()
 
 
+def _insert_old_scores(
+    sf: sessionmaker[Session], rows: list[tuple[int, str, ScoreStatus, datetime | None]]
+) -> None:
+    """Score rows in an older schema: only the columns it had (the model has more now)."""
+    with sf.begin() as session:
+        session.execute(
+            insert(Base.metadata.tables["scores"]),
+            [
+                {
+                    "job_id": job_id,
+                    "profile_hash": profile_hash,
+                    "status": status,
+                    "scored_at": scored_at,
+                    "attempts": 0,
+                    "created_at": datetime(2026, 9, 30, tzinfo=UTC),
+                }
+                for job_id, profile_hash, status, scored_at in rows
+            ],
+        )
+
+
 def test_one_score_per_job_migration_keeps_the_best_row(tmp_path: Path) -> None:
     """Rows from older profiles collapse to one per job: the latest real score, else the
     newest pending row."""
@@ -92,22 +113,15 @@ def test_one_score_per_job_migration_keeps_the_best_row(tmp_path: Path) -> None:
     sf = make_session_factory(engine)
     a, b, c = seed_jobs(sf, 3)
     t0 = datetime(2026, 10, 1, tzinfo=UTC)
-    with sf.begin() as session:
-        session.add_all(
-            [
-                Score(job_id=a, profile_hash="h1", status=ScoreStatus.SCORED, scored_at=t0),
-                Score(job_id=a, profile_hash="h2", status=ScoreStatus.PENDING),
-                Score(job_id=b, profile_hash="h1", status=ScoreStatus.SCORED, scored_at=t0),
-                Score(
-                    job_id=b,
-                    profile_hash="h2",
-                    status=ScoreStatus.SCORED,
-                    scored_at=t0 + timedelta(days=1),
-                ),
-                Score(job_id=c, profile_hash="h1", status=ScoreStatus.PENDING),
-                Score(job_id=c, profile_hash="h2", status=ScoreStatus.PENDING),
-            ]
-        )
+    rows = [
+        (a, "h1", ScoreStatus.SCORED, t0),
+        (a, "h2", ScoreStatus.PENDING, None),
+        (b, "h1", ScoreStatus.SCORED, t0),
+        (b, "h2", ScoreStatus.SCORED, t0 + timedelta(days=1)),
+        (c, "h1", ScoreStatus.PENDING, None),
+        (c, "h2", ScoreStatus.PENDING, None),
+    ]
+    _insert_old_scores(sf, rows)
     engine.dispose()
     command.upgrade(cfg, "head")
     engine = make_engine(url)
@@ -119,3 +133,24 @@ def test_one_score_per_job_migration_keeps_the_best_row(tmp_path: Path) -> None:
         b: ("h2", ScoreStatus.SCORED),  # the latest score
         c: ("h2", ScoreStatus.PENDING),  # no score: the newest pending row
     }
+
+
+def test_points_migration_keeps_when_a_job_was_first_scored(tmp_path: Path) -> None:
+    url = f"sqlite:///{tmp_path / 'old.db'}"
+    cfg = Config(str(ROOT / "alembic.ini"))
+    cfg.set_main_option("sqlalchemy.url", url)
+    cfg.attributes["configure_logger"] = False
+    command.upgrade(cfg, "cae2ac4fd837")  # before the points score
+    engine = make_engine(url)
+    sf = make_session_factory(engine)
+    a, b = seed_jobs(sf, 2)
+    t0 = datetime(2026, 10, 1, tzinfo=UTC)
+    _insert_old_scores(sf, [(a, "h", ScoreStatus.SCORED, t0), (b, "h", ScoreStatus.PENDING, None)])
+    engine.dispose()
+    command.upgrade(cfg, "head")
+    engine = make_engine(url)
+    with make_session_factory(engine)() as session:
+        first = {s.job_id: s.first_scored_at for s in session.query(Score)}
+        assert all(s.breakdown is None for s in session.query(Score))
+    engine.dispose()
+    assert first == {a: t0, b: None}

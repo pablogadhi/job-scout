@@ -2,8 +2,10 @@ import hashlib
 from pathlib import Path
 
 import pytest
+import yaml
 
 from job_scout.config import ConfigError, load_config, load_settings_only
+from job_scout.config.points import PointsTable
 from job_scout.config.settings import ApiLimits
 from job_scout.db.models import Backend, ScoringMode
 from tests.conftest import REPO_CONFIG, TEST_CONFIG, edit
@@ -17,6 +19,8 @@ def test_repo_config_is_valid() -> None:
     )
     assert {"overall_score", "location_eligibility"} <= config.profile.output_example.keys()
     assert config.sources.watchlist[0].company == "Canonical"
+    yaml_table = yaml.safe_load((REPO_CONFIG / "scoring.yaml").read_text(encoding="utf-8"))
+    PointsTable.model_validate(yaml_table)
 
 
 def test_only_tier_1_enabled_by_default() -> None:
