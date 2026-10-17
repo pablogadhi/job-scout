@@ -2274,3 +2274,8 @@ Its files are in the gitignored `instances/ngo/config/`; nothing personal is log
   below the digest threshold; they come from how a list of options is split ("Java, Kotlin
   or Go" as one requirement matched or as several missing). API output stayed at about
   1,860 tokens per posting.
+- **P12-U17 The ngo profile and the profile skill's template get the same rules** (you said
+  yes): the posting's text wins over a listing's remote tags (for ngo, keeping its exception:
+  hybrid with the office in Guatemala is still remote), and requirements are only those the
+  posting states, with an empty list when it states none. The ngo files aren't in git;
+  copy its `profile.md` to the server.

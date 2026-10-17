@@ -34,8 +34,10 @@ set that field to `no`, `fail` or `below`; the code disqualifies the posting. Wh
 fail.
 
 1. **Fully remote** (`remote`). "Home-based" means remote. Hybrid, on-site, "remote but must
-   come in X days", or relocation required → `no`. {Travel rule, e.g.: remote with travel to
-   project sites is still remote; travel goes in `travel_required`.}
+   come in X days", or relocation required → `no`. The posting's own text wins over a
+   listing's labels and tags: a job tagged remote whose description says "this is a hybrid
+   role" is `no`. {Travel rule, e.g.: remote with travel to project sites is still remote;
+   travel goes in `travel_required`.}
 2. **Location eligibility: {where they can work from}** (`location_eligibility`).
    - Pass: {worldwide, anywhere, global, the region, the country by name, "any country where …"}.
    - Fail: restricted to a country or region that excludes {country}: {examples: "US only",
@@ -105,8 +107,10 @@ They target {levels}; {level} is a stretch.
 
 ## How to extract
 
-- `requirements`: the posting's requirements that are skills, experience, languages or
-  qualifications, at most 12, required ones first. One entry per distinct requirement.
+- `requirements`: the requirements the posting states, as named skills, experience,
+  languages or qualifications, at most 12, required ones first. One entry per distinct
+  requirement. Don't turn its duties into broad areas ({examples for this field}); if it
+  states no requirements, return an empty list.
   `importance` is `nice-to-have` when the posting says "desirable", "an asset", "preferred" or
   "nice to have", otherwise `required`. `evidence` quotes the posting in 12 words or fewer.
 - `signals`: see "Signals" above. An empty list is fine.
