@@ -1,6 +1,7 @@
 """Applying the pre-filter to stored jobs: groups, re-evaluation, report."""
 
 from collections.abc import Callable
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
@@ -81,9 +82,7 @@ def test_rule_change_and_rerun_reevaluate(
     stricter = app_config.filters.model_copy(
         update={"salary": app_config.filters.salary.model_copy(update={"min_annual": 130_000})}
     )
-    changed = AppConfig(
-        app_config.config_dir, app_config.settings, app_config.sources, stricter, app_config.profile
-    )
+    changed = replace(app_config, filters=stricter)
     assert run_prefilter(changed, session_factory).evaluated == 1
 
 

@@ -1,4 +1,4 @@
-"""Loading and validation of the four files in config/. Any typo fails loudly at startup."""
+"""Loading and validation of the five files in config/. Any typo fails loudly at startup."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ import yaml
 from pydantic import BaseModel, ValidationError
 
 from job_scout.config.filters import FiltersConfig
+from job_scout.config.points import PointsTable
 from job_scout.config.profile import Profile, ProfileError, load_profile
 from job_scout.config.settings import Settings, load_settings
 from job_scout.config.sources import SourceConfig, SourcesConfig
@@ -18,11 +19,13 @@ __all__ = [
     "AppConfig",
     "ConfigError",
     "FiltersConfig",
+    "PointsTable",
     "Profile",
     "Settings",
     "SourceConfig",
     "SourcesConfig",
     "load_config",
+    "load_points",
     "load_settings_only",
 ]
 
@@ -40,6 +43,7 @@ class AppConfig:
     sources: SourcesConfig
     filters: FiltersConfig
     profile: Profile
+    points: PointsTable
 
 
 def _describe(exc: Exception) -> str:
@@ -74,10 +78,16 @@ def load_settings_only(
         raise ConfigError(f"{path} / JOB_SCOUT_* env / flags: {_describe(exc)}") from exc
 
 
+def load_points(path: Path) -> PointsTable:
+    """A points table (scoring.yaml, or a candidate for `simulate --table`)."""
+    return _load_yaml_model(PointsTable, path)
+
+
 def load_config(
     config_dir: Path = DEFAULT_CONFIG_DIR, overrides: dict[str, Any] | None = None
 ) -> AppConfig:
-    """Load and validate settings.yaml, sources.yaml, filters.yaml and profile.md."""
+    """Load and validate settings.yaml, sources.yaml, filters.yaml, profile.md and
+    scoring.yaml."""
     profile_path = config_dir / "profile.md"
     try:
         profile = load_profile(profile_path)
@@ -89,4 +99,5 @@ def load_config(
         sources=_load_yaml_model(SourcesConfig, config_dir / "sources.yaml"),
         filters=_load_yaml_model(FiltersConfig, config_dir / "filters.yaml"),
         profile=profile,
+        points=load_points(config_dir / "scoring.yaml"),
     )

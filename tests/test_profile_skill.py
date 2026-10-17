@@ -5,8 +5,10 @@ import re
 import pytest
 import yaml
 
+from job_scout.config import load_points
 from job_scout.config.filters import FiltersConfig
 from job_scout.config.profile import load_profile
+from job_scout.scoring.points import check_points
 from job_scout.scoring.schema import score_schema
 from tests.conftest import ROOT
 
@@ -25,6 +27,7 @@ def test_profile_template_declares_the_core_fields() -> None:
     fields = {f.name for f in profile.output_fields}
     assert {"travel_required", "contract_length", "contract_type"} <= fields
     score_schema(profile)  # core fields declared as the code types them
+    check_points(load_points(SKILL / "references" / "scoring-template.yaml"), profile)
 
 
 def example_filters() -> FiltersConfig:

@@ -18,6 +18,8 @@ from job_scout.config import DEFAULT_CONFIG_DIR, AppConfig, ConfigError, load_co
 from job_scout.db import SchemaOutdated, check_schema, make_engine, make_session_factory
 from job_scout.db.models import Backend
 from job_scout.log import setup_logging
+from job_scout.scoring.points import PointsMismatch, check_points, fingerprint
+from job_scout.scoring.points import refresh as refresh_scores
 from job_scout.scoring.schema import SchemaMismatch, score_schema
 
 log = logging.getLogger(__name__)
@@ -71,18 +73,34 @@ def load(ctx: typer.Context, overrides: dict[str, Any] | None = None) -> AppConf
         score_schema(config.profile)  # the output format's core fields match the code
     except SchemaMismatch as exc:
         raise fail(f"{config.profile.path}: {exc}", label="config error") from exc
+    try:
+        check_points(config.points, config.profile)  # scoring.yaml names only real fields
+    except PointsMismatch as exc:
+        raise fail(f"{config.config_dir / 'scoring.yaml'}: {exc}", label="config error") from exc
     setup_logging(config.settings.log_level)
     log.debug("config loaded from %s (profile %s)", state.config_dir, config.profile.sha256[:12])
     return config
 
 
 def open_db(config: AppConfig) -> sessionmaker[Session]:
+    """The database, with every stored score computed under the current scoring.yaml: a
+    changed table re-ranks them here, before any command reads them."""
     engine = make_engine(config.settings.db_url)
     try:
         check_schema(engine)
     except (SchemaOutdated, OperationalError) as exc:
         raise fail(str(exc), label="database error") from exc
-    return make_session_factory(engine)
+    sf = make_session_factory(engine)
+    with sf.begin() as session:
+        recomputed, legacy = refresh_scores(session, config.points)
+    if recomputed or legacy:
+        log.info(
+            "scoring.yaml %s: recomputed %d scores (%d from before points keep Claude's number)",
+            fingerprint(config.points)[:12],
+            recomputed,
+            legacy,
+        )
+    return sf
 
 
 def scoring_overrides(backend: Backend | None, model: str | None) -> dict[str, Any]:

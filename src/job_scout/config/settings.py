@@ -187,6 +187,10 @@ class Digest(StrictModel):
     # a watchlist company posting many jobs at once doesn't swamp the report.
     watchlist_collapse_below: int = Field(default=50, ge=0, le=100)
     send_when_empty: bool = True  # email a digest with no new matches (its health footer)
+    # A job scored before the previous digest that only now reaches it (scoring.yaml
+    # changed, or it was scored again) is included only if first seen this recently, so a
+    # weight change can't fill a digest with old postings. 0: never.
+    rescored_max_age_days: int = Field(default=14, ge=0)
     email: Email = Email()
 
 

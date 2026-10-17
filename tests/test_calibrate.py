@@ -14,7 +14,8 @@ from tests.scoring_helpers import FakeScorer, result_for, seed_jobs
 def short_and_invalid(request: CallRequest) -> CallResult:
     """Scores the first job, sends an invalid item and an unknown id, omits the rest."""
     first = request.job_ids[0]
-    items = [result_for(first), result_for(request.job_ids[1], score=500), result_for(9_999)]
+    bad = result_for(request.job_ids[1], seniority_level="godlike")
+    items = [result_for(first), bad, result_for(9_999)]
     return CallResult("ok", payload={"results": items}, input_tokens=100, output_tokens=40)
 
 
@@ -35,7 +36,7 @@ def test_calls_detail(
     (call,) = result.candidates[0].calls_detail
     assert (call.postings, call.returned, call.valid, call.rejected) == (5, 3, 1, 1)
     assert call.unknown_ids == [9_999] and len(call.missing_ids) == 4
-    assert "overall_score" in (call.first_rejection or "")
+    assert "seniority_level" in (call.first_rejection or "")
     assert (call.input_tokens, call.output_tokens) == (100, 40)
     assert result.candidates[0].input_tokens == 100
     (failed,) = result.candidates[1].calls_detail

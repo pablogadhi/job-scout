@@ -109,15 +109,15 @@ def pending_count(session: Session) -> int:
     return session.scalar(select(func.count()).select_from(pending_query().subquery())) or 0
 
 
-def requeue_for_rescore(
+def rescore_ids(
     session: Session,
-    profile_hash: str,
     *,
     top: int | None = None,
     since: datetime | None = None,
-) -> int:
-    """Queue jobs to be scored again under the current profile: the top N by score, and/or
-    eligible jobs first seen since a date. Returns jobs queued."""
+    legacy: bool = False,
+) -> list[int]:
+    """Jobs to score again: the top N by score, eligible jobs first seen since a date,
+    and/or (`legacy`) every job scored before points (it has no breakdown)."""
     ids: list[int] = []
     if top:
         ids += session.scalars(
@@ -128,7 +128,48 @@ def requeue_for_rescore(
         )
     if since:
         ids += session.scalars(_eligible().where(Job.first_seen_at >= since))
-    return _set_pending(session, profile_hash, list(dict.fromkeys(ids)))
+    if legacy:
+        # In Python: the JSON column stores None as JSON null, which SQL's IS NULL misses.
+        scored = session.scalars(
+            select(Score).where(Score.status == ScoreStatus.SCORED).order_by(Score.job_id)
+        )
+        ids += [s.job_id for s in scored if s.result is not None and not s.breakdown]
+    return list(dict.fromkeys(ids))
+
+
+def requeue_for_rescore(
+    session: Session,
+    profile_hash: str,
+    *,
+    top: int | None = None,
+    since: datetime | None = None,
+    legacy: bool = False,
+) -> int:
+    """Queue `rescore_ids` to be scored again under the current profile. Returns jobs queued."""
+    ids = rescore_ids(session, top=top, since=since, legacy=legacy)
+    return _set_pending(session, profile_hash, ids)
+
+
+def undo_requeue(session: Session, before: dict[int, tuple[ScoreStatus, int] | None]) -> None:
+    """Put rows back as they were before a requeue (`snapshot`): a dry run plans with them
+    pending, then nothing stays queued."""
+    for job_id, state in before.items():
+        score = session.scalars(select(Score).where(Score.job_id == job_id)).one_or_none()
+        if score is None:
+            continue
+        if state is None:
+            session.delete(score)
+        else:
+            score.status, score.attempts = state
+    session.flush()
+
+
+def snapshot(session: Session, job_ids: Sequence[int]) -> dict[int, tuple[ScoreStatus, int] | None]:
+    rows = {
+        s.job_id: (s.status, s.attempts)
+        for s in session.scalars(select(Score).where(Score.job_id.in_(job_ids)))
+    }
+    return {job_id: rows.get(job_id) for job_id in job_ids}
 
 
 def _set_pending(session: Session, profile_hash: str, job_ids: Sequence[int]) -> int:

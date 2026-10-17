@@ -19,12 +19,14 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from job_scout.config import AppConfig
+from job_scout.config.points import PointsTable
 from job_scout.config.settings import Effort
 from job_scout.db.groups import load_groups
 from job_scout.db.models import Backend, Job, PrefilterResult
 from job_scout.db.types import utcnow
 from job_scout.feedback.examples import select_examples
 from job_scout.scoring.backends.base import CallRequest, Scorer
+from job_scout.scoring.points import compute
 from job_scout.scoring.prompt import PostingInput, render_posting, system_prompt, user_message
 from job_scout.scoring.runner import max_output_tokens
 from job_scout.scoring.schema import ScoreSchema, score_schema
@@ -87,8 +89,9 @@ class CallDetail:
 @dataclass
 class ConfigResult:
     name: str
-    scores: dict[int, int] = field(default_factory=dict)
+    scores: dict[int, int] = field(default_factory=dict)  # computed with scoring.yaml
     summaries: dict[int, str] = field(default_factory=dict)
+    results: dict[int, dict[str, Any]] = field(default_factory=dict)  # replies, to re-score
     calls: int = 0
     failed_calls: int = 0
     cost_usd: float = 0.0
@@ -105,8 +108,12 @@ class Calibration:
     companies: dict[int, str]
     reference: ConfigResult
     candidates: list[ConfigResult]
+    # The profile's 'a | b' fields and lists of objects: how often two configurations
+    # extracted the same facts, which is what the score is computed from.
+    enum_fields: list[str] = field(default_factory=list)
+    objects_fields: list[str] = field(default_factory=list)
 
-    def diff_stats(self, candidate: ConfigResult) -> dict[str, float | int | None]:
+    def diff_stats(self, candidate: ConfigResult) -> dict[str, Any]:
         pairs = [
             (self.reference.scores[j], candidate.scores[j])
             for j in self.job_ids
@@ -115,6 +122,11 @@ class Calibration:
         if not pairs:
             return {"compared": 0, "mean_abs_diff": None, "max_abs_diff": None, "within_10": 0}
         diffs = [abs(a - b) for a, b in pairs]
+        both = [
+            (self.reference.results[j], candidate.results[j])
+            for j in self.job_ids
+            if j in self.reference.results and j in candidate.results
+        ]
         return {
             "compared": len(pairs),
             "missing": len(self.job_ids) - len(candidate.scores),
@@ -122,7 +134,34 @@ class Calibration:
             "max_abs_diff": max(diffs),
             "within_10": sum(d <= 10 for d in diffs),
             "rank_agreement": _rank_agreement(pairs),
+            "same_value": {
+                name: round(sum(a.get(name) == b.get(name) for a, b in both) / len(both), 3)
+                for name in self.enum_fields
+            }
+            if both
+            else {},
+            "overlap": {
+                name: round(sum(_overlap(a.get(name), b.get(name)) for a, b in both) / len(both), 3)
+                for name in self.objects_fields
+            }
+            if both
+            else {},
         }
+
+
+def _overlap(a: Any, b: Any) -> float:
+    """Jaccard overlap of two lists of objects, by each object's first field (the skill or
+    signal named); 1.0 when both are empty."""
+
+    def names(items: Any) -> set[str]:
+        return {
+            str(next(iter(i.values()))).strip().lower()
+            for i in items or []
+            if isinstance(i, dict) and i
+        }
+
+    x, y = names(a), names(b)
+    return len(x & y) / len(x | y) if x | y else 1.0
 
 
 def _rank_agreement(pairs: Sequence[tuple[int, int]]) -> float | None:
@@ -153,6 +192,7 @@ def _score_with(
     configuration: Configuration,
     system: str,
     scores: ScoreSchema,
+    table: PointsTable,
     postings: Sequence[PostingInput],
 ) -> ConfigResult:
     result = ConfigResult(configuration.name)
@@ -206,12 +246,14 @@ def _score_with(
                 detail.first_rejection = detail.first_rejection or str(exc)[:500]
                 continue
             job_id = data["job_id"]
+            breakdown = compute(table, data)
             if job_id not in wanted:
                 detail.unknown_ids.append(job_id)
-            elif job_id not in result.scores:
+            elif job_id not in result.scores and breakdown is not None:
                 detail.valid += 1
-                result.scores[job_id] = core.overall_score
+                result.scores[job_id] = breakdown.total
                 result.summaries[job_id] = core.summary
+                result.results[job_id] = data
         detail.missing_ids = sorted(wanted - result.scores.keys())
     result.seconds = round(time.monotonic() - started, 1)
     return result
@@ -236,8 +278,10 @@ def run_calibration(
         job_ids=[g.canonical.id for g in groups],
         titles={g.canonical.id: g.canonical.title for g in groups},
         companies={g.canonical.id: g.canonical.company or "" for g in groups},
-        reference=_score_with(reference, system, scores, postings),
-        candidates=[_score_with(c, system, scores, postings) for c in candidates],
+        reference=_score_with(reference, system, scores, config.points, postings),
+        candidates=[_score_with(c, system, scores, config.points, postings) for c in candidates],
+        enum_fields=[f.name for f in config.profile.output_fields if f.kind == "enum"],
+        objects_fields=[f.name for f in config.profile.output_fields if f.kind == "objects"],
     )
 
 

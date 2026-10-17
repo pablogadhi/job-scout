@@ -8,8 +8,9 @@ field's type comes from its example value:
 - `[{"name": "text", "level": "a | b"}]`: a list of objects with those fields, each typed
   like a top-level field but never a list, an object or null
 - `true`/`false`, a whole number, a decimal: a boolean, an integer, a number
-The core fields (`CORE_OUTPUT_KEYS`) must be there; the code relies on them. Every other
-field is the profile's own and is shown as it is.
+The core fields (`CORE_OUTPUT_KEYS`) must be there; the code relies on them. The score
+fields (`COMPUTED_KEYS`) must not: the code computes them. Every other field is the
+profile's own: scoring.yaml gives it points, and reports show it.
 """
 
 from __future__ import annotations
@@ -21,21 +22,11 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Literal
 
-# Fields the code relies on (sections, ranking, location and salary checks, reports).
-CORE_OUTPUT_KEYS = frozenset(
-    {
-        "disqualified",
-        "disqualify_reason",
-        "remote",
-        "location_eligibility",
-        "salary",
-        "matched_skills",
-        "gaps",
-        "red_flags",
-        "overall_score",
-        "summary",
-    }
-)
+# Fields the code relies on (sections, location and salary checks, reports).
+CORE_OUTPUT_KEYS = frozenset({"remote", "location_eligibility", "salary", "red_flags", "summary"})
+# Computed by the code from the other fields and scoring.yaml (scoring/points.py); a stored
+# result scored before that carries them as Claude gave them.
+COMPUTED_KEYS = frozenset({"overall_score", "disqualified", "disqualify_reason"})
 
 _OUTPUT_BLOCK = re.compile(r"^## Output format\b.*?^```json\n(.*?)^```", re.DOTALL | re.MULTILINE)
 _OR_NULL = re.compile(r"\bor null\s*$")
@@ -125,6 +116,11 @@ def load_profile(path: Path) -> Profile:
         raise ProfileError(f"output format block is missing keys: {', '.join(sorted(missing))}")
     if "job_id" in example:
         raise ProfileError("output format block must not define job_id (the code adds it)")
+    if computed := sorted(COMPUTED_KEYS & example.keys()):
+        raise ProfileError(
+            f"output format block must not define {', '.join(computed)}: the code computes "
+            "them from the other fields and scoring.yaml"
+        )
     return Profile(
         path=path,
         text=text,

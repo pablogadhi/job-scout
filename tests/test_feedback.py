@@ -35,7 +35,7 @@ from job_scout.scoring.planner import Limits
 from job_scout.scoring.prompt import system_prompt
 from job_scout.scoring.runner import RunOptions, ScoringRunner
 from tests.conftest import TEST_CONFIG
-from tests.scoring_helpers import FakeScorer, result_for, seed_jobs
+from tests.scoring_helpers import FakeScorer, result_for, seed_jobs, with_points
 
 SECRET = SecretStr("s" * 40)
 NOW = datetime(2026, 10, 13, 14, 0, tzinfo=UTC)
@@ -47,14 +47,15 @@ def add_score(
     result = result_for(job_id, score=score, **fields)
     with sf.begin() as session:
         session.add(
-            Score(
-                job_id=job_id,
-                profile_hash=profile_hash,
-                status=ScoreStatus.SCORED,
-                result=result,
-                overall_score=score,
-                disqualified=result["disqualified"],
-                scored_at=NOW,
+            with_points(
+                Score(
+                    job_id=job_id,
+                    profile_hash=profile_hash,
+                    status=ScoreStatus.SCORED,
+                    scored_at=NOW,
+                    first_scored_at=NOW,
+                ),
+                result,
             )
         )
 
@@ -198,11 +199,12 @@ def test_system_prompt_with_examples(app_config: AppConfig) -> None:
     lines = block.splitlines()
     assert [ln.split(":", 1)[0] for ln in lines[:5]] == [
         "posting",
-        "earlier score",
+        "score",
         "earlier summary",
         "candidate",
         "reason",
     ]
+    assert lines[1] == "score: 81 (old scoring)"  # no current score: the one voted on
     assert lines[4] == "reason: Too much on-call."  # the only reason line is the real one
     assert "candidate: thumbs down (not for me)" in text
 
@@ -255,7 +257,8 @@ def test_page_shows_job_and_saves_vote(
     shown = page.handle("GET", f"/f/{job_id}?v=down&s={s}")
     assert shown.status == 200
     assert "Platform &lt;b&gt;Engineer&lt;/b&gt;" in shown.body  # posting text is escaped
-    assert "Claude's score: 77" in shown.body and "Strong fit." in shown.body
+    assert "Score: 77" in shown.body and "Strong fit." in shown.body
+    assert "seniority 20/20" in shown.body and "= 77" in shown.body  # how it was computed
     assert 'value="down" checked' in shown.body
     with session_factory() as session:
         assert session.scalars(select(Feedback)).first() is None  # opening saves nothing

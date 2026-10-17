@@ -19,7 +19,7 @@ from job_scout.report.export import export_csv, snapshot_sqlite
 from job_scout.report.mailer import TOKEN_ENV
 from job_scout.report.render import http_url
 from tests.conftest import TEST_CONFIG
-from tests.scoring_helpers import result_for, seed_jobs
+from tests.scoring_helpers import result_for, seed_jobs, with_points
 
 NOW = datetime(2026, 10, 13, 14, 0, tzinfo=UTC)
 EMAIL = {
@@ -43,14 +43,15 @@ def score_jobs(sf: sessionmaker[Session], config: AppConfig, scores: dict[int, d
         for job_id, fields in scores.items():
             result = result_for(job_id, **fields)
             session.add(
-                Score(
-                    job_id=job_id,
-                    profile_hash=config.profile.sha256,
-                    status=ScoreStatus.SCORED,
-                    result=result,
-                    overall_score=result["overall_score"],
-                    disqualified=result["disqualified"],
-                    scored_at=NOW,
+                with_points(
+                    Score(
+                        job_id=job_id,
+                        profile_hash=config.profile.sha256,
+                        status=ScoreStatus.SCORED,
+                        scored_at=NOW,
+                        first_scored_at=NOW,
+                    ),
+                    result,
                 )
             )
 
@@ -109,7 +110,7 @@ def test_sections(tmp_path: Path, session_factory: sessionmaker[Session]) -> Non
             a: {"score": 82},
             b: {"score": 55, "location_eligibility": "unclear"},
             c: {"score": 49},
-            d: {"score": 10, "disqualified": True, "disqualify_reason": "US only"},
+            d: {"score": 75, "location_eligibility": "fail"},  # disqualified: 20
             e: {"score": 50},
             f: {"score": 30},
         },
@@ -204,21 +205,27 @@ def test_plain_text_has_one_field_per_line(
 ) -> None:
     config = config_with(tmp_path, min_score=50, email=EMAIL)
     (job,) = seed_jobs(session_factory, 1)
-    score_jobs(
-        session_factory, config, {job: {"score": 80, "gaps": ["Go"], "red_flags": ["On-call"]}}
-    )
+    score_jobs(session_factory, config, {job: {"score": 80, "red_flags": ["On-call"]}})
     make_digest(config, session_factory, now=NOW, environ={TOKEN_ENV: "tok"}, smtp_factory=FakeSmtp)
     lines = body_of(FakeSmtp.instances[0].messages[0], "plain").splitlines()
     card = lines[lines.index("[80] Senior Backend Engineer 1 - Company 1") :]
-    assert [line.split(":")[0] for line in card[1:8]] == [
+    assert [line.split(":")[0] for line in card[1:10]] == [
         "  Synthetic posting that fits.",
+        "  Score",
         "  Location (pass)",
         "  Salary (unlisted)",
-        "  Matched",
-        "  Gaps",
+        "  Skills",
+        "  Signals",
+        "  Language",  # the profile's own field
         "  Red flags",
         "  Apply",
     ]
+    assert card[2] == (
+        "  Score: skills 30/40 · seniority 20/20 · role 15/15 · salary 6/10 · location 5/5"
+        " · signals +4 (async-first +4) = 80"
+    )
+    assert card[5].startswith("  Skills: ✓ Skill 0 (required, core); ")
+    assert card[6] == "  Signals: +4 async-first"
     assert lines[1].startswith("Generated ") and lines[2].endswith("with unclear location")
 
 
@@ -412,3 +419,73 @@ def test_notify_failure_command(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
     )
     assert off.exit_code == 1 and "email is disabled" in off.output
     assert "Last log lines" in off.output  # still printed, for the journal
+
+
+def test_a_job_scored_before_points_keeps_its_number_and_says_so(
+    tmp_path: Path, session_factory: sessionmaker[Session]
+) -> None:
+    config = config_with(tmp_path, min_score=50)
+    (job,) = seed_jobs(session_factory, 1)
+    old = {  # the reply format before points: Claude gave the score
+        "job_id": job, "disqualified": False, "disqualify_reason": None, "remote": "yes",
+        "location_eligibility": "pass", "location_notes": "LATAM.", "salary": "unlisted",
+        "salary_usd_range": None, "salary_notes": "",
+        "role_category": "backend",
+        "seniority": "Senior", "skill_fit": 4, "seniority_fit": 5,
+        "matched_skills": ["Python"], "gaps": ["Go"], "four_day_week": "yes",
+        "wlb_positive": [], "wlb_negative": [], "employment_type": "unknown",
+        "red_flags": [], "overall_score": 72, "summary": "An older score.",
+    }  # fmt: skip
+    with session_factory.begin() as session:
+        session.add(
+            Score(
+                job_id=job,
+                profile_hash="old",
+                status=ScoreStatus.SCORED,
+                result=old,
+                overall_score=72,
+                disqualified=False,
+                scored_at=NOW,
+            )
+        )
+    report = make_backlog_report(config, session_factory, now=NOW, environ={})
+    page = report.path.read_text()
+    assert '<span class="score s-high">72</span>' in page
+    assert "Old scoring: Claude's own 0&ndash;100, before points." in page
+    assert '<span class="label">Matched:</span> Python' in page
+    assert '<span class="badge">4-day week</span>' in page
+    assert "skill fit 4/5" in page
+
+
+@pytest.mark.parametrize(("max_age", "shown"), [(14, {"fresh", "recent"}), (0, {"fresh"})])
+def test_a_job_re_ranked_into_the_digest_must_be_recent(
+    tmp_path: Path, session_factory: sessionmaker[Session], max_age: int, shown: set[str]
+) -> None:
+    """After a digest, a job scored before it reaches the next one only if first seen within
+    rescored_max_age_days: a weight change can't fill the digest with old postings."""
+    config = config_with(tmp_path, min_score=50, rescored_max_age_days=max_age)
+    previous = NOW - timedelta(days=1)
+    fresh, recent, old = seed_jobs(session_factory, 3)
+    names = {fresh: "fresh", recent: "recent", old: "old"}
+    with session_factory.begin() as session:
+        session.add(Digest(kind=DigestKind.DIGEST, sent_at=previous, job_ids=[]))
+        for job_id, first_seen, first_scored in (
+            (fresh, NOW - timedelta(days=60), NOW),  # scored since the last digest
+            (recent, NOW - timedelta(days=3), previous - timedelta(days=2)),
+            (old, NOW - timedelta(days=30), previous - timedelta(days=2)),
+        ):
+            session.get_one(Job, job_id).first_seen_at = first_seen
+            session.add(
+                with_points(
+                    Score(
+                        job_id=job_id,
+                        profile_hash=config.profile.sha256,
+                        status=ScoreStatus.SCORED,
+                        scored_at=first_scored,
+                        first_scored_at=first_scored,
+                    ),
+                    result_for(job_id, score=80),
+                )
+            )
+    outcome = make_digest(config, session_factory, now=NOW, environ={}, dry_run=True)
+    assert {names[i] for i in outcome.sections.job_ids} == shown

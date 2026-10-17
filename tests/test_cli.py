@@ -14,12 +14,12 @@ from job_scout.cli import app
 from job_scout.cli.common import PIPE_WIDTH, make_console
 from job_scout.config import AppConfig, load_config
 from job_scout.db import make_engine, make_session_factory
-from job_scout.db.models import Backend, Job, Source
+from job_scout.db.models import Backend, Job, Score, ScoreStatus, Source
 from job_scout.fetch.models import Posting
 from job_scout.fetch.store import store_postings
 from job_scout.scoring.calibrate import ConfigSpec
 from tests.conftest import TEST_CONFIG, edit
-from tests.scoring_helpers import result_for, seed_jobs
+from tests.scoring_helpers import result_for, seed_jobs, with_points
 
 runner = CliRunner()
 
@@ -224,7 +224,8 @@ def test_score_with_cli_backend_end_to_end(
     assert "5 scored" in result.output and "stop reason: done" in result.output
 
     result = invoke("explain", str(ids[0]))
-    assert '"overall_score": 81' in result.output and "backend=cli" in result.output
+    assert "score=81" in result.output and "backend=cli" in result.output
+    assert "skills 35/40 · seniority 20/20" in result.output and "= 81" in result.output
 
     result = invoke("status")
     assert result.exit_code == 0, result.output
@@ -377,3 +378,114 @@ def test_export_command(db_url: str, tmp_path: Path) -> None:
     assert "2 postings" in result.output and "database snapshot" in result.output
     assert len(list((tmp_path / "exports").glob("jobs-*.csv"))) == 1
     assert len(list((tmp_path / "exports").glob("job-scout-*.db"))) == 1
+
+
+@pytest.mark.usefixtures("db_url")
+@pytest.mark.parametrize(
+    ("old", "new", "message"),
+    [
+        ("      hustle: -6\n", "", "no points for hustle"),  # a signal the profile declares
+        ("    points: {meets: 10,", "    points: {great: 3, meets: 10,", "has no value great"),
+    ],
+)
+def test_a_points_table_that_doesnt_fit_the_profile_fails_at_startup(
+    config_dir: Path, old: str, new: str, message: str
+) -> None:
+    edit(config_dir / "scoring.yaml", old, new)
+    result = invoke("status", config_dir=config_dir)
+    assert result.exit_code == 2 and message in result.output, result.output
+
+
+@pytest.mark.usefixtures("db_url")
+def test_a_missing_points_table_fails_at_startup(config_dir: Path) -> None:
+    (config_dir / "scoring.yaml").unlink()
+    result = invoke("status", config_dir=config_dir)
+    assert result.exit_code == 2 and "scoring.yaml: file not found" in result.output
+
+
+def _old_format_scores(db_url: str, count: int) -> list[int]:
+    engine = make_engine(db_url)
+    sf = make_session_factory(engine)
+    ids = seed_jobs(sf, count)
+    with sf.begin() as session:
+        for job_id in ids:
+            session.add(
+                Score(
+                    job_id=job_id,
+                    profile_hash="old",
+                    status=ScoreStatus.SCORED,
+                    result={"job_id": job_id, "overall_score": 64, "summary": "old"},
+                    overall_score=64,
+                    disqualified=False,
+                )
+            )
+    engine.dispose()
+    return ids
+
+
+def _statuses(db_url: str) -> list[str]:
+    engine = make_engine(db_url)
+    with make_session_factory(engine)() as session:
+        statuses = [str(s.status) for s in session.query(Score).order_by(Score.job_id)]
+    engine.dispose()
+    return statuses
+
+
+def test_rescore_legacy_dry_run_queues_nothing(db_url: str) -> None:
+    _old_format_scores(db_url, 3)
+    result = invoke("rescore", "--legacy", "--dry-run")
+    assert result.exit_code == 0, result.output
+    assert "would queue 3 jobs" in result.output and "1 calls planned" in result.output
+    assert _statuses(db_url) == ["scored"] * 3  # nothing left pending
+
+
+def test_simulate_compares_a_candidate_table(db_url: str, tmp_path: Path) -> None:
+    engine = make_engine(db_url)
+    sf = make_session_factory(engine)
+    ids = seed_jobs(sf, 2)
+    with sf.begin() as session:
+        for job_id in ids:
+            session.add(
+                with_points(
+                    Score(job_id=job_id, profile_hash="p", status=ScoreStatus.SCORED),
+                    result_for(job_id, score=80),
+                )
+            )
+    engine.dispose()
+    candidate = tmp_path / "candidate.yaml"
+    candidate.write_text(
+        (TEST_CONFIG / "scoring.yaml").read_text().replace("unlisted: 6", "unlisted: 0")
+    )
+    result = invoke("simulate", "--table", str(candidate))
+    assert result.exit_code == 0, result.output
+    assert "2 scored jobs under" in result.output
+    assert "salary 0/10" in result.output and "= 74" in result.output  # 80 - 6
+    assert _statuses(db_url) == ["scored", "scored"]
+    engine = make_engine(db_url)
+    with make_session_factory(engine)() as session:
+        assert {s.overall_score for s in session.query(Score)} == {80}  # nothing saved
+    engine.dispose()
+
+    candidate.write_text("components: {}\n")
+    assert invoke("simulate", "--table", str(candidate)).exit_code == 2
+
+
+def test_editing_the_points_table_re_ranks_stored_scores(db_url: str, config_dir: Path) -> None:
+    engine = make_engine(db_url)
+    sf = make_session_factory(engine)
+    (job_id,) = seed_jobs(sf, 1)
+    with sf.begin() as session:
+        session.add(
+            with_points(
+                Score(job_id=job_id, profile_hash="p", status=ScoreStatus.SCORED),
+                result_for(job_id, score=80),
+            )
+        )
+    edit(config_dir / "scoring.yaml", "unlisted: 6", "unlisted: 0")
+    result = invoke("status", config_dir=config_dir)  # any command that opens the database
+    assert result.exit_code == 0, result.output
+    with sf() as session:
+        score = session.query(Score).one()
+        assert score.overall_score == 74 and score.breakdown is not None
+        assert score.breakdown["parts"][3]["points"] == 0  # salary, unlisted
+    engine.dispose()

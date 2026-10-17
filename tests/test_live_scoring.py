@@ -15,6 +15,7 @@ from job_scout.config import AppConfig
 from job_scout.db.models import Backend
 from job_scout.scoring.backends import make_scorer
 from job_scout.scoring.backends.base import CallRequest
+from job_scout.scoring.points import compute
 from job_scout.scoring.prompt import PostingInput, system_prompt, user_message
 from job_scout.scoring.schema import score_schema
 
@@ -59,8 +60,11 @@ def _score(app_config: AppConfig, backend: Backend, tmp_path: Path) -> None:
     assert isinstance(result.payload, dict)
     parsed = [schema.parse(item) for item in result.payload["results"]]
     assert sorted(data["job_id"] for data, _ in parsed) == [1, 2]
-    by_id = {data["job_id"]: core for data, core in parsed}
-    assert by_id[1].overall_score > by_id[2].overall_score
+    by_id = {data["job_id"]: compute(app_config.points, data) for data, _ in parsed}
+    good, bad = by_id[1], by_id[2]
+    assert good is not None and bad is not None
+    assert good.total > bad.total and bad.disqualified  # on-site in Berlin
+    assert "4-day week" in good.badges
 
 
 @pytest.mark.skipif(

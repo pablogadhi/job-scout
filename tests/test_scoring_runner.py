@@ -70,7 +70,9 @@ def test_scores_everything_pending(
     assert score.backend == Backend.CLI and score.model == "claude-haiku-5-5"
     assert score.profile_hash == app_config.profile.sha256
     assert score.result is not None
-    assert score.result["matched_skills"] == ["Python", "Django"]
+    assert len(score.result["requirements"]) == 8
+    assert score.breakdown is not None and score.breakdown["total"] == 70
+    assert score.score_fingerprint is not None
     with session_factory() as session:
         run = session.scalars(select(Run)).one()
         assert (run.stop_reason, run.calls_made, run.postings_scored) == (StopReason.DONE, 2, 25)
@@ -447,9 +449,7 @@ def test_batch_spend_guard_trims_the_batch(
     settings = app_config.settings.model_copy(
         update={"scoring": app_config.settings.scoring.model_copy(update={"api": api})}
     )
-    config = AppConfig(
-        app_config.config_dir, settings, app_config.sources, app_config.filters, app_config.profile
-    )
+    config = replace(app_config, settings=settings)
     client = BatchClient(ready_after=1)
     report = batch_runner(config, session_factory, client, [0.0]).run(
         RunOptions(mode=ScoringMode.BACKLOG, limits=BACKLOG_API, use_batches_api=True)

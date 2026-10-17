@@ -22,13 +22,14 @@ from sqlalchemy.orm import Session
 
 from job_scout.db.models import Job, PrefilterResult, Score
 from job_scout.report.data import field_text
+from job_scout.scoring.points import Breakdown
 
 COLUMNS = [
     "job_id", "group_id", "duplicate", "source", "title", "company", "location", "remote",
     "salary_min", "salary_max", "salary_currency", "salary_period", "posted_at",
     "first_seen_at", "url", "apply_url", "prefilter", "prefilter_reason", "score_status",
     "score", "disqualified", "disqualify_reason", "location_eligibility", "summary",
-    "scored_at", "backend", "model",
+    "score_breakdown", "score_legacy", "scoring_fingerprint", "scored_at", "backend", "model",
 ]  # fmt: skip
 
 # A cell starting with one of these runs as a formula in a spreadsheet; posting text is
@@ -48,20 +49,28 @@ def _cell(value: Any) -> Any:
     return value
 
 
-def export_csv(session: Session, path: Path, extra_fields: Sequence[str] = ()) -> int:
-    """Write the CSV, with a column per name in `extra_fields`; return the number of rows."""
+def export_csv(
+    session: Session,
+    path: Path,
+    extra_fields: Sequence[str] = (),
+    components: Sequence[str] = (),
+) -> int:
+    """Write the CSV, with a column per name in `extra_fields` and a `points_<name>` column
+    per scoring.yaml component; return the number of rows."""
     verdicts = {r.job_id: r for r in session.scalars(select(PrefilterResult))}
     scores = {s.job_id: s for s in session.scalars(select(Score))}
     path.parent.mkdir(parents=True, exist_ok=True)
     rows = 0
     with path.open("w", newline="", encoding="utf-8") as fh:
         writer = csv.writer(fh)
-        writer.writerow([*COLUMNS, *extra_fields])
+        writer.writerow([*COLUMNS, *extra_fields, *(f"points_{c}" for c in components)])
         for job in session.scalars(select(Job).order_by(Job.id)).yield_per(500):
             group_id = job.duplicate_of or job.id
             verdict = verdicts.get(group_id)
             score = scores.get(group_id)
             result = (score.result or {}) if score else {}
+            breakdown = Breakdown.from_json(score.breakdown) if score and score.breakdown else None
+            points = {p.name: p.points for p in breakdown.parts} if breakdown else {}
             writer.writerow(
                 _cell(v)
                 for v in (
@@ -86,13 +95,17 @@ def export_csv(session: Session, path: Path, extra_fields: Sequence[str] = ()) -
                     score.status if score else None,
                     score.overall_score if score else None,
                     score.disqualified if score else None,
-                    result.get("disqualify_reason"),
+                    breakdown.disqualify_reason if breakdown else result.get("disqualify_reason"),
                     result.get("location_eligibility"),
                     result.get("summary"),
+                    breakdown.line() if breakdown else None,
+                    bool(score and score.result is not None and breakdown is None),
+                    score.score_fingerprint if score else None,
                     score.scored_at if score else None,
                     score.backend if score else None,
                     score.model if score else None,
                     *(field_text(result.get(name)) for name in extra_fields),
+                    *(points.get(c) for c in components),
                 )
             )
             rows += 1

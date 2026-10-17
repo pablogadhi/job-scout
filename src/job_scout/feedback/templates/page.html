@@ -47,7 +47,8 @@
   <div class="muted">{{ company }} &middot; job #{{ job_id }}
     {%- if apply_url %} &middot; <a href="{{ apply_url | http_url }}" rel="noreferrer">posting</a>{% endif %}</div>
   {%- if score is not none %}
-  <p><strong>Claude's score: {{ score }}</strong>{% if disqualified %} (disqualified){% endif %}
+  <p><strong>Score: {{ score }}</strong>{% if disqualified %} (disqualified){% endif %}
+    {%- if breakdown %}<br><span class="muted">{{ breakdown }}</span>{% endif %}
     {%- if summary %}<br>{{ summary }}{% endif %}</p>
   {%- else %}
   <p class="muted">Not scored yet.</p>

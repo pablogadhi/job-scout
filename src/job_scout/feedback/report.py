@@ -1,8 +1,9 @@
-"""How Claude's scores compare with your votes (`job-scout feedback report`).
+"""How the scores compare with your votes (`job-scout feedback report`).
 
-"Claude said yes" means the score you reacted to put the job in the digest: not
-disqualified and at least digest.min_score. A 👍 below that or a 👎 above it is a
-disagreement; recurring reasons there are candidates for profile.md.
+"The score said yes" means the job's current score puts it in the digest: not disqualified
+and at least digest.min_score (the score you voted on, for a job scored before points). A
+👍 below that or a 👎 above it is a disagreement; recurring reasons there are candidates
+for scoring.yaml (weights) or profile.md (what Claude extracts).
 """
 
 from __future__ import annotations
@@ -43,7 +44,7 @@ class FeedbackStats:
 
     @property
     def up_missed(self) -> list[Example]:
-        """👍 on jobs Claude scored below the threshold (the digest would have hidden them)."""
+        """👍 on jobs scored below the threshold (the digest would have hidden them)."""
         return self._with(Vote.UP, False)
 
     @property
@@ -52,12 +53,12 @@ class FeedbackStats:
 
     @property
     def down_wrong(self) -> list[Example]:
-        """👎 on jobs Claude put in the digest."""
+        """👎 on jobs the score put in the digest."""
         return self._with(Vote.DOWN, True)
 
     @property
     def unscored(self) -> list[Example]:
-        return [e for e in self.judgments if e.overall_score is None]
+        return [e for e in self.judgments if e.score is None]
 
     @property
     def agreement(self) -> float | None:
@@ -67,7 +68,7 @@ class FeedbackStats:
 
     @staticmethod
     def mean_score(examples: list[Example]) -> float | None:
-        scores = [e.overall_score for e in examples if e.overall_score is not None]
+        scores = [e.score for e in examples if e.score is not None]
         return mean(scores) if scores else None
 
     @property

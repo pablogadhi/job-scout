@@ -5,9 +5,9 @@ description: Build a job-scout instance's profile.md, filters.yaml and sources.y
 
 # job-scout profile builder
 
-Builds the three files that decide *what* an instance looks for: `profile.md` (the scoring
-prompt Claude reads), `filters.yaml` (cheap regex pre-filters) and `sources.yaml` (where
-postings come from). Work from the repo root of the job-scout checkout.
+Builds the four files that decide *what* an instance looks for: `profile.md` (the prompt
+Claude reads, which says what facts to report), `scoring.yaml` (the points for those facts),
+`filters.yaml` (cheap regex pre-filters) and `sources.yaml` (where postings come from). Work from the repo root of the job-scout checkout.
 
 ## Ground rules
 
@@ -60,12 +60,27 @@ this person. Rules that matter:
 - Hard requirements are dealbreakers only when the posting **clearly** fails them; unclear
   goes to "unclear", never to disqualified.
 - The `## Output format` JSON block is parsed by the code. Keep the core fields exactly as the
-  template declares them (same names, same values, same order is best). Add the profile's own
-  fields after them, typed by example: `"a | b | c"` (one of these), `"text"`, `"text, or
-  null"`, `["text"]`, `0` (integer), `false`. No nested objects.
-- Keep `overall_score` and `summary` last: Claude writes them after the evidence.
+  template declares them (same names, same values). Add the profile's own fields, typed by
+  example: `"a | b | c"` (one of these), `"text"`, `"text, or null"`, `["text"]`, `0`
+  (integer), `false`, or a list holding one example object of flat, non-null fields (like
+  `requirements` and `signals`).
+- Claude reports facts, never a score: no `overall_score`, `disqualified` or
+  `disqualify_reason` (the code computes them and refuses a profile that declares them), and
+  no points or deductions in the prose. Each hard requirement sets `remote`,
+  `location_eligibility`, `salary`, or a field of its own that a `disqualify` rule in
+  scoring.yaml names (e.g. `language: "english-or-spanish | other"`); each preference is a
+  signal or a field of its own.
+- Keep `summary` last: Claude writes it after the evidence.
 - Everything Claude needs to judge must be in the prose; the code reads nothing but the JSON
   block.
+
+### 4b. Write `scoring.yaml`
+
+Follow `references/scoring-template.yaml`: the points for each fact. Every enum map lists all
+of its field's values; the signals map lists every signal of the output format. Set the
+caps and disqualify rules from the dealbreakers and the roles "not of interest". The
+operator decides the weights; propose them, aiming at the bands the template's header
+describes.
 
 ### 5. Write `filters.yaml`
 
@@ -105,7 +120,7 @@ From the instance directory (`cd instances/<name>`):
 
 ```sh
 uv run --env-file .env alembic -c ../../alembic.ini upgrade head
-uv run --env-file .env job-scout sources check        # validates all four files
+uv run --env-file .env job-scout sources check        # validates all five files
 uv run --env-file .env job-scout ats detect            # finds the boards of `companies:`
 uv run --env-file .env job-scout fetch --tier 1        # free; respects every source's limits
 uv run --env-file .env job-scout filter --sample 20    # pass rate per source + 20 passed, 20 dropped
@@ -126,11 +141,13 @@ estimated API cost. Offer, never run without a yes, a small paid check (about 2 
 uv run --env-file .env job-scout calibrate --sample 10 --configs "api:claude-haiku-5-5:1,api:claude-haiku-5-5:5" --yes
 ```
 
-and walk through the scores and summaries with the operator.
+and walk through the scores, their breakdowns (`job-scout explain JOB_ID`) and the summaries
+with the operator. Weights are tuned for free afterwards: `job-scout simulate --table
+candidate.yaml` shows how a changed `scoring.yaml` would rank the jobs already scored.
 
 ### 8. Hand over
 
-Summarize the three files (dealbreakers, preferences, own output fields, enabled sources,
-filter choices), list anything left open, and remind the operator that nothing in
+Summarize the four files (dealbreakers, preferences, own output fields, weights, enabled
+sources, filter choices), list anything left open, and remind the operator that nothing in
 `instances/<name>/` goes into git and that the instance's `settings.yaml` (backend, run
 time, digest threshold) wasn't changed unless they asked.

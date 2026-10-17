@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
+from rich.console import Console
 from rich.markup import escape
 from rich.table import Table
 from sqlalchemy import select
@@ -25,6 +26,7 @@ from job_scout.prefilter.runner import (
 )
 from job_scout.report.data import extra_output_fields
 from job_scout.report.export import export_csv, snapshot_sqlite
+from job_scout.scoring.points import Breakdown
 
 
 def filter_(
@@ -142,10 +144,17 @@ def explain(ctx: typer.Context, job_id: int) -> None:
         for score in scores:
             current = score.profile_hash == config.profile.sha256
             console.print(
-                f"  {score.status} overall={score.overall_score} backend={score.backend} "
+                f"  {score.status} score={score.overall_score} backend={score.backend} "
                 f"model={score.model} profile={score.profile_hash[:12]}"
                 f"{'' if current else ' [yellow](older profile)[/yellow]'}"
             )
+            if score.breakdown:
+                print_breakdown(console, Breakdown.from_json(score.breakdown))
+            elif score.result:
+                console.print(
+                    "  [yellow]old scoring: Claude's own 0-100, before points "
+                    "(`rescore --legacy` scores it again)[/yellow]"
+                )
             if score.result:
                 console.print_json(json.dumps(score.result))
 
@@ -173,7 +182,9 @@ def export(
     stamp = f"{utcnow():%Y%m%dT%H%M%SZ}"
     with open_db(config)() as session:
         path = directory / f"jobs-{stamp}.csv"
-        rows = export_csv(session, path, extra_output_fields(config.profile))
+        rows = export_csv(
+            session, path, extra_output_fields(config.profile), list(config.points.components)
+        )
     console.print(f"{rows} postings -> {path}")
     if sqlite:
         try:
@@ -190,3 +201,27 @@ def _salary_text(job: Job, annual: float | None) -> str | None:
     period = job.salary_period.value if job.salary_period else "?"
     text = f"{amounts} {job.salary_currency or '?'}/{period}"
     return f"{text} (~{annual:,.0f}/yr)" if annual is not None else text
+
+
+def print_breakdown(console: Console, breakdown: Breakdown) -> None:
+    """How the score was reached: each component, item by item, then caps and notes."""
+    console.print(f"  {escape(breakdown.line())}")
+    for part in breakdown.parts:
+        if part.max is not None and part.max > 0:
+            console.print(f"    {escape(part.label)}: {part.points}/{part.max}")
+        else:
+            console.print(f"    {escape(part.label)}: {part.points:+d}")
+        for item in part.items:
+            note = f" ({item.note})" if item.note else ""
+            quote = f'  "{item.evidence}"' if item.evidence else ""
+            text = escape(f"{item.points:+g} {item.text}{note}")
+            console.print(f"      {text}[dim]{escape(quote)}[/dim]")
+    for cap, reason in breakdown.caps:
+        console.print(f"    capped at {cap}: {escape(reason)}")
+    if breakdown.disqualified:
+        console.print(
+            f"    [red]disqualified[/red] -> {breakdown.total}: "
+            f"{escape(breakdown.disqualify_reason or '')}"
+        )
+    for note in breakdown.notes:
+        console.print(f"    [yellow]{escape(note)}[/yellow]")

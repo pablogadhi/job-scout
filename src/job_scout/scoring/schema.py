@@ -13,26 +13,22 @@ import types
 from dataclasses import dataclass
 from typing import Any, Literal, Union, get_args, get_origin
 
-from pydantic import BaseModel, ConfigDict, Field, create_model
+from pydantic import BaseModel, ConfigDict, create_model
 
 from job_scout.config.profile import OutputField, Profile
 
 
 class CoreResult(BaseModel):
-    """A score as the code reads it: the core fields, typed. The profile's other fields stay
-    as they are (`model_extra`), so a stored result reads under any profile."""
+    """A result as the code reads it: the core fields, typed. The profile's other fields stay
+    as they are (`model_extra`), so a stored result reads under any profile, including one
+    scored before points (it also carries Claude's overall_score and disqualified)."""
 
     model_config = ConfigDict(extra="allow")
 
-    disqualified: bool
-    disqualify_reason: str | None
     remote: Literal["yes", "no", "unclear"]
     location_eligibility: Literal["pass", "fail", "unclear"]
     salary: Literal["meets", "below", "unlisted"]
-    matched_skills: list[str]
-    gaps: list[str]
     red_flags: list[str]
-    overall_score: int = Field(ge=0, le=100)
     summary: str
 
 

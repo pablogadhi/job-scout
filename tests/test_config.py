@@ -17,7 +17,7 @@ def test_repo_config_is_valid() -> None:
         config.profile.sha256
         == hashlib.sha256((REPO_CONFIG / "profile.md").read_bytes()).hexdigest()
     )
-    assert {"overall_score", "location_eligibility"} <= config.profile.output_example.keys()
+    assert {"requirements", "signals"} <= config.profile.output_example.keys()
     assert config.sources.watchlist[0].company == "Canonical"
     yaml_table = yaml.safe_load((REPO_CONFIG / "scoring.yaml").read_text(encoding="utf-8"))
     PointsTable.model_validate(yaml_table)
@@ -126,7 +126,10 @@ def test_limits_with_flag_overrides() -> None:
         ("filters.yaml", "min_annual: 120000", "min_anual: 120000", "min_anual"),
         ("filters.yaml", "key: [company_normalized", "key: [company_name", "dedupe.key"),
         ("profile.md", "## Output format", "## Output", "Output format"),
-        ("profile.md", '"overall_score": 0,', "", "overall_score"),
+        ("profile.md", '"red_flags": ["string"],', "", "missing keys: red_flags"),
+        ("profile.md", '"summary"', '"overall_score": 0,\n  "summary"', "must not define"),
+        ("scoring.yaml", "disqualified_max: 20", "disqualified_max: 200", "disqualified_max"),
+        ("scoring.yaml", "  remote:\n", "  remote:\n    weight: 1\n", "weight"),
     ],
 )
 def test_invalid_config_fails(

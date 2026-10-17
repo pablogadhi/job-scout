@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from sqlalchemy import select
@@ -16,6 +16,7 @@ from job_scout.db.models import Digest, DigestKind
 from job_scout.feedback.links import feedback_links
 from job_scout.report import mailer
 from job_scout.report.data import (
+    ReportItem,
     Sections,
     build_sections,
     reported_job_ids,
@@ -88,15 +89,18 @@ def make_digest(
     """
     settings = config.settings.digest
     with session_factory() as session:
+        previous = session.scalars(
+            select(Digest).where(Digest.kind == DigestKind.DIGEST).order_by(Digest.id.desc())
+        ).first()
         items = scored_items(
             session,
             watchlist_names(config),
             exclude=reported_job_ids(session),
         )
+        cutoff = now - timedelta(days=settings.rescored_max_age_days)
+        since = previous.sent_at if previous else None
+        items = [i for i in items if _new_enough(i, since, cutoff)]
         sections = build_sections(items, settings, include_below=False)
-        previous = session.scalars(
-            select(Digest).where(Digest.kind == DigestKind.DIGEST).order_by(Digest.id.desc())
-        ).first()
         rendered = _render(
             config,
             session,
@@ -143,6 +147,15 @@ def make_digest(
             )
         outcome.recorded = True
     return outcome
+
+
+def _new_enough(item: ReportItem, since: datetime | None, cutoff: datetime) -> bool:
+    """Scored for the first time since the previous digest, or first seen after `cutoff`.
+    The other jobs reach this digest only because their score changed later."""
+    first = item.score.first_scored_at
+    if since is None or first is None or first > since:
+        return True
+    return max(j.first_seen_at for j in item.group.jobs) >= cutoff
 
 
 @dataclass

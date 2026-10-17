@@ -30,6 +30,7 @@ from job_scout.db.types import utcnow
 from job_scout.feedback.links import verify
 from job_scout.feedback.store import MAX_REASON_CHARS, current_score, get_vote, record_vote
 from job_scout.report.render import http_url
+from job_scout.scoring.points import Breakdown
 from job_scout.scoring.schema import CoreResult
 
 log = logging.getLogger(__name__)
@@ -124,8 +125,13 @@ class FeedbackApp:
                 "job_title": job.title,
                 "company": job.company or "unknown company",
                 "apply_url": job.apply_url or job.canonical_url,
-                "score": result.overall_score if result else None,
-                "disqualified": bool(result and result.disqualified),
+                "score": score.overall_score if result and score else None,
+                "disqualified": bool(result and score and score.disqualified),
+                "breakdown": (
+                    Breakdown.from_json(score.breakdown).line()
+                    if score and score.breakdown
+                    else None
+                ),
                 "summary": result.summary if result else None,
                 "previous": previous,
                 "vote": vote if vote in set(Vote) else (previous.vote if previous else ""),

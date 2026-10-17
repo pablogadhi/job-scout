@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from datetime import datetime
+from pathlib import Path
 from typing import Annotated
 from zoneinfo import ZoneInfo
 
@@ -25,9 +26,10 @@ from job_scout.cli.common import (
     open_db,
     scoring_overrides,
 )
-from job_scout.config import AppConfig
+from job_scout.config import AppConfig, ConfigError, load_points
 from job_scout.db.models import Backend, ScoringMode, StopReason
 from job_scout.db.types import utcnow
+from job_scout.report.data import watchlist_names
 from job_scout.scoring.backends import PlanOnlyScorer, make_scorer
 from job_scout.scoring.calibrate import (
     ConfigSpec,
@@ -38,8 +40,11 @@ from job_scout.scoring.calibrate import (
     save,
 )
 from job_scout.scoring.planner import Limits
-from job_scout.scoring.queue import requeue_for_rescore
+from job_scout.scoring.points import PointsMismatch, check_points
+from job_scout.scoring.queue import requeue_for_rescore, rescore_ids, snapshot, undo_requeue
 from job_scout.scoring.runner import RunOptions, RunReport, ScoringRunner
+from job_scout.scoring.simulate import BANDS, GROUP_FIELDS
+from job_scout.scoring.simulate import simulate as run_simulation
 from job_scout.scoring.status import scoring_status
 
 
@@ -73,6 +78,9 @@ def rescore(
     since: Annotated[
         datetime | None, typer.Option("--since", formats=["%Y-%m-%d"], help="First seen on/after.")
     ] = None,
+    legacy: Annotated[
+        bool, typer.Option("--legacy", help="Every job scored before points (no breakdown).")
+    ] = False,
     mode: Annotated[ScoringMode, typer.Option("--mode")] = ScoringMode.DAILY,
     backend: BackendOpt = None,
     model: ModelOpt = None,
@@ -81,27 +89,36 @@ def rescore(
     max_input_tokens: MaxInputTokensOpt = None,
     dry_run: DryRunOpt = False,
 ) -> None:
-    """Re-score top or recent jobs under the current profile (after editing profile.md)."""
-    if top is None and since is None:
-        raise fail("give --top N and/or --since YYYY-MM-DD")
+    """Re-score top, recent or old-format jobs under the current profile (after editing
+    profile.md). With --dry-run nothing stays queued."""
+    if top is None and since is None and not legacy:
+        raise fail("give --top N, --since YYYY-MM-DD and/or --legacy")
     config = load(ctx, scoring_overrides(backend, model))
     session_factory = open_db(config)
+    since_utc = since.replace(tzinfo=ZoneInfo(config.settings.schedule.timezone)) if since else None
     with session_factory.begin() as session:
-        since_utc = (
-            since.replace(tzinfo=ZoneInfo(config.settings.schedule.timezone)) if since else None
+        ids = rescore_ids(session, top=top, since=since_utc, legacy=legacy)
+        before = snapshot(session, ids)
+        queued = requeue_for_rescore(
+            session, config.profile.sha256, top=top, since=since_utc, legacy=legacy
         )
-        queued = requeue_for_rescore(session, config.profile.sha256, top=top, since=since_utc)
-    console.print(f"queued {queued} jobs for re-scoring under profile {config.profile.sha256[:12]}")
-    run_scoring(
-        config,
-        session_factory,
-        mode=mode,
-        command="rescore",
-        postings_per_call=postings_per_call,
-        max_calls=max_calls,
-        max_input_tokens=max_input_tokens,
-        dry_run=dry_run,
-    )
+    verb = "would queue" if dry_run else "queued"
+    console.print(f"{verb} {queued} jobs for re-scoring under profile {config.profile.sha256[:12]}")
+    try:
+        run_scoring(
+            config,
+            session_factory,
+            mode=mode,
+            command="rescore",
+            postings_per_call=postings_per_call,
+            max_calls=max_calls,
+            max_input_tokens=max_input_tokens,
+            dry_run=dry_run,
+        )
+    finally:
+        if dry_run:
+            with session_factory.begin() as session:
+                undo_requeue(session, before)
 
 
 def status(ctx: typer.Context) -> None:
@@ -335,3 +352,80 @@ def _sizes_summary(sizes: list[int]) -> str:
         else:
             runs.append([1, size])
     return " + ".join(f"{count}x{size}" for count, size in runs)
+
+
+def simulate(
+    ctx: typer.Context,
+    table_file: Annotated[
+        Path | None,
+        typer.Option("--table", help="A candidate scoring.yaml (default: the current one)."),
+    ] = None,
+    movers: Annotated[int, typer.Option("--movers", min=0, help="Biggest changes to list.")] = 15,
+) -> None:
+    """How a points table ranks the stored jobs, against their current scores. Read-only:
+    nothing is sent to Claude and nothing is saved."""
+    config = load(ctx)
+    table = config.points
+    if table_file is not None:
+        try:
+            table = load_points(table_file)
+            check_points(table, config.profile)
+        except (ConfigError, PointsMismatch) as exc:
+            raise fail(f"{table_file}: {exc}", label="config error") from exc
+    with open_db(config)() as session:
+        sim = run_simulation(
+            session, table, config.settings.digest, watchlist_names(config), movers=movers
+        )
+    name = table_file or config.config_dir / "scoring.yaml"
+    console.print(
+        f"{sim.compared} scored jobs under {escape(str(name))}"
+        + (
+            f"; {sim.legacy} scored before points left out (`rescore --legacy`)"
+            if sim.legacy
+            else ""
+        )
+    )
+    if not sim.compared:
+        return
+    bands = Table(title="Scores by band", title_justify="left")
+    for column in ("band", "now", "simulated"):
+        bands.add_column(column, justify="left" if column == "band" else "right")
+    for _, label in BANDS:
+        bands.add_row(label, str(sim.bands_before[label]), str(sim.bands_after[label]))
+    console.print(bands)
+    sections = Table(
+        title=f"Sections (min score {config.settings.digest.min_score})", title_justify="left"
+    )
+    for column in ("section", "now", "simulated"):
+        sections.add_column(column, justify="left" if column == "section" else "right")
+    for section in ("watchlist", "top", "unclear", "below"):
+        sections.add_row(
+            section, str(sim.sections_before[section]), str(sim.sections_after[section])
+        )
+    console.print(sections)
+    console.print(
+        "mean points: "
+        + ", ".join(f"{escape(label)} {points:g}" for label, points in sim.component_means.items())
+    )
+    if sim.movers:
+        moved = Table(title="Biggest changes", title_justify="left")
+        for column in ("job", "now", "sim", "posting", "breakdown"):
+            moved.add_column(column, overflow="fold")
+        for m in sim.movers:
+            moved.add_row(
+                str(m.job_id),
+                str(m.before),
+                str(m.after),
+                escape(f"{m.title} - {m.company}"),
+                escape(m.line),
+            )
+        console.print(moved)
+    if sim.spreads:
+        spread = Table(
+            title=f"Spread among alike jobs ({', '.join(GROUP_FIELDS)})", title_justify="left"
+        )
+        for column in ("alike", "jobs", "lowest", "highest"):
+            spread.add_column(column, justify="left" if column == "alike" else "right")
+        for s in sim.spreads:
+            spread.add_row(escape(" / ".join(s.alike)), str(s.jobs), str(s.lowest), str(s.highest))
+        console.print(spread)

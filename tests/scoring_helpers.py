@@ -4,43 +4,100 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy.orm import Session, sessionmaker
 
-from job_scout.db.models import Backend, Job, PrefilterResult, Source
+from job_scout.config import load_points
+from job_scout.db.models import Backend, Job, PrefilterResult, Score, Source
 from job_scout.scoring.backends.base import CallRequest, CallResult
+from job_scout.scoring.points import apply, compute, fingerprint
 
 T0 = datetime(2026, 10, 12, 12, 0, tzinfo=UTC)
+TEST_TABLE = load_points(Path(__file__).parent / "fixtures" / "config" / "scoring.yaml")
+
+
+# Positive signals without a badge, largest first: they top up a score exactly.
+_FILLERS = [
+    ("async_first", 4), ("flexible_hours", 3), ("pto_minimum", 3), ("after_hours_limits", 3),
+    ("sustainable_pace", 3), ("sabbatical", 2), ("remote_handbook", 2),
+    ("domain_fintech", 2), ("domain_healthcare", 2), ("domain_crm", 1),
+    ("domain_b2b_platforms", 1),
+]  # fmt: skip
 
 
 def result_for(job_id: int, score: int = 70, **overrides: Any) -> dict[str, Any]:
-    """A valid ScoreResult payload item."""
-    return {
+    """A valid reply item whose facts compute to `score` under the pinned scoring.yaml
+    (tests/fixtures/config): a senior backend role, eligible, salary unlisted, unless
+    overridden; requirements and signals are filled in to reach the score."""
+    result: dict[str, Any] = {
         "job_id": job_id,
-        "disqualified": False,
-        "disqualify_reason": None,
         "remote": "yes",
         "location_eligibility": "pass",
         "location_notes": "Open to LATAM.",
         "salary": "unlisted",
         "salary_usd_range": None,
         "salary_notes": "",
+        "language": "english-or-spanish",
         "role_category": "backend",
         "seniority": "Senior",
-        "skill_fit": 4,
-        "seniority_fit": 5,
-        "matched_skills": ["Python", "Django"],
-        "gaps": [],
-        "four_day_week": "unknown",
-        "wlb_positive": [],
-        "wlb_negative": [],
+        "seniority_level": "senior",
+        "requirements": [],
+        "signals": [],
         "employment_type": "unknown",
         "red_flags": [],
-        "overall_score": score,
         "summary": "Synthetic posting that fits.",
         **overrides,
     }
+    if "requirements" not in overrides and "signals" not in overrides:
+        result["requirements"], result["signals"] = _facts_for(score, result, overrides)
+    return result
+
+
+def with_points(score: Score, result: dict[str, Any]) -> Score:
+    """`score` holding `result`, with the points the pinned scoring.yaml gives it."""
+    breakdown = compute(TEST_TABLE, result)
+    assert breakdown is not None
+    score.result = result
+    apply(score, breakdown, fingerprint(TEST_TABLE))
+    return score
+
+
+def _fixed_points(result: dict[str, Any]) -> int:
+    breakdown = compute(TEST_TABLE, result)
+    assert breakdown is not None
+    return sum(p.points for p in breakdown.parts if p.name not in ("skills", "signals"))
+
+
+def _facts_for(
+    score: int, result: dict[str, Any], overrides: dict[str, Any]
+) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
+    need = score - _fixed_points(result)
+    if need < 0:  # a weak job: no level, no target role (unless the test set them)
+        if "seniority_level" not in overrides:
+            result["seniority_level"] = "intern"
+        if "role_category" not in overrides:
+            result["role_category"] = "other"
+        need = max(0, score - _fixed_points(result))
+    # 8 required skills, 5 points each when matched; signals add the rest.
+    core = min(need, 40) // 5
+    requirements = [
+        {
+            "skill": f"Skill {n}",
+            "importance": "required",
+            "primary": False,
+            "match": "core" if n < core else "missing",
+            "evidence": f"Skill {n} experience",
+        }
+        for n in range(8)
+    ]
+    left, signals = need - core * 5, []
+    for name, points in _FILLERS:
+        if 0 < points <= left:
+            signals.append({"signal": name, "evidence": f"quote for {name}"})
+            left -= points
+    return requirements, signals
 
 
 def seed_jobs(

@@ -1,0 +1,88 @@
+# Template for the job-scout-profile skill: the instance's config/scoring.yaml, the points for
+# the facts Claude extracts (profile.md "Output format"). Replace every {...} with the values
+# the profile declares; every enum map must list all of its field's values, nothing else.
+# `job-scout sources check` validates it against profile.md; `job-scout simulate` shows how
+# it ranks the stored jobs, without calling Claude.
+#
+# Aim: a strong fit with no signals near 80; 85+ only with the signals the person values
+# most; the wrong role, level or main requirement in 21-49 (caps); a hard requirement
+# failed at 20 or below (disqualify).
+
+components:
+  experience:
+    kind: requirements
+    field: requirements
+    item: skill
+    evidence: evidence
+    max: 40
+    weight:
+      subfield: importance
+      values: {required: 3, nice-to-have: 1}
+    match:
+      subfield: match
+      values: {core: 1.0, solid: 0.85, equivalent: 0.75, partial: 0.4, missing: 0.0}
+    if_empty: 0.5
+    primary_missing:
+      subfield: primary
+      when_match: [missing]
+      component_max: 10
+      total_max: 45
+      reason: main requirement missing
+
+  seniority:
+    kind: enum
+    field: seniority_level
+    points: {"{level-a}": 6, "{level-b}": 20, "{level-c}": 15, unstated: 14}
+
+  role:
+    kind: enum
+    field: role_category
+    points: {"{role-a}": 15, "{role-b}": 15, "{role-c}": 5, other: 0}
+
+  salary:
+    kind: enum
+    field: salary
+    points: {meets: 10, unlisted: 6, below: 0}
+
+  location:
+    kind: enum
+    field: location_eligibility
+    points: {pass: 5, unclear: 1, fail: 0}
+
+  contract:
+    kind: enum
+    field: contract_type
+    points: {staff: 4, fixed-term: 4, consultancy: 4, unknown: 2}
+
+  travel:
+    kind: enum
+    field: travel_required
+    points: {none: 5, occasional: 5, frequent: -10, unknown: 2}
+
+  signals:
+    kind: signals
+    field: signals
+    subfield: signal
+    evidence: evidence
+    min: -20
+    max: 20
+    points:
+      "{signal_a}": {points: 4, label: "{short label}"}
+      "{signal_b}": -6
+
+caps:
+  - when: {role_category: [other]}
+    max: 45
+    reason: not a target role
+  - when: {travel_required: [frequent]}
+    max: 49
+    reason: frequent travel
+
+disqualify:
+  - when: {location_eligibility: [fail]}
+    reason: location not open to the candidate
+  - when: {remote: ["no"]}
+    reason: not fully remote
+  - when: {salary: [below]}
+    reason: pay below the minimum
+disqualified_max: 20

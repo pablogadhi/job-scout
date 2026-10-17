@@ -57,12 +57,15 @@ def test_core_field_declared_differently_is_rejected(config_dir: Path) -> None:
 def test_output_schema_has_only_supported_keywords(app_config: AppConfig) -> None:
     schema = score_schema(app_config.profile).json_schema()
     text = json.dumps(schema)
-    for keyword in ("minimum", "maximum", "minLength", '"title"', '"default"'):
+    for keyword in ('"minimum"', '"maximum"', '"minLength"', '"title"', '"default"'):
         assert keyword not in text
     # Every object forbids extra properties (required by structured outputs).
     item = schema["$defs"]["ScoreResult"]
     assert item["additionalProperties"] is False and schema["additionalProperties"] is False
-    assert "job_id" in item["required"] and "overall_score" in item["properties"]
+    assert "job_id" in item["required"] and "requirements" in item["properties"]
+    assert "overall_score" not in item["properties"]  # computed by the code
+    for nested in ("RequirementsItem", "SignalsItem"):
+        assert schema["$defs"][nested]["additionalProperties"] is False
 
 
 def test_system_prompt_is_profile_plus_rules(app_config: AppConfig) -> None:

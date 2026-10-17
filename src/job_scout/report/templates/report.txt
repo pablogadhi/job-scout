@@ -5,14 +5,24 @@ Generated {{ generated_at }}, threshold {{ settings.min_score }} (watchlist {{ s
 {%- macro job(item) %}
 {%- set r = item.result %}
 
-[{{ item.overall }}] {{ item.title }} - {{ item.company }}{% if item.watchlist %} (watchlist){% endif %}{% if r.four_day_week is defined and r.four_day_week == "yes" %} (4-day week){% endif %}
+[{{ item.overall }}] {{ item.title }} - {{ item.company }}{% if item.watchlist %} (watchlist){% endif %}{% for badge in item.badges %} ({{ badge }}){% endfor %}
   {{ r.summary }}
+  Score: {{ item.breakdown.line() if item.breakdown else "old scoring (Claude's own 0-100, before points)" }}
+{%- if item.disqualified %}
+  Disqualified: {{ item.disqualify_reason or "yes" }}
+{%- endif %}
   Location ({{ r.location_eligibility }}):{% if r.location_notes is defined %} {{ r.location_notes }}{% endif %}
   Salary ({{ r.salary }}): {{ item.salary or "not stated" }}{% if r.salary_usd_range is defined and r.salary_usd_range %}, ~{{ r.salary_usd_range }} USD{% endif %}
-{%- if r.matched_skills %}
+{%- for part in item.requirement_parts %}
+  {{ part.label | capitalize }}: {% for i in part.items %}{{ i | mark }} {{ i.text }} ({{ i.note }}){% if not loop.last %}; {% endif %}{% endfor %}
+{%- endfor %}
+{%- for part in item.signal_parts %}
+  {{ part.label | capitalize }}: {% for i in part.items %}{{ "%+d" | format(i.points) }} {{ i.text }}{% if not loop.last %}; {% endif %}{% endfor %}
+{%- endfor %}
+{%- if r.matched_skills is defined and r.matched_skills %}
   Matched: {{ r.matched_skills | join(", ") }}
 {%- endif %}
-{%- if r.gaps %}
+{%- if r.gaps is defined and r.gaps %}
   Gaps: {{ r.gaps | join(", ") }}
 {%- endif %}
 {%- for label, value in item.other_fields %}

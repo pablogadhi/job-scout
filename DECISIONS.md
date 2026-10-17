@@ -2016,6 +2016,37 @@ your approval between steps.
   run), instead of keeping Claude's old numbers alongside.
 - **P12-U4 After a weight change, an old unreported job reaches a digest only if it was
   first seen within the last 14 days,** so a change can't flood a digest.
+- **P12-U5 The time-zone rule in profile.md was ambiguous.** "No time-zone requirement
+  disqualifies a posting on its own" could read as "a posting without a time-zone
+  requirement is disqualified". You: "If the job posting is remote and there's not timezone
+  requirement at all, it does quialify". It now says a posting naming no time zone is fine,
+  and a working-hours time zone never disqualifies; a UTC band stated as a residency rule
+  is still a location rule. The same edit added the blank lines markdownlint wanted around
+  the skill headings and lists (no wording change).
+- **P12-U6 English or Spanish are both fine, any other required language disqualifies.**
+  You: "I don't really care about the language as long is either english or spanish. A role
+  in spanish being a signal would increase points, I don't want that. What should be
+  disqualifying is a role that requires any other language." The `spanish_valued` signal
+  (+3) is gone from profile.md and scoring.yaml. A new field `language: english-or-spanish |
+  other` is hard requirement 5, and a disqualify rule turns `other` into a disqualification
+  ("requires a language other than English or Spanish"). Claude's choices, for your review:
+  - `other` also when the posting is written in another language with no sign English or
+    Spanish is enough; a language that's only a plus ("French is an asset") stays
+    `english-or-spanish`, and so does a posting that doesn't say (never guess a fail).
+  - Spoken languages are no longer `requirements` entries, so they add or take no skill
+    points either.
+  - Like any profile field, it's listed in the digest ("Language: english-or-spanish") and
+    gets a CSV column.
+  - The profile skill now says a dealbreaker can be a field of its own named by a
+    `disqualify` rule, not only `remote`, `location_eligibility` or `salary`.
+- **P12-U7 A new domain: human capital management.** You: "Add one more domain more: Human
+  Capital Management (HCM), I worked in a project for [two HCM companies]." profile.md's
+  domain experience names HCM (HR, payroll, workforce and talent software), and the new
+  `domain_hcm` signal is worth +2 in scoring.yaml, like fintech and healthcare (Claude's
+  pick, for your review: CRM and B2B platforms are +1). You took the company names out of
+  profile.md: they don't go in the repo.
+- **P12-U8 You approved the profile.md rewrite** (Step 3, with P12-U5 to U7): Claude
+  reports facts and the code scores them.
 
 ### P12 Decisions (Claude, Step 1: a list-of-objects field)
 
@@ -2072,3 +2103,79 @@ your approval between steps.
 - **P12-B1 `test_one_score_per_job_migration_keeps_the_best_row` wrote old-schema rows
   through the ORM,** so any new `scores` column broke it. It inserts only the columns that
   schema had now, as does the new back-fill test.
+
+### P12 Decisions (Claude, Step 3: the score is computed everywhere)
+
+- **P12-D10 profile.md asks for facts, not a score** (pending your approval). The output
+  format drops `overall_score`, `disqualified`, `disqualify_reason`, `skill_fit`,
+  `seniority_fit`, `matched_skills`, `gaps`, `four_day_week` and `wlb_*`, and adds
+  `seniority_level`, `requirements` (skill, importance, primary, match, evidence) and
+  `signals` (signal, evidence). The rubric and every number in the prose ("subtract 15",
+  "+10 gaming", "21–49", the deductions under "How to treat gaps") move to scoring.yaml;
+  "How to treat gaps" becomes "Match levels" (core, solid, equivalent, partial, missing,
+  from the same skill lists and equivalents), "Strong preferences" becomes "Signals" (each
+  old positive and negative signal named, on-call still never one, travel beyond ~6 trips
+  a year as `frequent_travel`), and "Scoring rubric" becomes "How to extract". The hard
+  requirements now set `remote`, `location_eligibility` or `salary`, and the code
+  disqualifies. Candidate facts are unchanged.
+- **P12-D11 Core fields shrink to remote, location_eligibility, salary, red_flags and
+  summary;** `overall_score`, `disqualified` and `disqualify_reason` are computed keys,
+  and a profile declaring one fails at load. `CoreResult` keeps `extra="allow"`, so a
+  stored result in the old format still reads everywhere.
+- **P12-D12 The recompute runs in `open_db`,** before any command reads scores: one query
+  when nothing changed. It writes even during dry runs; it only refreshes values derived
+  from stored results and your scoring.yaml.
+- **P12-D13 Where the score shows:**
+  - Digest and backlog report: a "Score:" breakdown line under the summary, then the
+    requirements (✓ or ✗, with importance and match) and the signals (+/− with the quote).
+    Badges come from signals marked `badge` (4-day week, gaming). The report header names
+    the scoring table's fingerprint.
+  - `explain`: the line, then every component item by item with its points and quote, the
+    caps, the disqualify rule and notes on values the table doesn't know.
+  - CSV: `score_breakdown`, `score_legacy`, `scoring_fingerprint` and a `points_<name>`
+    column per component.
+  - Feedback page: "Score: 72" with the breakdown line.
+  - Old-format rows say "Old scoring: Claude's own 0–100, before points" and keep their
+    Matched, Gaps and 4-day-week badge.
+- **P12-D14 Feedback is judged against the current score.** A vote made before a weight
+  change is compared with the score the job has now (the score at vote time is still
+  stored and shown as "was N" in `feedback report`). Prompt judgments show the score and
+  its breakdown, and tell Claude to look for a misjudged fact, never to move a fact to
+  change a score.
+- **P12-D15 `calibrate` compares formula scores,** plus how often two configurations
+  extracted the same facts: the share of identical values per enum field (`same_value`)
+  and the overlap of requirements and signals by name (`overlap`). The saved JSON keeps
+  each reply, so a calibration can be re-scored later without calling Claude.
+- **P12-D16 New `simulate [--table FILE]`:** stored scores vs a candidate table, read-only
+  (scores are changed in memory, never saved): counts per band and section, mean points per
+  component, the biggest changes with their breakdowns, and the spread among jobs alike on
+  seniority level, role, salary and location. A candidate table is checked against the
+  profile first (exit 2).
+- **P12-D17 New `rescore --legacy`:** queues every job scored before points. Old-format
+  rows are found in Python, since the JSON column stores Python None as JSON null, which
+  SQL's `IS NULL` misses. On your local DB copy, `rescore --legacy --mode backlog
+  --backend api --dry-run` planned 1,711 single-posting calls (190 old-format plus 1,521
+  never scored) at an estimated $0.92 on the Batches API.
+- **P12-D18 The 14-day rule (P12-U4)** is `digest.rescored_max_age_days: 14` (0 turns
+  re-ranked jobs off). A job enters a digest if it was first scored after the previous
+  digest, or its newest copy was first seen within that many days; the backlog report is
+  unaffected.
+- **P12-D19 Tests build facts for a score.** `result_for(job_id, score=N)` fills
+  requirements (8 required skills, 5 points each when matched) and badge-free signals so
+  the facts compute to N under the pinned table, and `with_points` stores a row the way the
+  runner does. The schema snapshot (`tests/fixtures/score_schema_repo_profile.json`) was
+  regenerated on purpose: one nullable union (`salary_usd_range`) and two nested object
+  types, inside the API's limits.
+- **P12-D20 The profile skill writes scoring.yaml too:** the template profile asks for
+  facts, a new `references/scoring-template.yaml` holds the points with placeholders that
+  match it, and `test_profile_skill.py` checks the two fit together.
+- **P12-R1 The ngo instance doesn't load until Step 4.** Its profile.md still declares
+  `overall_score` and it has no scoring.yaml; both are written with you in Step 4, before
+  anything of Phase 12 is deployed.
+
+### P12 Bugs found and fixed (Step 3)
+
+- **P12-B2 `rescore --dry-run` queued the jobs for real.** The requeue was committed
+  before the dry-run plan, so the jobs stayed pending and the next run scored them (and
+  spent). The dry run now restores each row's status afterwards; a test checks nothing
+  stays queued.

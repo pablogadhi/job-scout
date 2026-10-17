@@ -84,10 +84,10 @@ components:
       after_hours_limits: {points: 3, label: after-hours limits}
       sustainable_pace: {points: 3, label: sustainable pace}
       remote_handbook: {points: 2, label: remote handbook}
-      spanish_valued: {points: 3, label: Spanish}
       domain_fintech: {points: 2, label: fintech}
       domain_healthcare: {points: 2, label: healthcare}
       domain_crm: {points: 1, label: CRM}
+      domain_hcm: {points: 2, label: HCM}
       domain_b2b_platforms: {points: 1, label: B2B platforms}
       gaming_role_fit: {points: 8, label: gaming, badge: true}
       fast_paced: {points: -4, label: fast-paced}
@@ -115,4 +115,6 @@ disqualify:
     reason: not fully remote
   - when: {salary: [below]}
     reason: salary below the minimum
+  - when: {language: [other]}
+    reason: requires a language other than English or Spanish
 disqualified_max: 20

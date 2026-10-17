@@ -25,7 +25,7 @@ uv run --env-file .env alembic upgrade head     # create/upgrade the DB
 uv run --env-file .env job-scout sources check  # validate config, show source health
 uv run --env-file .env job-scout fetch --tier 1  # fetch and store (--force ignores min interval)
 uv run --env-file .env job-scout filter          # pre-filter new/stale groups, pass rate per source
-uv run --env-file .env job-scout explain ID      # a job, its duplicate group, verdict, scores
+uv run --env-file .env job-scout explain ID      # a job, its group, verdict, score breakdown
 uv run --env-file .env job-scout score --dry-run # plan calls (and est. API cost), no spend
 uv run --env-file .env job-scout status          # pending, last run, today's calls/spend, token
 uv run --env-file .env job-scout run             # daily: fetch, filter, score, digest (spends)
@@ -34,7 +34,9 @@ uv run --env-file .env job-scout digest --dry-run   # reports/digest-preview.htm
 uv run --env-file .env job-scout export --sqlite    # CSV of every posting + DB snapshot
 uv run --env-file .env job-scout ats detect      # seed + watchlist -> company boards (resumable)
 uv run --env-file .env job-scout feedback serve  # the 👍/👎 page (needs JOB_SCOUT_FEEDBACK_SECRET)
-uv run --env-file .env job-scout feedback report # Claude's scores vs your votes
+uv run --env-file .env job-scout feedback report # the scores vs your votes
+uv run --env-file .env job-scout simulate --table candidate.yaml  # a scoring.yaml vs stored scores
+uv run --env-file .env job-scout rescore --legacy --dry-run  # re-extract jobs scored before points
 uv run --env-file .env pytest -m live tests/test_live_email.py  # sends 1 real email
 uv run --env-file .env pytest -m live tests/test_live_scoring.py  # spends 1 Pro prompt + ~$0.01
 uv run --env-file .env job-scout calibrate --sample 50 --configs "api:claude-haiku-5-5:1,cli:claude-haiku-5-5:20"
@@ -65,7 +67,7 @@ instance; an instance's files never go into git.
   `feedback`) holds plain command functions and their printing; `__init__.py` registers
   them in `--help` order. `common.py`: consoles, `load()`, `open_db()`, `fail()`, shared
   options. Tests patch a helper in the module that defines it (`job_scout.cli.ats.HttpClient`).
-- `src/job_scout/config/`: Pydantic models for the four config files. `extra="forbid"`
+- `src/job_scout/config/`: Pydantic models for the five config files. `extra="forbid"`
   everywhere, so typos fail at startup with exit code 2. `profile.md` is validated for its
   `## Output format` JSON block and hashed (SHA-256 of the raw bytes = `profile_hash`). Each
   output field is typed from its example (`"a | b"`, text, "… or null", a list, a number,
@@ -99,8 +101,8 @@ instance; an instance's files never go into git.
   `backends/cli.py` (`claude -p`), `backends/api.py` (Anthropic SDK), `calibrate.py`,
   `status.py`, `points.py` (the score computed from a stored result and the points table
   in `config/scoring.yaml`, modelled in `config/points.py`: `check_points` against the
-  profile, `compute` → `Breakdown`, `fingerprint`, `refresh` of stored scores; Phase 12,
-  not wired into the commands yet).
+  profile, `compute` → `Breakdown`, `fingerprint`, `refresh` of stored scores),
+  `simulate.py` (a table's ranking vs the stored scores, read-only).
 - `src/job_scout/ats/`: company job boards. `seed.py` (remoteintech tarball, filtered by
   `seed_regions`/`seed_remote_policies`), `platforms.py` (per-ATS token patterns and job
   mappers; Workday's tokens are `host/tenant/site`, its list is POSTed a page at a time and
@@ -214,9 +216,21 @@ instance; an instance's files never go into git.
   `PREFILTER_VERSION` (`prefilter/rules.py`) whenever rule logic changes.
 - **Regex filters never read descriptions** (false drops like "hybrid cloud"); descriptions
   are Claude's job. `remote_raw` holds only the job's own arrangement, never the company's.
+- **Claude extracts, the code scores.** profile.md's output format asks for facts
+  (requirements with match levels, signals with quotes, seniority, role, location, pay);
+  `scoring/points.py` turns them into `overall_score`, `disqualified` and a `breakdown`
+  with `config/scoring.yaml`, which Claude never sees. A profile declaring `overall_score`,
+  `disqualified` or `disqualify_reason` fails at load; `check_points` fails startup (exit
+  2) when the table names a field or value the profile lacks or misses one of an enum's
+  values. `cli/common.open_db` recomputes every scored row whose `score_fingerprint`
+  differs (table values plus `SCORING_VERSION`, which you bump when the formula changes),
+  so a weight change re-ranks everything without calling Claude. A row scored before
+  points has no breakdown and keeps Claude's number ("old scoring"; `rescore --legacy`).
+  A digest takes a job scored before the previous digest only if it was first seen within
+  `digest.rescored_max_age_days`.
 - **Scoring:** one score row per canonical job, scored once. Only `rescore` queues a scored
   job again, plus `enqueue` when a copy is linked to its group (its combined locations
-  changed). Editing profile.md re-scores nothing; `profile_hash` on the row records which
+  changed). Editing profile.md re-scores nothing (editing scoring.yaml recomputes, above); `profile_hash` on the row records which
   profile scored it (`explain` marks older ones). Pending rows belong to no backend. Every
   call is committed before the next one. A job is retried at most once (`MAX_ATTEMPTS`); a
   failed multi-posting call is split in half for the retry. Postings are untrusted: they're

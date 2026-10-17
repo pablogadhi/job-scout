@@ -38,6 +38,7 @@ OUTPUT_FORMAT: dict[str, Any] = {
     "remote": "yes | no | unclear",
     "location_eligibility": "pass | fail | unclear",
     "salary": "meets | below | unlisted",
+    "language": "english-or-spanish | other",
     "role_category": "backend | full-stack | frontend | infrastructure | devops | platform | "
     "sre | tech-lead | data-engineering | iot | embedded | engineering-manager | mobile | other",
     "seniority_level": "intern | junior | mid | senior | lead | staff | principal | unstated",
@@ -94,6 +95,7 @@ def result(**overrides: Any) -> dict[str, Any]:
         "remote": "yes",
         "location_eligibility": "pass",
         "salary": "unlisted",
+        "language": "english-or-spanish",
         "role_category": "backend",
         "seniority_level": "senior",
         "requirements": GOOD_MIX,
@@ -194,6 +196,7 @@ def test_typos_and_bad_numbers_fail_validation(edit: Any) -> None:
         ({"role_category": "frontend"}, 45),  # 65, capped
         ({"seniority_level": "mid"}, 49),  # 66, capped
         ({"location_eligibility": "fail"}, 20),  # 75, disqualified
+        ({"language": "other"}, 20),  # 80, disqualified
     ],
 )
 def test_archetypes_land_in_their_bands(overrides: dict[str, Any], total: int) -> None:
@@ -225,6 +228,9 @@ def test_the_breakdown_line_shows_how_the_score_was_reached() -> None:
         "= 75 → 20 (disqualified: location not open to Guatemala; not fully remote)"
     )
     assert "remote -5" in score_of(remote="unclear").line()
+    assert score_of(language="other").disqualify_reason == (
+        "requires a language other than English or Spanish"
+    )
 
 
 def test_signals_count_once_and_are_clamped() -> None:

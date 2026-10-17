@@ -53,7 +53,7 @@ def report(
         bool, typer.Option("--all", help="List every judgment, not only disagreements.")
     ] = False,
 ) -> None:
-    """How often Claude's scores agreed with your votes, and where they didn't."""
+    """How often the scores agreed with your votes, and where they didn't."""
     config = load(ctx)
     min_score = config.settings.digest.min_score
     since_utc = since.replace(tzinfo=ZoneInfo(config.settings.schedule.timezone)) if since else None
@@ -71,7 +71,7 @@ def report(
         f"{len(stats.judgments)} judgments: {len(stats.up)} 👍 (mean score {avg(stats.up)}), "
         f"{len(stats.down)} 👎 (mean score {avg(stats.down)}); digest threshold {min_score}"
     )
-    table = Table(title="Claude's score vs your vote", title_justify="left")
+    table = Table(title="Score vs your vote", title_justify="left")
     table.add_column("")
     table.add_column(f"score >= {min_score}", justify="right")
     table.add_column(f"below {min_score} or disqualified", justify="right")
@@ -94,7 +94,7 @@ def report(
         console.print(
             _judgment_rows(
                 f"Disagreements ({len(stats.disagreements)}): patterns here may belong in "
-                "profile.md",
+                "profile.md or scoring.yaml",
                 stats.disagreements,
             )
         )
@@ -107,11 +107,13 @@ def _judgment_rows(title: str, examples: list[Example]) -> Table:
     for column in ("job", "vote", "score", "posting", "your reason"):
         table.add_column(column, overflow="fold", justify="right" if column == "score" else "left")
     for e in examples:
-        score = "-" if e.overall_score is None else str(e.overall_score)
+        score = "-" if e.score is None else str(e.score)
+        if e.overall_score is not None and e.overall_score != e.score:
+            score += f" (was {e.overall_score})"
         table.add_row(
             str(e.job_id),
             "👍" if e.vote == Vote.UP else "👎",
-            score + (" dq" if e.disqualified else ""),
+            score + (" dq" if e.score_disqualified else ""),
             escape(f"{e.title} - {e.company or '?'}"),
             escape(e.reason or ""),
         )

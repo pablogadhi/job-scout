@@ -22,17 +22,17 @@ from job_scout.report.data import extra_output_fields, field_text
 from job_scout.report.export import export_csv
 from job_scout.scoring.backends.base import CallRequest, CallResult
 from job_scout.scoring.planner import Limits
+from job_scout.scoring.points import check_points
 from job_scout.scoring.runner import RunOptions, ScoringRunner
 from job_scout.scoring.schema import score_schema
 from tests.scoring_helpers import FakeScorer, seed_jobs
 
 NOW = datetime(2026, 10, 15, 14, 0, tzinfo=UTC)
 
-# A nonprofit program profile: the core fields, its own role categories, three fields of
-# its own, and none of the first profile's skill fit, 4-day week or work-life fields.
+# A nonprofit program profile: the core fields, its own role categories, fields of its own
+# (requirements with its own match levels), and none of the first profile's seniority
+# levels, signals or skill vocabulary. Its points table (SCORING) is its own too.
 OUTPUT_FORMAT = {
-    "disqualified": False,
-    "disqualify_reason": None,
     "remote": "yes | no | unclear",
     "location_eligibility": "pass | fail | unclear",
     "location_notes": "string",
@@ -43,19 +43,46 @@ OUTPUT_FORMAT = {
     "travel_required": "none | occasional | frequent | unknown",
     "contract_length": "e.g. 6 months, or null",
     "donors": ["string"],
-    "matched_skills": ["string"],
-    "gaps": ["string"],
+    "requirements": [
+        {
+            "skill": "string",
+            "importance": "required | nice-to-have",
+            "match": "strong | some | none",
+        }
+    ],
     "red_flags": ["string"],
-    "overall_score": 0,
     "summary": "One sentence on the fit.",
 }
+SCORING = """
+components:
+  experience:
+    kind: requirements
+    field: requirements
+    item: skill
+    max: 50
+    weight: {subfield: importance, values: {required: 2, nice-to-have: 1}}
+    match: {subfield: match, values: {strong: 1, some: 0.5, none: 0}}
+  role:
+    kind: enum
+    field: role_category
+    points: {program-director: 30, program-manager: 25, consultant: 20, other: 0}
+  travel:
+    kind: enum
+    field: travel_required
+    points: {none: 10, occasional: 10, frequent: 0, unknown: 5}
+  salary:
+    kind: enum
+    field: salary
+    points: {meets: 10, unlisted: 5, below: 0}
+disqualify:
+  - when: {location_eligibility: [fail]}
+    reason: not open to Central America
+"""
 
 
 def program_result(job_id: int, **overrides: Any) -> dict[str, Any]:
     return {
         "job_id": job_id,
-        "disqualified": False,
-        "disqualify_reason": None,
         "remote": "yes",
         "location_eligibility": "pass",
         "location_notes": "Home-based, open to Central America.",
@@ -66,10 +93,11 @@ def program_result(job_id: int, **overrides: Any) -> dict[str, Any]:
         "travel_required": "frequent",
         "contract_length": "6 months",
         "donors": ["IDB", "EU"],
-        "matched_skills": ["Program design"],
-        "gaps": [],
+        "requirements": [
+            {"skill": "Program design", "importance": "required", "match": "strong"},
+            {"skill": "Portuguese", "importance": "nice-to-have", "match": "none"},
+        ],
         "red_flags": [],
-        "overall_score": 80,
         "summary": "Synthetic program role that fits.",
         **overrides,
     }
@@ -83,6 +111,7 @@ def program_config(config_dir: Path, tmp_path: Path) -> AppConfig:
     profile.write_text(
         block.sub(lambda m: m[1] + json.dumps(OUTPUT_FORMAT, indent=2) + "\n" + m[3], text)
     )
+    (config_dir / "scoring.yaml").write_text(SCORING)
     return load_config(
         config_dir,
         {"paths": {"reports": str(tmp_path / "reports")}, "digest": {"email": {"enabled": False}}},
@@ -100,7 +129,9 @@ def test_the_profile_declares_its_own_fields(program_config: AppConfig) -> None:
         "travel_required",
         "contract_length",
         "donors",
+        "requirements",
     ]
+    check_points(program_config.points, program_config.profile)  # its own table fits
 
 
 def test_scored_reported_and_exported(
@@ -130,6 +161,8 @@ def test_scored_reported_and_exported(
     with session_factory() as session:
         stored = {s.job_id: s for s in session.scalars(select(Score))}
     assert stored[good].status == ScoreStatus.SCORED
+    # (2 x 1 + 1 x 0) / 3 of 50, + 30 + 0 + 5
+    assert stored[good].overall_score == 33 + 30 + 0 + 5
     result = stored[good].result
     assert result is not None and result["donors"] == ["IDB", "EU"]
     assert stored[bad].status == ScoreStatus.PENDING and stored[bad].attempts == 1
@@ -139,6 +172,8 @@ def test_scored_reported_and_exported(
     assert '<span class="label">Travel required:</span> frequent' in page
     assert '<span class="label">Contract length:</span> 6 months' in page
     assert '<span class="label">Donors:</span> IDB, EU' in page
+    assert "experience 33/50 · role 30/30 · travel 0/10 · salary 5/10 = 68" in page
+    assert "✓ Program design (required, strong) &middot; ✗ Portuguese (nice-to-have, none)" in page
     # The first profile's role row needs fields this one doesn't have: the short form.
     assert '<span class="label">Role:</span> program-director · Director · remote: yes' in page
     assert "4-day week" not in page and "skill fit" not in page

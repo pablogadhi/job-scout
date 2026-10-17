@@ -40,8 +40,8 @@ def record_vote(
     else:
         result = CoreResult.model_validate(score.result)
         row.profile_hash = score.profile_hash
-        row.overall_score = result.overall_score
-        row.disqualified = result.disqualified
+        row.overall_score = score.overall_score
+        row.disqualified = score.disqualified
         row.summary = result.summary
     session.flush()
     return row

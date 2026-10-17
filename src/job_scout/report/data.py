@@ -15,44 +15,62 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
+from functools import cached_property
 from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from job_scout.config import AppConfig
-from job_scout.config.profile import CORE_OUTPUT_KEYS, Profile
+from job_scout.config.profile import COMPUTED_KEYS, CORE_OUTPUT_KEYS, Profile
 from job_scout.config.secrets import secret
 from job_scout.config.settings import Digest as DigestSettings
 from job_scout.db.groups import Group, load_groups
 from job_scout.db.models import Digest, Score, ScoreStatus, Source
 from job_scout.fetch.normalize import normalize_company
 from job_scout.fetch.runner import NOT_YET
+from job_scout.scoring.points import Breakdown, Item, Part
 from job_scout.scoring.prompt import salary_line
 from job_scout.scoring.schema import CoreResult
 
 # Fields the report templates show by name: the core ones and these, from the first
 # profile. Any other field a profile declares is listed generically ("Travel required: …")
 # and gets its own CSV column.
-NAMED_FIELDS = CORE_OUTPUT_KEYS | {
-    "job_id",
-    "location_notes",
-    "salary_usd_range",
-    "salary_notes",
-    "role_category",
-    "seniority",
-    "skill_fit",
-    "seniority_fit",
-    "four_day_week",
-    "wlb_positive",
-    "wlb_negative",
-    "employment_type",
-}
+NAMED_FIELDS = (
+    CORE_OUTPUT_KEYS
+    | COMPUTED_KEYS
+    | {
+        "job_id",
+        "seniority_level",  # in the score's breakdown
+        "matched_skills",  # results scored before points
+        "gaps",
+        "location_notes",
+        "salary_usd_range",
+        "salary_notes",
+        "role_category",
+        "seniority",
+        "skill_fit",
+        "seniority_fit",
+        "four_day_week",
+        "wlb_positive",
+        "wlb_negative",
+        "employment_type",
+    }
+)
 
 
 def extra_output_fields(profile: Profile) -> list[str]:
     """The profile's fields the reports have no named place for, in the profile's order."""
     return [f.name for f in profile.output_fields if f.name not in NAMED_FIELDS]
+
+
+def _objects(value: Any) -> bool:
+    return isinstance(value, list) and any(isinstance(v, dict) for v in value)
+
+
+def item_mark(item: Item) -> str:
+    """✓ for a requirement that earned points, ✗ for one that didn't."""
+    return "✓" if item.points > 0 else "✗"
 
 
 def field_label(name: str) -> str:
@@ -111,7 +129,42 @@ class ReportItem:
 
     @property
     def overall(self) -> int:
-        return self.result.overall_score
+        return self.score.overall_score or 0
+
+    @property
+    def disqualified(self) -> bool:
+        return bool(self.score.disqualified)
+
+    @cached_property
+    def breakdown(self) -> Breakdown | None:
+        """How the score was computed; None for a result scored before points."""
+        return Breakdown.from_json(self.score.breakdown) if self.score.breakdown else None
+
+    @property
+    def disqualify_reason(self) -> str | None:
+        if self.breakdown is not None:
+            return self.breakdown.disqualify_reason
+        return (self.result.model_extra or {}).get("disqualify_reason")
+
+    @property
+    def badges(self) -> list[str]:
+        if self.breakdown is not None:
+            return list(self.breakdown.badges)
+        return (
+            ["4-day week"] if (self.result.model_extra or {}).get("four_day_week") == "yes" else []
+        )
+
+    @property
+    def requirement_parts(self) -> list[Part]:
+        """Components scored item by item against a maximum (the skills)."""
+        parts = self.breakdown.parts if self.breakdown else ()
+        return [p for p in parts if p.max is not None and p.items]
+
+    @property
+    def signal_parts(self) -> list[Part]:
+        """Components that add or subtract per item (the signals)."""
+        parts = self.breakdown.parts if self.breakdown else ()
+        return [p for p in parts if p.max is None and p.items]
 
     @property
     def apply_url(self) -> str:
@@ -137,7 +190,9 @@ class ReportItem:
         return [
             (field_label(name), text)
             for name, value in extra.items()
-            if name not in NAMED_FIELDS and (text := field_text(value)) is not None
+            if name not in NAMED_FIELDS
+            and not (self.breakdown and _objects(value))  # shown as requirements and signals
+            and (text := field_text(value)) is not None
         ]
 
     @property
@@ -217,11 +272,11 @@ def build_sections(
         result = item.result
         if (
             item.watchlist
-            and not result.disqualified
+            and not item.disqualified
             and item.overall >= settings.watchlist_min_score
         ):
             sections.watchlist.append(item)
-        elif not result.disqualified and item.overall >= settings.min_score:
+        elif not item.disqualified and item.overall >= settings.min_score:
             if result.location_eligibility == "unclear":
                 sections.unclear.append(item)
             else:

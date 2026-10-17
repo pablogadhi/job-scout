@@ -40,6 +40,7 @@
 <p class="muted">
   Generated {{ generated_at }} &middot; threshold {{ settings.min_score }}
   (watchlist {{ settings.watchlist_min_score }}) &middot; profile {{ profile_hash[:12] }}
+  &middot; scoring {{ scoring_fingerprint[:12] }}
   {%- if since %} &middot; new since {{ since }}{% endif %}
 </p>
 <p>
@@ -58,11 +59,16 @@
   <h3><span class="score {{ score_class(item.overall) }}">{{ item.overall }}</span>
     <a href="{{ item.apply_url | http_url }}">{{ item.title }}</a> &mdash; {{ item.company }}
     {%- if item.watchlist %}<span class="badge">watchlist</span>{% endif %}
-    {%- if r.four_day_week is defined and r.four_day_week == "yes" %}<span class="badge">4-day week</span>{% endif %}
+    {%- for badge in item.badges %}<span class="badge">{{ badge }}</span>{% endfor %}
   </h3>
   <div class="row">{{ r.summary }}</div>
-  {%- if r.disqualified %}
-  <div class="row flag"><span class="label">Disqualified:</span> {{ r.disqualify_reason or "yes" }}</div>
+  {%- if item.breakdown %}
+  <div class="row muted"><span class="label">Score:</span> {{ item.breakdown.line() }}</div>
+  {%- else %}
+  <div class="row muted">Old scoring: Claude's own 0&ndash;100, before points.</div>
+  {%- endif %}
+  {%- if item.disqualified %}
+  <div class="row flag"><span class="label">Disqualified:</span> {{ item.disqualify_reason or "yes" }}</div>
   {%- endif %}
   <div class="row"><span class="label">Location ({{ r.location_eligibility }}):</span>{% if r.location_notes is defined %} {{ r.location_notes }}{% endif %}</div>
   <div class="row"><span class="label">Salary ({{ r.salary }}):</span>
@@ -77,10 +83,18 @@
   {%- else %}
   <div class="row"><span class="label">Role:</span> {{ item.role_parts | join(" · ") }}</div>
   {%- endif %}
-  {%- if r.matched_skills %}
+  {%- for part in item.requirement_parts %}
+  <div class="row"><span class="label">{{ part.label | capitalize }}:</span>
+    {%- for i in part.items %} {{ i | mark }} {{ i.text }} ({{ i.note }}){% if not loop.last %} &middot;{% endif %}{% endfor %}</div>
+  {%- endfor %}
+  {%- for part in item.signal_parts %}
+  <div class="row"><span class="label">{{ part.label | capitalize }}:</span>
+    {%- for i in part.items %} <span{% if i.points < 0 %} class="flag"{% endif %}>{{ "%+d" | format(i.points) }} {{ i.text }}</span>{% if i.evidence %} <span class="muted">&ldquo;{{ i.evidence }}&rdquo;</span>{% endif %}{% if not loop.last %} &middot;{% endif %}{% endfor %}</div>
+  {%- endfor %}
+  {%- if r.matched_skills is defined and r.matched_skills %}
   <div class="row"><span class="label">Matched:</span> {{ r.matched_skills | join(", ") }}</div>
   {%- endif %}
-  {%- if r.gaps %}<div class="row"><span class="label">Gaps:</span> {{ r.gaps | join(", ") }}</div>{% endif %}
+  {%- if r.gaps is defined and r.gaps %}<div class="row"><span class="label">Gaps:</span> {{ r.gaps | join(", ") }}</div>{% endif %}
   {%- if r.wlb_positive is defined and r.wlb_positive %}
   <div class="row"><span class="label">Work-life balance:</span> {{ r.wlb_positive | join(", ") }}</div>
   {%- endif %}

@@ -1,23 +1,49 @@
 {
  "$defs": {
+  "RequirementsItem": {
+   "additionalProperties": false,
+   "properties": {
+    "skill": {
+     "type": "string"
+    },
+    "importance": {
+     "enum": [
+      "required",
+      "nice-to-have"
+     ],
+     "type": "string"
+    },
+    "primary": {
+     "type": "boolean"
+    },
+    "match": {
+     "enum": [
+      "core",
+      "solid",
+      "equivalent",
+      "partial",
+      "missing"
+     ],
+     "type": "string"
+    },
+    "evidence": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "skill",
+    "importance",
+    "primary",
+    "match",
+    "evidence"
+   ],
+   "type": "object"
+  },
   "ScoreResult": {
    "additionalProperties": false,
    "properties": {
     "job_id": {
      "type": "integer"
-    },
-    "disqualified": {
-     "type": "boolean"
-    },
-    "disqualify_reason": {
-     "anyOf": [
-      {
-       "type": "string"
-      },
-      {
-       "type": "null"
-      }
-     ]
     },
     "remote": {
      "enum": [
@@ -59,6 +85,13 @@
     "salary_notes": {
      "type": "string"
     },
+    "language": {
+     "enum": [
+      "english-or-spanish",
+      "other"
+     ],
+     "type": "string"
+    },
     "role_category": {
      "enum": [
       "backend",
@@ -81,41 +114,28 @@
     "seniority": {
      "type": "string"
     },
-    "skill_fit": {
-     "type": "integer"
-    },
-    "seniority_fit": {
-     "type": "integer"
-    },
-    "matched_skills": {
-     "items": {
-      "type": "string"
-     },
-     "type": "array"
-    },
-    "gaps": {
-     "items": {
-      "type": "string"
-     },
-     "type": "array"
-    },
-    "four_day_week": {
+    "seniority_level": {
      "enum": [
-      "yes",
-      "no",
-      "unknown"
+      "intern",
+      "junior",
+      "mid",
+      "senior",
+      "lead",
+      "staff",
+      "principal",
+      "unstated"
      ],
      "type": "string"
     },
-    "wlb_positive": {
+    "requirements": {
      "items": {
-      "type": "string"
+      "$ref": "#/$defs/RequirementsItem"
      },
      "type": "array"
     },
-    "wlb_negative": {
+    "signals": {
      "items": {
-      "type": "string"
+      "$ref": "#/$defs/SignalsItem"
      },
      "type": "array"
     },
@@ -134,36 +154,68 @@
      },
      "type": "array"
     },
-    "overall_score": {
-     "type": "integer"
-    },
     "summary": {
      "type": "string"
     }
    },
    "required": [
     "job_id",
-    "disqualified",
-    "disqualify_reason",
     "remote",
     "location_eligibility",
     "location_notes",
     "salary",
     "salary_usd_range",
     "salary_notes",
+    "language",
     "role_category",
     "seniority",
-    "skill_fit",
-    "seniority_fit",
-    "matched_skills",
-    "gaps",
-    "four_day_week",
-    "wlb_positive",
-    "wlb_negative",
+    "seniority_level",
+    "requirements",
+    "signals",
     "employment_type",
     "red_flags",
-    "overall_score",
     "summary"
+   ],
+   "type": "object"
+  },
+  "SignalsItem": {
+   "additionalProperties": false,
+   "properties": {
+    "signal": {
+     "enum": [
+      "four_day_week",
+      "async_first",
+      "flexible_hours",
+      "pto_minimum",
+      "sabbatical",
+      "after_hours_limits",
+      "sustainable_pace",
+      "remote_handbook",
+      "domain_fintech",
+      "domain_healthcare",
+      "domain_crm",
+      "domain_hcm",
+      "domain_b2b_platforms",
+      "gaming_role_fit",
+      "fast_paced",
+      "hustle",
+      "long_hours",
+      "many_hats_early_stage",
+      "high_intensity",
+      "we_are_a_family",
+      "growth_at_all_costs",
+      "pays_local_rates",
+      "frequent_travel"
+     ],
+     "type": "string"
+    },
+    "evidence": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "signal",
+    "evidence"
    ],
    "type": "object"
   }

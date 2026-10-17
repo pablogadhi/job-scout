@@ -35,6 +35,8 @@ from job_scout.feedback.examples import select_examples
 from job_scout.scoring.backends.api import ApiScorer
 from job_scout.scoring.backends.base import CallRequest, CallResult, Scorer
 from job_scout.scoring.planner import BatchPlanner, Limits
+from job_scout.scoring.points import Breakdown, compute, fingerprint
+from job_scout.scoring.points import apply as apply_points
 from job_scout.scoring.prompt import (
     CHARS_PER_TOKEN,
     COST_OUTPUT_TOKENS_PER_POSTING,
@@ -45,7 +47,7 @@ from job_scout.scoring.prompt import (
     user_message,
 )
 from job_scout.scoring.queue import MAX_ATTEMPTS, enqueue, pending_count, pending_query
-from job_scout.scoring.schema import CoreResult, score_schema
+from job_scout.scoring.schema import score_schema
 
 log = logging.getLogger(__name__)
 
@@ -109,6 +111,7 @@ class ScoringRunner:
         self.sleep = sleep
         self.clock = clock
         self.profile_hash = config.profile.sha256
+        self.points_fingerprint = fingerprint(config.points)
         # Your recent judgments go in as examples; the same set for every call of this run.
         with session_factory() as session:
             examples = select_examples(
@@ -263,7 +266,7 @@ class ScoringRunner:
         if result.status == "error" and result.extra.get("retry_free"):
             return outcome  # canceled/expired batch request: retry later at no attempt cost
 
-        valid: dict[int, tuple[dict[str, Any], CoreResult]] = {}
+        valid: dict[int, tuple[dict[str, Any], Breakdown]] = {}
         bad: set[int] = set()
         if result.status == "ok":
             items = result.payload.get("results") if isinstance(result.payload, dict) else None
@@ -281,10 +284,17 @@ class ScoringRunner:
                         log.warning("duplicate result for job %s; keeping the first", job_id)
                         continue
                     try:
-                        valid[job_id] = self.score_schema.parse(item)
+                        data, _ = self.score_schema.parse(item)
                     except ValidationError as exc:
                         log.warning("invalid result for job %s: %s", job_id, exc.errors()[:3])
                         bad.add(job_id)
+                        continue
+                    breakdown = compute(self.config.points, data)
+                    if breakdown is None:  # check_points makes this unreachable; be loud anyway
+                        log.warning("result for job %s lacks a field scoring.yaml reads", job_id)
+                        bad.add(job_id)
+                        continue
+                    valid[job_id] = (data, breakdown)
                 missing = set(ids) - set(valid) - bad
                 if missing:
                     log.warning("no result for jobs %s; they go back to pending", sorted(missing))
@@ -294,13 +304,12 @@ class ScoringRunner:
 
         now = utcnow()
         share = len(valid) or 1
-        for job_id, (data, core) in valid.items():
+        for job_id, (data, breakdown) in valid.items():
             score = scores[job_id]
             score.status = ScoreStatus.SCORED
             score.profile_hash = self.profile_hash  # the profile this result was made under
             score.result = data
-            score.overall_score = core.overall_score
-            score.disqualified = core.disqualified
+            apply_points(score, breakdown, self.points_fingerprint)
             score.backend = self.scorer.backend
             score.model = self.scorer.model
             score.call_id = scoring_call.id

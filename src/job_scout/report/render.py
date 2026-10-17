@@ -12,7 +12,8 @@ from jinja2 import Environment, PackageLoader, StrictUndefined, select_autoescap
 
 from job_scout.config import AppConfig
 from job_scout.feedback.links import FeedbackLinks
-from job_scout.report.data import Sections, SourceHealth
+from job_scout.report.data import Sections, SourceHealth, item_mark
+from job_scout.scoring.points import fingerprint
 from job_scout.scoring.status import ScoringStatus
 
 _ENV = Environment(
@@ -41,6 +42,7 @@ def http_url(url: str | None) -> str:
 
 
 _ENV.filters["http_url"] = http_url
+_ENV.filters["mark"] = _TEXT_ENV.filters["mark"] = item_mark
 
 
 @dataclass(frozen=True)
@@ -70,6 +72,7 @@ def render(
         "health": [_local(h, tz) for h in health],
         "settings": config.settings.digest,
         "profile_hash": config.profile.sha256,
+        "scoring_fingerprint": fingerprint(config.points),
         "generated_at": now.astimezone(tz).strftime("%Y-%m-%d %H:%M %Z"),
         "since": since.astimezone(tz).strftime("%Y-%m-%d %H:%M") if since else None,
         "include_below": include_below,
