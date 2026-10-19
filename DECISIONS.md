@@ -2279,3 +2279,6 @@ Its files are in the gitignored `instances/ngo/config/`; nothing personal is log
   hybrid with the office in Guatemala is still remote), and requirements are only those the
   posting states, with an empty list when it states none. The ngo files aren't in git;
   copy its `profile.md` to the server.
+- **P12-D30 The cost estimate assumes 2,100 output tokens per posting** (was 1,750, from
+  P12-U13). Your server's rescore of the main profile, one Batches API run: 2,920 postings,
+  6,137,039 output tokens (2,102 per posting, thinking included), $1.94.

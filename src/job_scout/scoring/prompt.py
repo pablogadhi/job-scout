@@ -20,11 +20,10 @@ CHARS_PER_TOKEN = 4  # rough estimate used for batching budgets
 # Packing budget per posting, not the real reply length: max_output_tokens_per_call is
 # tuned against it, and API requests add thinking headroom on top.
 OUTPUT_TOKENS_PER_POSTING = 450
-# What a reply really costs per posting, thinking included. Haiku 5.5: 1,115 measured over
-# 2,767 single-posting API requests before replies listed requirements and signals; those
-# made CLI replies about 1.6 times longer, so 1,750 until API requests are measured again.
-# Used only for cost estimates and the spend guard.
-COST_OUTPUT_TOKENS_PER_POSTING = 1_750
+# What a reply really costs per posting, thinking included (Haiku 5.5: 2,102 measured over
+# 2,920 single-posting API requests with requirements and signals). Used only for cost
+# estimates and the spend guard.
+COST_OUTPUT_TOKENS_PER_POSTING = 2_100
 
 INPUT_RULES = """
 
