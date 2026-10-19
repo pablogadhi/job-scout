@@ -16,6 +16,9 @@ from tests.conftest import TEST_CONFIG, fixture_transport
 from tests.scoring_helpers import T0, result_for, with_points
 
 PYJOBS_URL = "https://www.pyjobs.com/job/senior-python-engineer-Qz12Ab34"
+UNVACANCIES_URL = (
+    "https://unvacancies.org/jobs/senior-programme-consultant-water-sanitation-QZ-51003"
+)
 FOURDAYWEEK_ITEM = {
     "id": "4dw-0099",
     "url": "https://4dayweek.io/job/senior-backend-engineer-at-tidewater-0099",
@@ -148,6 +151,34 @@ def test_refresh_reads_the_pages_stored_jobs_lack(
 
     monkeypatch.setattr("job_scout.cli.sources.HttpClient", _http({"https://": no_request}))
     assert "0 job pages read" in _refresh("--source", "pyjobs")  # read once, kept
+
+
+def test_refresh_keeps_the_fields_a_feed_url_gave(
+    session_factory: sessionmaker[Session], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """unvacancies' items don't say they're remote; the feed's URL does. Mapped again
+    without it, a job is unchanged, and its page is still read."""
+    monkeypatch.setattr("job_scout.cli.sources.HttpClient", _http())
+    entry = {
+        "title": "Senior Programme Consultant, Water & Sanitation",
+        "link": UNVACANCIES_URL,
+        "id": UNVACANCIES_URL,
+        "summary": "UNICEF seeks a consultant.",
+        "tags": [{"term": "UNICEF"}],
+    }
+    stored = {"remote_raw": "Remote and home-based", "description_text": entry["summary"]}
+    job_id = _store(
+        session_factory, "unvacancies", UNVACANCIES_URL, UNVACANCIES_URL, entry, **stored
+    )
+
+    assert "0 changed by mapping again" in _refresh("--source", "unvacancies", "--dry-run")
+    output = _refresh("--source", "unvacancies")
+    assert "1 job pages read (0 failed, 1 requests)" in output
+    location = (
+        "Remote (linked to Panama City, Panama); who can apply: Nationals of Panama only; "
+        "National hire"
+    )
+    assert _state(session_factory, job_id) == (location, False, ScoreStatus.PENDING)
 
 
 @pytest.mark.usefixtures("db_url")

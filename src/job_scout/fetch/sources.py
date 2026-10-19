@@ -421,6 +421,48 @@ def _unvacancies_shared(url: str) -> dict[str, Any]:
     return {}
 
 
+def _unvacancies_page(ctx: FetchContext, posting: Posting) -> Posting:
+    """The page has what the feed's one line lacks: the place ("Remote (linked to Bonn,
+    Germany)"), who can apply ("Nationals of Germany only"), the contract, experience and
+    languages, the work mode and the official notice. The closing date is left out: the
+    page words it relative to today ("tomorrow")."""
+    tree = LexborHTMLParser(ctx.get(posting.canonical_url).text)
+    header = [
+        text
+        for item in tree.css("[data-job-header-meta-item]")
+        if (text := item.text(separator=" ", strip=True)) and not text.startswith("Posted")
+    ]
+    facts: dict[str, str] = {}
+    eligibility = None
+    for cell in tree.css("[data-decision-strip] [data-cell]"):
+        label = cell.css_first("dt")
+        values = [t for dd in cell.css("dd") if (t := dd.text(separator=" ", strip=True))]
+        kind = cell.attributes.get("data-cell")
+        if label and values and kind != "closes":
+            facts[label.text(strip=True)] = "; ".join(values)
+            if kind == "eligibility":
+                eligibility = f"who can apply: {'; '.join(values)}"
+    details = {
+        dt.text(strip=True): dd.text(separator=", ", strip=True)
+        for dt in tree.css("[data-job-more-details] dt")
+        if dt.parent and (dd := dt.parent.css_first("dd"))
+    }
+    notice = tree.css_first("div.detail-prose-wrap > .prose-v2")
+    lines = [f"{label}: {value}" for label, value in facts.items()]
+    body = html_to_text(notice.html) if notice else None
+    update: dict[str, Any] = {
+        "description_text": "\n\n".join(
+            p for p in ("\n".join(lines), body or posting.description_text) if p
+        ),
+        "raw": {**posting.raw, "page": {"header": header, "facts": facts, "details": details}},
+    }
+    if place := "; ".join(p for p in (*header, eligibility) if p):
+        update["location_raw"] = place
+    if mode := details.get("Work mode"):
+        update["remote_raw"] = mode
+    return posting.model_copy(update=update)
+
+
 # --- Registry ------------------------------------------------------------------------------
 # remoteintech (with its seed) or company_boards (without) polls the company boards found by
 # `ats detect` (job_scout.ats); sources.yaml enables at most one of them.
@@ -447,7 +489,9 @@ FETCHERS: dict[str, Fetcher] = {
     "findjobit": RssFetcher(_map_findjobit),
     "remotive": RssFetcher(_map_remotive),
     "reliefweb": RssFetcher(_map_reliefweb),
-    "unvacancies": RssFetcher(_map_unvacancies, shared=_unvacancies_shared),
+    "unvacancies": RssFetcher(
+        _map_unvacancies, shared=_unvacancies_shared, details=_unvacancies_page
+    ),
     "remotejobs_lat": RemoteJobsLatFetcher(),
     "remoteintech": AtsFetcher(),
     "company_boards": AtsFetcher(),

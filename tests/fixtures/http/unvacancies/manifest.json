@@ -8,5 +8,15 @@
     "file": "02.xml",
     "status": 200,
     "content_type": "application/rss+xml; charset=utf-8"
+  },
+  "https://unvacancies.org/jobs/senior-programme-consultant-water-sanitation-QZ-51003": {
+    "file": "03.xml",
+    "status": 200,
+    "content_type": "text/html; charset=utf-8"
+  },
+  "https://unvacancies.org/jobs/programme-and-evaluation-specialist-PX-40021": {
+    "file": "04.xml",
+    "status": 200,
+    "content_type": "text/html; charset=utf-8"
   }
 }

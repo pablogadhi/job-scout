@@ -157,12 +157,16 @@ Details = Callable[[FetchContext, Posting], Posting]
 
 def with_details(ctx: FetchContext, postings: list[Posting], details: Details) -> list[Posting]:
     """Each new posting whose title passes filters.yaml, completed from its job page (one
-    request each). A page that fails keeps the feed's posting."""
+    request each, also when two feeds list it). A page that fails keeps the feed's posting."""
+    read: dict[str, Posting] = {}
     done: list[Posting] = []
     for posting in postings:
-        if posting.source_job_id not in ctx.known_ids and ctx.title_ok(posting.title):
+        job_id = posting.source_job_id
+        if job_id in read:
+            posting = read[job_id]
+        elif job_id not in ctx.known_ids and ctx.title_ok(posting.title):
             try:
-                posting = details(ctx, posting)
+                posting = read[job_id] = details(ctx, posting)
             except FetchError as exc:
                 log.warning("%s: no job page for %s: %s", ctx.source.id, posting.canonical_url, exc)
         done.append(posting)

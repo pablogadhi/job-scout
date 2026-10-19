@@ -211,12 +211,42 @@ def test_unvacancies(app_config: AppConfig, make_http: Callable[..., HttpClient]
     p = by_title(postings, "Senior Programme Consultant, Water & Sanitation")
     url = "https://unvacancies.org/jobs/senior-programme-consultant-water-sanitation-QZ-51003"
     assert (p.source_job_id, p.canonical_url) == (url, url)  # without the tracking parameters
-    assert (p.company, p.location_raw) == ("UNICEF", None)
+    assert p.company == "UNICEF"
+    assert p.posted_at == datetime(2026, 10, 15, tzinfo=UTC)
+    # The feed has one line; the page has the place, who can apply and the notice.
+    assert p.location_raw == (
+        "Remote (linked to Panama City, Panama); who can apply: Nationals of Panama only; "
+        "National hire"
+    )
+    assert p.remote_raw == "Fully Remote"
+    assert p.description_text == (
+        "Who can apply: Nationals of Panama only; National hire\n"
+        "Contract: Consultant · 11 months\n"
+        "Required languages: Spanish and English\n\n"
+        "Coordinate WASH programmes.\n\nTwo missions."
+    )
+    assert p.raw["page"]["details"] == {"Work mode": "Fully Remote"}
+    # A job under two functions comes in both feeds: its page is read once, and the store
+    # keeps one copy.
+    shared = [q for q in postings if q.title == "Programme and Evaluation Specialist"]
+    assert len(shared) == 2 and shared[0] == shared[1]
+    assert shared[0].location_raw == "Home-based"
+    assert shared[0].description_text == (
+        "Contract: Fixed term · P-4\n\n"
+        "UNFPA seeks a home-based specialist to plan and evaluate country programmes."
+    )
+
+
+def test_unvacancies_without_pages(
+    app_config: AppConfig, make_http: Callable[..., HttpClient]
+) -> None:
+    """A job already stored isn't read again; the feed's fields stay."""
+    url = "https://unvacancies.org/jobs/senior-programme-consultant-water-sanitation-QZ-51003"
+    postings = fetch(app_config, make_http(), "unvacancies", known_ids=frozenset({url}))
+    p = by_title(postings, "Senior Programme Consultant, Water & Sanitation")
+    assert (p.location_raw, "page" in p.raw) == (None, False)
     assert p.remote_raw == "Remote and home-based"  # from the feed's remote=true filter
     assert (p.description_text or "").startswith("UNICEF seeks a consultant")
-    assert p.posted_at == datetime(2026, 10, 15, tzinfo=UTC)
-    # A job under two functions comes in both feeds; the store keeps one copy.
-    assert [q.title for q in postings].count("Programme and Evaluation Specialist") == 2
 
 
 def test_weworkremotely(app_config: AppConfig, make_http: Callable[..., HttpClient]) -> None:

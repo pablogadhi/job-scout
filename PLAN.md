@@ -360,6 +360,8 @@ current one's acceptance check passes.
 - Run job-scout for a second person (nonprofits and social development programs, Program
   Director, Guatemala, remote only, `api` backend) as a separate instance on the same server.
 - Full brief, steps and approval gates: `PLAN-phase-10.md`.
+- Step 6 (2026-10-19, with Phase 7): unvacancies' job pages are read. Idealist and
+  Impactpool stay out: their terms forbid bots without permission.
 
 ### Phase 12: A points score
 - Claude extracts facts; the code computes the score from `config/scoring.yaml`, and the

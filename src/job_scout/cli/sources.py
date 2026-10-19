@@ -74,7 +74,8 @@ def refresh(
     """Apply a fix of a source's mapping to its stored jobs.
 
     Each stored job is mapped again from its saved payload, and a source whose feed has only
-    a summary (pyjobs, typescriptjobs) reads the page of each job that hasn't had it. The
+    a summary (pyjobs, typescriptjobs, nodesk, unvacancies) reads the page of each job that
+    hasn't had it. The
     jobs whose text changed lose their pre-filter verdict and are queued to be scored again:
     the next `filter`, then `score` (or `run`), redoes them. --dry-run reads no pages and
     saves nothing.

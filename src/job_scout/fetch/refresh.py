@@ -54,9 +54,11 @@ def _mapper(source_id: str) -> Callable[[Any], Posting | None]:
 
 
 def _apply(job: Job, posting: Posting) -> bool:
-    """Copy the refreshed fields onto the stored job; True when a judged one changed."""
+    """Copy the refreshed fields onto the stored job; True when a judged one changed. A
+    field the posting lacks is kept: a payload mapped again lacks the fields its feed's URL
+    gave (`RssFetcher.shared`)."""
     values = posting.model_dump()
-    judged = any(getattr(job, name) != values[name] for name in JUDGED)
+    judged = any(values[name] is not None and getattr(job, name) != values[name] for name in JUDGED)
     for name in REFRESHED:
         if values[name] is not None:
             setattr(job, name, values[name])

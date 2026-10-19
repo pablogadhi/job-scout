@@ -402,12 +402,69 @@ def unvacancies(endpoints: list[str]) -> dict[str, Any]:
         ],
         [shared],
     ]
-    return {
-        url: (
-            RSS,
-            rss("Remote UN jobs - unvacancies", items, ' xmlns:atom="http://www.w3.org/2005/Atom"'),
+
+    def page(header: list[str], cells: dict[str, list[str]], mode: str, notice: str) -> bytes:
+        meta = "".join(
+            f'<span data-job-header-meta-item="true"><svg></svg><span>{h}</span></span>'
+            for h in header
         )
-        for url, items in zip(endpoints, feeds, strict=True)
+        strip = "".join(
+            f'<div data-cell="{kind}" data-status="value"><dt>{values[0]}</dt>'
+            + "".join(f"<dd><span>{v}</span></dd>" for v in values[1:])
+            + "</div>"
+            for kind, values in cells.items()
+        )
+        more = f"<dl><div><svg></svg><div><dt>Work mode</dt><dd>{mode}</dd></div></div></dl>"
+        prose = (
+            '<div class="detail-prose-wrap"><nav data-notice-index="true"><p>In this notice</p>'
+            f'</nav><div class="prose-v2">{notice}</div></div>'
+            if notice
+            else ""
+        )
+        return (
+            f'<html><body><main><header><div data-job-header-meta="true">{meta}</div></header>'
+            f'<section data-decision-strip="true"><dl>{strip}</dl></section>'
+            f'<section data-job-more-details="true">{more}</section>'
+            f"<section>{prose}</section></main></body></html>"
+        ).encode()
+
+    url = "https://unvacancies.org/jobs/{}".format
+    return {
+        **{
+            url: (
+                RSS,
+                rss(
+                    "Remote UN jobs - unvacancies",
+                    items,
+                    ' xmlns:atom="http://www.w3.org/2005/Atom"',
+                ),
+            )
+            for url, items in zip(endpoints, feeds, strict=True)
+        },
+        url("senior-programme-consultant-water-sanitation-QZ-51003"): (
+            HTML,
+            page(
+                ["Remote (linked to Panama City, Panama)", "Posted <span>15 Oct 2026</span>"],
+                {
+                    "eligibility": ["Who can apply", "Nationals of Panama only", "National hire"],
+                    "contract": ["Contract", "Consultant · 11 months"],
+                    "languages": ["Required languages", "Spanish and English"],
+                    "closes": ["Closes", "tomorrow"],
+                },
+                "Fully Remote",
+                "<p>Coordinate <strong>WASH</strong> programmes.</p><p>Two missions.</p>",
+            ),
+        ),
+        # No official notice on the page: the feed's summary stays.
+        url("programme-and-evaluation-specialist-PX-40021"): (
+            HTML,
+            page(
+                ["Home-based", "Posted <span>15 Oct 2026</span>"],
+                {"contract": ["Contract", "Fixed term · P-4"]},
+                "Partially Remote",
+                "",
+            ),
+        ),
     }
 
 

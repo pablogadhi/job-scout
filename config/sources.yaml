@@ -136,13 +136,15 @@ sources:
       - https://unvacancies.org/feed.xml?function=programme-management&remote=true
       - https://unvacancies.org/feed.xml?function=monitoring-evaluation&remote=true
     format: rss
-    max_requests_per_day: 12
+    max_requests_per_day: 200   # the feeds, then a page per new job (up to 50 per feed)
     notes: >
       An independent index of 43 UN-system career portals plus large NGOs, crawled daily.
       Items carry the title, the agency (category) and a one-line summary; dates are days.
-      Job pages (/jobs/<slug>, allowed) hold the full notice, work mode and deadline, but
-      reading them is a scraper and isn't built. Feed filters come from the partner kit
-      (unvacancies.org/partners).
+      Each new job whose title passes filters.yaml gets its page read once (/jobs/<slug>,
+      allowed; checked 2026-10-19): the place ("Remote (linked to Bonn, Germany)"), who can
+      apply ("Nationals of Tajikistan only"), contract, work mode and the official notice.
+      robots.txt's Content-Signal says search=yes, ai-train=no and nothing on ai-input (the
+      scoring). Feed filters come from the partner kit (unvacancies.org/partners).
     terms: >
       Partner kit: "No fees, no account and no agreement. Use the links, feeds and widget as
       they are." Every listing links to the official notice.

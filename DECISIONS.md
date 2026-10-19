@@ -986,6 +986,8 @@ JSON-LD, job pages) before building.
   `feed.xml` is a leftover template), Remote.io (a JavaScript app), Daily Remote and Remote
   Backend Jobs (aggregators: duplicates), DevOpsJobs (narrow), JobsByCulture (company
   culture, not jobs).
+- **P7-U2 The ngo profile's scraping sources, now** (deferred by P10-U25 until this
+  phase): unvacancies' job pages, the "unclear location" fixes, the HTML-only NGO boards.
 
 ### P7 Config fixes
 
@@ -993,6 +995,9 @@ JSON-LD, job pages) before building.
   jobs) and `/remote-jobs/engineering/index.xml` exist, 10 newest jobs each (the devops and
   remote-first pages it listed have none). NoDesk moved to Tier 1 as `rss`.
 - **P7-C2 4DayJob answers only on `www.4dayjob.com`;** the bare domain returns 403.
+- **P7-C3 unvacancies' budget: 12 requests a day → 200.** The 12 was for its feeds
+  (P10-D34); now each new job's page counts too, up to 50 per feed. Changed in the repo's
+  config, the pinned test config and the ngo instance's own `sources.yaml`.
 
 ### P7 Decisions (Claude)
 
@@ -1029,6 +1034,45 @@ JSON-LD, job pages) before building.
   rules as before).
 - **P7-D7 Scraped jobs can't be refreshed** (`refresh` maps only feed and API payloads
   again). The stored card is enough to add that later.
+- **P7-D8 unvacancies reads each new job's page** (P10-R10). The pages carry no
+  JobPosting, so the HTML is read by its `data-` attributes: the header's place ("Remote
+  (linked to Dushanbe, Tajikistan)"), the decision strip (who can apply, contract,
+  experience, languages; the closing date left out, worded "tomorrow"), the work mode and
+  the official notice. The place and who can apply become `location_raw` ("…; who can
+  apply: Nationals of Tajikistan only"), so ngo's location rules can drop "Colombia only"
+  before Claude; the work mode replaces the feed's "Remote and home-based"; the strip's
+  facts head the description. Checked live for ngo (laptop): 48 new jobs, 33 passed the
+  title filter and all 33 pages gave a place and the full notice (4–20k characters, was
+  ~140); 8 of 33 name who can apply (4 for one nationality only).
+- **P7-D9 Only unvacancies needed the "unclear location" fix.** In ngo's database every
+  other source's descriptions average 3–9k characters; unvacancies' were one line (138 of
+  139 under 400). Its 76 unclear verdicts get pages through `refresh` (your server steps).
+  `company_boards`' 34 unclear have full postings that don't say.
+- **P7-D10 Idealist and Impactpool not built.** Their terms forbid bots without
+  permission (P10-D4), and nothing about that changed; a scraper would break them whoever
+  asks. They need permission or an API agreement first (P10-R4 is back open as P7-R1).
+  DevNetJobs stays skipped (your P10-U20). No other HTML-only NGO board was found
+  scrapable (P10-D4: robots `Disallow: /`, bot walls, 403s).
+- **P7-D11 A job page is read once per run,** also when two feeds list the job
+  (`with_details`); unvacancies' functions overlap, and so do NoDesk's two feeds.
+- **P7-D12 unvacancies' robots.txt has a Content-Signal line:** `search=yes, ai-train=no,
+  use=reference`, and nothing on `ai-input` (giving pages to an AI to answer, which the
+  scoring does). Per its own legend, unset means neither granted nor restricted. Its feed
+  has gone to Claude since Phase 10; noted in `sources.yaml`.
+
+### P7 Bugs found and fixed
+
+- **P7-B1 `refresh` saw every unvacancies job as changed.** A payload mapped again lacks
+  what the feed's URL gave (`remote_raw` "Remote and home-based", `RssFetcher.shared`);
+  the empty field wasn't written back, but it counted as a change, so the dry run would
+  have reset 106 verdicts and queued 64 scores again for nothing. A field the posting
+  lacks no longer counts (`refresh._apply`), with a test.
+
+### P7 For your review
+
+- **P7-R1 Idealist and Impactpool:** ask either one for permission or an API agreement,
+  or leave them out (P7-D10).
+- **P7-R2 4DayJob:** move it to `skipped:` for good (P7-D2)?
 
 ## Phase 8: Feedback loop (branch `phase-8-feedback`)
 

@@ -91,11 +91,12 @@ instance; an instance's files never go into git.
     marks temporary failures (429, 5xx, timeouts).
   - `base.py`: generic `RssFetcher` and `JsonFetcher`, plus `FetchContext`.
   - `sources.py`: per-source mappers and the `FETCHERS` registry. `hn.py`: HN Who is hiring.
-    A feed with only a summary per job (pyjobs, typescriptjobs, nodesk) has a page step
-    (`RssFetcher.details`): each new job whose title passes filters.yaml gets its page read
-    once (`pages.py`: the page's schema.org JobPosting, its locations, worded "must be
-    based in …" when applicants must live somewhere, and its salary), and `raw["page"]`
-    marks it. A site's JobPosting can carry placeholders (NoDesk's "Anywhere",
+    A feed with only a summary per job (pyjobs, typescriptjobs, nodesk, unvacancies) has a
+    page step (`RssFetcher.details`): each new job whose title passes filters.yaml gets its
+    page read once (`pages.py`: the page's schema.org JobPosting, its locations, worded
+    "must be based in …" when applicants must live somewhere, and its salary; unvacancies'
+    pages have none, so their place, who can apply and notice come from the HTML), and
+    `raw["page"]` marks it. A site's JobPosting can carry placeholders (NoDesk's "Anywhere",
     RemoteJobs.lat's six countries): check them against the page before trusting them.
   - `remotejobs_lat.py`: an HTML scraper (`method: scrape`), one module per site: the
     category pages' job cards (newest first, stopping at a page with nothing new), then
