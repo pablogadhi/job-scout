@@ -115,9 +115,11 @@ def rescore_ids(
     top: int | None = None,
     since: datetime | None = None,
     legacy: bool = False,
+    where: tuple[str, str] | None = None,
 ) -> list[int]:
     """Jobs to score again: the top N by score, eligible jobs first seen since a date,
-    and/or (`legacy`) every job scored before points (it has no breakdown)."""
+    (`legacy`) every job scored before points (it has no breakdown), and/or (`where`) every
+    job whose stored result has that value in that field."""
     ids: list[int] = []
     if top:
         ids += session.scalars(
@@ -134,6 +136,12 @@ def rescore_ids(
             select(Score).where(Score.status == ScoreStatus.SCORED).order_by(Score.job_id)
         )
         ids += [s.job_id for s in scored if s.result is not None and not s.breakdown]
+    if where:
+        field, value = where
+        scored = session.scalars(
+            select(Score).where(Score.status == ScoreStatus.SCORED).order_by(Score.job_id)
+        )
+        ids += [s.job_id for s in scored if s.result and s.result.get(field) == value]
     return list(dict.fromkeys(ids))
 
 
@@ -144,9 +152,10 @@ def requeue_for_rescore(
     top: int | None = None,
     since: datetime | None = None,
     legacy: bool = False,
+    where: tuple[str, str] | None = None,
 ) -> int:
     """Queue `rescore_ids` to be scored again under the current profile. Returns jobs queued."""
-    ids = rescore_ids(session, top=top, since=since, legacy=legacy)
+    ids = rescore_ids(session, top=top, since=since, legacy=legacy, where=where)
     return _set_pending(session, profile_hash, ids)
 
 

@@ -2387,3 +2387,22 @@ Its files are in the gitignored `instances/ngo/config/`; nothing personal is log
   jobs (2026-10-19): Rippling 18 over 3 boards, Breezy HR 11 over 6, Pinpoint 9 over 5,
   SmartRecruiters 4 over 5 (and its API's robots.txt disallows bots), Personio,
   Teamtailor, JazzHR, JOIN and the rest 0–2 each.
+- **P12-U24 Salary: a soft minimum ($120k) and a hard one ($100k).** You asked for
+  $100k–$120k to score lower but stay in, and under $100k to be out. `salary` gains a
+  `near` value: profile.md asks for `meets` (top of the range ≥ $120k), `near` ($100k up to
+  $120k) or `below` (under $100k); scoring.yaml gives meets 10, unlisted 6, near 2, below 0,
+  and `below` still disqualifies. filters.yaml's pre-filter floor went from $120k to $100k,
+  so a stated $100k–$120k range now reaches Claude (every verdict is judged again once,
+  since filters.yaml changed; no spend).
+- **P12-D36 `near` is a core value a profile may leave out.** `salary` is a core field, so
+  every profile had to declare exactly `meets | below | unlisted`; the code now accepts it
+  with or without `near` (`OPTIONAL_VALUES` in `scoring/schema.py`), and Claude's schema
+  carries only the values the profile declares. The ngo profile is unchanged. Other core
+  fields stay exact. Claude chose the thresholds' wording (top of the stated range, as
+  before) and near's 2 points: a good fit scores about 72 instead of 80, still above the
+  digest's 60; `simulate` can try other numbers.
+- **P12-D37 `rescore --where FIELD=VALUE`** queues every scored job whose stored result
+  has that value, checked against profile.md's output format. Jobs scored under the
+  $120k rule have `below` for a $100k–$120k range, so `rescore --where salary=below`
+  re-extracts them (7 on the laptop). Changing the thresholds later needs the same, since
+  Claude applies them; changing near's points doesn't.

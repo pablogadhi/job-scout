@@ -81,7 +81,7 @@ location:
 
 salary:
   currency: USD
-  min_annual: 120000
+  min_annual: 100000      # the hard minimum; $100k-$120k passes and scores lower (scoring.yaml)
   hours_per_year: 2080      # hourly → annual
   months_per_year: 12       # monthly → annual
   # Drop only when a range is stated AND its maximum is below min_annual.

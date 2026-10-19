@@ -54,6 +54,23 @@ def test_core_field_declared_differently_is_rejected(config_dir: Path) -> None:
         score_schema(load_config(config_dir).profile)
 
 
+def test_salary_may_have_a_soft_minimum(config_dir: Path, app_config: AppConfig) -> None:
+    # The pinned profile has one minimum: Claude can't answer `near`.
+    pinned = score_schema(app_config.profile)
+    with pytest.raises(ValidationError):
+        pinned.result.model_validate(result_for(1, salary="near"))
+    edit(
+        config_dir / "profile.md",
+        '"salary": "meets | below | unlisted"',
+        '"salary": "meets | near | below | unlisted"',
+    )
+    schema = score_schema(load_config(config_dir).profile)
+    salary = schema.json_schema()["$defs"]["ScoreResult"]["properties"]["salary"]
+    assert salary["enum"] == ["meets", "near", "below", "unlisted"]
+    _, core = schema.parse(result_for(1, salary="near"))
+    assert core.salary == "near"
+
+
 def test_output_schema_has_only_supported_keywords(app_config: AppConfig) -> None:
     schema = score_schema(app_config.profile).json_schema()
     text = json.dumps(schema)

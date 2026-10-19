@@ -38,6 +38,7 @@ uv run --env-file .env job-scout feedback serve  # the 👍/👎 page (needs JOB
 uv run --env-file .env job-scout feedback report # the scores vs your votes
 uv run --env-file .env job-scout simulate --table candidate.yaml  # a scoring.yaml vs stored scores
 uv run --env-file .env job-scout rescore --legacy --dry-run  # re-extract jobs scored before points
+uv run --env-file .env job-scout rescore --where salary=below --dry-run  # jobs whose result has it
 uv run --env-file .env pytest -m live tests/test_live_email.py  # sends 1 real email
 uv run --env-file .env pytest -m live tests/test_live_scoring.py  # spends 1 Pro prompt + ~$0.01
 uv run --env-file .env job-scout calibrate --sample 50 --configs "api:claude-haiku-5-5:1,cli:claude-haiku-5-5:20"

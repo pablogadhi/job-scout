@@ -441,6 +441,26 @@ def test_rescore_legacy_dry_run_queues_nothing(db_url: str) -> None:
     assert _statuses(db_url) == ["scored"] * 3  # nothing left pending
 
 
+def test_rescore_where_queues_jobs_with_that_value(db_url: str) -> None:
+    engine = make_engine(db_url)
+    sf = make_session_factory(engine)
+    ids = seed_jobs(sf, 3)
+    with sf.begin() as session:
+        for job_id, salary in zip(ids, ("meets", "below", "below"), strict=True):
+            score = Score(job_id=job_id, profile_hash="p", status=ScoreStatus.SCORED)
+            session.add(with_points(score, result_for(job_id, salary=salary)))
+    engine.dispose()
+    result = invoke("rescore", "--where", "salary=below", "--dry-run")
+    assert result.exit_code == 0, result.output
+    assert "would queue 2 jobs" in result.output
+    assert _statuses(db_url) == ["scored"] * 3
+    # The pinned profile has one salary minimum, so no `near`.
+    result = invoke("rescore", "--where", "salary=near", "--dry-run")
+    assert result.exit_code != 0 and "salary is one of meets, below, unlisted" in result.output
+    result = invoke("rescore", "--where", "pay=below", "--dry-run")
+    assert result.exit_code != 0 and "a field of the output format" in result.output
+
+
 def test_simulate_compares_a_candidate_table(db_url: str, tmp_path: Path) -> None:
     engine = make_engine(db_url)
     sf = make_session_factory(engine)

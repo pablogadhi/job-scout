@@ -9,6 +9,7 @@ them the same way; every other field is typed from its example (config/profile.p
 from __future__ import annotations
 
 import copy
+import dataclasses
 import types
 from dataclasses import dataclass
 from typing import Any, Literal, Union, get_args, get_origin
@@ -27,9 +28,14 @@ class CoreResult(BaseModel):
 
     remote: Literal["yes", "no", "unclear"]
     location_eligibility: Literal["pass", "fail", "unclear"]
-    salary: Literal["meets", "below", "unlisted"]
+    salary: Literal["meets", "near", "below", "unlisted"]
     red_flags: list[str]
     summary: str
+
+
+# Core enum values a profile may leave out: `near` (between a soft and a hard salary minimum)
+# only exists for a profile with two minimums.
+OPTIONAL_VALUES: dict[str, frozenset[str]] = {"salary": frozenset({"near"})}
 
 
 class SchemaMismatch(ValueError):
@@ -55,6 +61,13 @@ def _spec(name: str, annotation: Any) -> OutputField:
     if get_origin(annotation) is list:
         return OutputField(name, "list", nullable=nullable)
     return OutputField(name, _SCALARS[annotation], nullable=nullable)
+
+
+def _declared_as(field: OutputField, expected: OutputField) -> bool:
+    """`field` is `expected`, or `expected` without some of its optional values."""
+    optional = OPTIONAL_VALUES.get(field.name, frozenset())
+    kept = tuple(v for v in expected.values if v not in optional or v in field.values)
+    return field == dataclasses.replace(expected, values=kept)
 
 
 def _annotation(field: OutputField) -> Any:
@@ -129,7 +142,8 @@ def score_schema(profile: Profile) -> ScoreSchema:
     mismatched = [
         f"{f.name} (expected {expected})"
         for f in profile.output_fields
-        if f.name in core and f != (expected := _spec(f.name, core[f.name].annotation))
+        if f.name in core
+        and not _declared_as(f, expected := _spec(f.name, core[f.name].annotation))
     ]
     if mismatched:
         raise SchemaMismatch(
@@ -139,7 +153,9 @@ def score_schema(profile: Profile) -> ScoreSchema:
     fields: dict[str, Any] = {"job_id": (int, ...)}
     for f in profile.output_fields:
         if f.name in core:
-            fields[f.name] = (core[f.name].annotation, copy.copy(core[f.name]))
+            # The profile's own values: a value it left out is one Claude can't give.
+            annotation = _annotation(f) if f.kind == "enum" else core[f.name].annotation
+            fields[f.name] = (annotation, copy.copy(core[f.name]))
         else:
             fields[f.name] = (_annotation(f), ...)
     forbid = ConfigDict(extra="forbid")

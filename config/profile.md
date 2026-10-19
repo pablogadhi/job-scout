@@ -55,10 +55,11 @@ and report the rest as usual. Never guess a fail.
      remote: "open to candidates residing in the US", "must be based in Canada", "remote within
      the UK". If the description doesn't say, keep it unclear. A company's customers, offices
      or headquarters in a country are not a location requirement.
-3. **Minimum compensation: USD $120,000 per year** (`salary`).
+3. **Compensation: USD $120,000 per year is the target, $100,000 the minimum** (`salary`).
    - Convert when needed: hourly × 2,080; monthly × 12. Use approximate rates for other currencies.
    - `meets` if the top of the stated range is ≥ $120k.
-   - `below` only if the stated range's maximum is clearly below $120k.
+   - `near` if the top of the stated range is from $100k up to (not including) $120k.
+   - `below` only if the stated range's maximum is clearly below $100k.
    - Unlisted salary is common: `unlisted`. Note company stage, size and location-based pay
      policies in `salary_notes`; "pays local LATAM market rates" is the `pays_local_rates`
      signal.
@@ -234,7 +235,7 @@ Return only JSON, matching this schema:
   "remote": "yes | no | unclear",
   "location_eligibility": "pass | fail | unclear",
   "location_notes": "string",
-  "salary": "meets | below | unlisted",
+  "salary": "meets | near | below | unlisted",
   "salary_usd_range": "e.g. 130000-160000, or null",
   "salary_notes": "string",
   "language": "english-or-spanish | other",

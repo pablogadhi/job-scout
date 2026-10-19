@@ -72,6 +72,17 @@ def score(
     )
 
 
+def _field_value(config: AppConfig, where: str) -> tuple[str, str]:
+    """`salary=below` -> ("salary", "below"), for a field profile.md's output format has."""
+    field, sep, value = where.partition("=")
+    fields = {f.name: f for f in config.profile.output_fields}
+    if not sep or field not in fields:
+        raise fail(f"--where needs FIELD=VALUE with a field of the output format, got {where!r}")
+    if fields[field].kind == "enum" and value not in fields[field].values:
+        raise fail(f"{field} is one of {', '.join(fields[field].values)}, got {value!r}")
+    return field, value
+
+
 def rescore(
     ctx: typer.Context,
     top: Annotated[int | None, typer.Option("--top", min=1, help="Top N by best score.")] = None,
@@ -81,6 +92,12 @@ def rescore(
     legacy: Annotated[
         bool, typer.Option("--legacy", help="Every job scored before points (no breakdown).")
     ] = False,
+    where: Annotated[
+        str | None,
+        typer.Option(
+            "--where", metavar="FIELD=VALUE", help="Jobs whose result has it (salary=below)."
+        ),
+    ] = None,
     mode: Annotated[ScoringMode, typer.Option("--mode")] = ScoringMode.DAILY,
     backend: BackendOpt = None,
     model: ModelOpt = None,
@@ -89,18 +106,24 @@ def rescore(
     max_input_tokens: MaxInputTokensOpt = None,
     dry_run: DryRunOpt = False,
 ) -> None:
-    """Re-score top, recent or old-format jobs under the current profile (after editing
-    profile.md). With --dry-run nothing stays queued."""
-    if top is None and since is None and not legacy:
-        raise fail("give --top N, --since YYYY-MM-DD and/or --legacy")
+    """Re-score top, recent, old-format or matching jobs under the current profile (after
+    editing profile.md). With --dry-run nothing stays queued."""
+    if top is None and since is None and not legacy and where is None:
+        raise fail("give --top N, --since YYYY-MM-DD, --legacy and/or --where FIELD=VALUE")
     config = load(ctx, scoring_overrides(backend, model))
+    field_value = _field_value(config, where) if where is not None else None
     session_factory = open_db(config)
     since_utc = since.replace(tzinfo=ZoneInfo(config.settings.schedule.timezone)) if since else None
     with session_factory.begin() as session:
-        ids = rescore_ids(session, top=top, since=since_utc, legacy=legacy)
+        ids = rescore_ids(session, top=top, since=since_utc, legacy=legacy, where=field_value)
         before = snapshot(session, ids)
         queued = requeue_for_rescore(
-            session, config.profile.sha256, top=top, since=since_utc, legacy=legacy
+            session,
+            config.profile.sha256,
+            top=top,
+            since=since_utc,
+            legacy=legacy,
+            where=field_value,
         )
     verb = "would queue" if dry_run else "queued"
     console.print(f"{verb} {queued} jobs for re-scoring under profile {config.profile.sha256[:12]}")

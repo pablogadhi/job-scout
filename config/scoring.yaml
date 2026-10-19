@@ -55,7 +55,7 @@ components:
   salary:
     kind: enum
     field: salary
-    points: {meets: 10, unlisted: 6, below: 0}
+    points: {meets: 10, unlisted: 6, near: 2, below: 0} # near: $100k-$120k, below: under $100k (disqualified)
 
   location:
     kind: enum
