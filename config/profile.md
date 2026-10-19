@@ -31,9 +31,10 @@ Record `employment_type` for information only. Never penalize contractor roles.
 
 ## Hard requirements (dealbreakers)
 
-These decide `remote`, `location_eligibility`, `salary` and `language`. When a posting clearly
-fails one, set that field to `no`, `fail`, `below` or `other`; the code disqualifies the posting. When it is **unclear**,
-use `unclear` (or `unlisted` for salary) and report the rest as usual. Never guess a fail.
+These decide `remote`, `location_eligibility`, `salary`, `language` and `posting_type`. When a
+posting clearly fails one, set that field to `no`, `fail`, `below`, `other` or `not-a-job`; the
+code disqualifies the posting. When it is **unclear**, use `unclear` (or `unlisted` for salary)
+and report the rest as usual. Never guess a fail.
 
 1. **Fully remote** (`remote`). Hybrid, on-site, "remote but must come in X days", or relocation
    required → `no`. The posting's own text wins over a listing's labels and tags: a job
@@ -73,6 +74,9 @@ use `unclear` (or `unlisted` for salary) and report the rest as usual. Never gue
      another language with no sign that English or Spanish is enough.
    - Otherwise `english-or-spanish`, including when another language is only a plus ("French
      is an asset") or the posting doesn't say.
+6. **A job opening** (`posting_type`). `not-a-job` when the post offers no role: a candidate
+   advertising themselves ("seeking work", "available for hire"), a company post with no open
+   position, a course, event or ad. Otherwise `job`.
 
 ## Signals
 
@@ -234,6 +238,7 @@ Return only JSON, matching this schema:
   "salary_usd_range": "e.g. 130000-160000, or null",
   "salary_notes": "string",
   "language": "english-or-spanish | other",
+  "posting_type": "job | not-a-job",
   "role_category": "backend | full-stack | frontend | infrastructure | devops | platform | sre | tech-lead | data-engineering | iot | embedded | engineering-manager | mobile | other",
   "seniority": "string as stated in the posting",
   "seniority_level": "intern | junior | mid | senior | lead | staff | principal | unstated",

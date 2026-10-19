@@ -2286,3 +2286,33 @@ Its files are in the gitignored `instances/ngo/config/`; nothing personal is log
   group's lowest score was 20: a job disqualified by a rule on a field outside the grouping
   (`remote: no`, `language: other`) looked like spread among alike jobs. Disqualified jobs
   are now left out of that table (its title says so); a test covers it.
+- **P12-D31 Server data, unclear locations.** Of the 647 unclear-location jobs scoring 50+
+  (not disqualified), about 490 are listed under one country outside Latin America (295
+  US, 54 Canada, 53 US and Canada, 61 Europe or UK, the rest elsewhere) and 262 have no
+  location at all (findwork, typescriptjobs, remotefirstjobs, pyjobs). Claude follows the
+  profile there: a country label alone is unclear. At min_score 50/55/60/65/70 the sections
+  were top 82/82/72/62/51 and unclear 574/538/431/347/243 (one week of initial fetching,
+  so totals, not daily volumes).
+- **P12-U18 `digest.min_score` is 60** (was 50 "while testing"); the location rule stays as
+  it is. You agreed with Claude's suggestion: the top list barely changes from 50, the
+  unclear list shrinks by a quarter. A separate, higher bar for unclear jobs is the next
+  step if that list stays too long.
+- **P12-U19 A post that isn't a job opening is disqualified.** An HN post by a candidate
+  advertising themselves scored 56 (Claude called it full-stack, from the skills it
+  listed). Claude had suggested `role_category: other` capped at 45, but `other` isn't
+  capped in scoring.yaml, so it's done like the language rule: hard requirement 6 sets
+  `posting_type: job | not-a-job`, and a disqualify rule turns `not-a-job` into "not a job
+  opening". The field is left out of the reports, like `language`.
+- **P12-D32 A cap or disqualify rule on a field a stored result lacks doesn't apply**
+  (`scoring/points.compute`). Before, such a rule made the result unscorable, so adding
+  `posting_type` would have turned all 2,935 server scores back into old scoring. Only
+  the components' fields are needed now. No stored score changes (`SCORING_VERSION` stays):
+  results that had every field compute as before. A test covers it.
+- **P12-U20 The CSV has `location_notes` and `salary_notes` columns,** after
+  `location_eligibility`: Claude's reasons, which the unclear-location review needed.
+- **P12-R2 HN posts whose first line runs into the body.** On the server, some HN jobs'
+  title, location and remote fields hold the header plus the start of the post ("… React
+  / AIPrairieLearn (https://…"), so the header and the first paragraph weren't split on a
+  line break. `html_to_text` does split `Header<p>Body`, so the cause is another markup
+  shape, not found yet. Effects: long titles in the digest and no dedupe merge for those
+  posts; Claude reads the whole text anyway. Left for later, as you decided.

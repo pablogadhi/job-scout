@@ -87,7 +87,7 @@ scoring:
         cache_read: 0.01
 
 digest:
-  min_score: 50 # 50 while testing; plan default 60
+  min_score: 60
   watchlist_min_score: 21 # watchlist jobs appear unless disqualified
   watchlist_collapse_below: 50 # weaker watchlist jobs are listed collapsed
   send_when_empty: true # still email a digest with no new matches (health footer)

@@ -321,6 +321,7 @@ def test_export_csv_and_snapshot(
     rows = list(csv.DictReader(path.open()))
     assert rows[0]["score"] == "77" and rows[0]["prefilter"] == "passed"
     assert rows[0]["language"] == "english-or-spanish"  # left out of the reports, kept here
+    assert rows[0]["location_notes"] == "Open to LATAM." and rows[0]["salary_notes"] == ""
     assert rows[0]["summary"] == "Synthetic posting that fits."
     assert rows[1]["title"] == "'=HYPERLINK(1)" and rows[1]["score"] == ""
 

@@ -116,4 +116,6 @@ disqualify:
     reason: salary below the minimum
   - when: {language: [other]}
     reason: requires a language other than English or Spanish
+  - when: {posting_type: [not-a-job]}
+    reason: not a job opening
 disqualified_max: 20

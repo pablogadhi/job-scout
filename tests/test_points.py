@@ -262,6 +262,14 @@ def test_a_result_in_the_old_format_has_no_breakdown() -> None:
     assert compute(TABLE, {**old, "overall_score": 72, "skill_fit": 4}) is None
 
 
+def test_a_rule_on_a_field_the_result_lacks_does_not_apply() -> None:
+    # A field added to the profile after a job was scored: its stored result can't fail it.
+    without_language = {k: v for k, v in result().items() if k != "language"}
+    breakdown = compute(TABLE, without_language)
+    assert breakdown is not None and not breakdown.disqualified
+    assert breakdown.total == score_of().total
+
+
 def test_the_breakdown_survives_json_storage() -> None:
     breakdown = score_of(signals=[signal("four_day_week")], role_category="mobile")
     stored = json.loads(json.dumps(breakdown.to_json()))

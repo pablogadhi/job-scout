@@ -166,8 +166,8 @@ instance; an instance's files never go into git.
 - **A profile's own output fields** (beyond the core ones and those the templates name,
   `NAMED_FIELDS` in `report/data.py`) are listed generically in the digest and backlog
   report ("Travel required: frequent") and get a CSV column each; `UNLISTED_FIELDS` only
-  get the column (`language`, whose only use is a disqualify reason). Templates guard every
-  non-core field with `is defined` (they use `StrictUndefined`).
+  get the column (`language`, `posting_type`: their only use is a disqualify reason).
+  Templates guard every non-core field with `is defined` (they use `StrictUndefined`).
 - **Reports are untrusted-content HTML:** Jinja2 autoescape stays on, links go through the
   `http_url` filter (http/https only), and CSV cells that start like a formula get a `'`.
 - **Email:** `digest.email` in settings.yaml; the recipient(s) from
@@ -228,6 +228,7 @@ instance; an instance's files never go into git.
   differs (table values plus `SCORING_VERSION`, which you bump when the formula changes),
   so a weight change re-ranks everything without calling Claude. A row scored before
   points has no breakdown and keeps Claude's number ("old scoring"; `rescore --legacy`).
+  A cap or disqualify rule on a field added to the profile later skips rows without it.
   A digest takes a job scored before the previous digest only if it was first seen within
   `digest.rescored_max_age_days`.
 - **Scoring:** one score row per canonical job, scored once. Only `rescore` queues a scored

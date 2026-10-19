@@ -28,7 +28,8 @@ COLUMNS = [
     "job_id", "group_id", "duplicate", "source", "title", "company", "location", "remote",
     "salary_min", "salary_max", "salary_currency", "salary_period", "posted_at",
     "first_seen_at", "url", "apply_url", "prefilter", "prefilter_reason", "score_status",
-    "score", "disqualified", "disqualify_reason", "location_eligibility", "summary",
+    "score", "disqualified", "disqualify_reason", "location_eligibility", "location_notes",
+    "salary_notes", "summary",
     "score_breakdown", "score_legacy", "scoring_fingerprint", "scored_at", "backend", "model",
 ]  # fmt: skip
 
@@ -97,6 +98,8 @@ def export_csv(
                     score.disqualified if score else None,
                     breakdown.disqualify_reason if breakdown else result.get("disqualify_reason"),
                     result.get("location_eligibility"),
+                    result.get("location_notes"),
+                    result.get("salary_notes"),
                     result.get("summary"),
                     breakdown.line() if breakdown else None,
                     bool(score and score.result is not None and breakdown is None),

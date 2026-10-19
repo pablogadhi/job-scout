@@ -202,10 +202,10 @@ def _label(name: str) -> str:
 
 
 def compute(table: PointsTable, result: Mapping[str, Any]) -> Breakdown | None:
-    """The score for one stored result, or None when it lacks a field the table reads."""
-    needed = {c.field for c in table.components.values()}
-    needed |= {name for rule in [*table.caps, *table.disqualify] for name in rule.when}
-    if any(name not in result for name in needed):
+    """The score for one stored result, or None when it lacks a field a component reads. A
+    cap or disqualify rule on a field the result lacks (one added to the profile after it
+    was scored) doesn't apply."""
+    if any(c.field not in result for c in table.components.values()):
         return None
 
     notes: list[str] = []
