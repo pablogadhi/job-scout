@@ -2316,3 +2316,8 @@ Its files are in the gitignored `instances/ngo/config/`; nothing personal is log
   line break. `html_to_text` does split `Header<p>Body`, so the cause is another markup
   shape, not found yet. Effects: long titles in the digest and no dedupe merge for those
   posts; Claude reads the whole text anyway. Left for later, as you decided.
+- **P12-U21 The ngo profile disqualifies non-job posts too** (you said yes): hard
+  requirement 4 sets `posting_type`, with its scoring.yaml rule "not a job opening". For
+  that field, Claude added one exception: a request for proposals or expressions of
+  interest from consultants is a job; a funding call inviting organizations to apply for
+  grants is not. Copy the instance's `profile.md` and `scoring.yaml` to the server.
