@@ -41,6 +41,7 @@ def main(
 
 
 app.command()(sources.fetch)
+app.command()(sources.refresh)
 app.command()(scoring.score)
 app.command()(digest.digest)
 app.command()(pipeline.run)

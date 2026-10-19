@@ -1,6 +1,16 @@
 {
-  "https://typescriptjobs.net/feed.xml": {
+  "https://typescriptjobs.net/jobs/senior-typescript-engineer-at-cobalt-systems": {
     "file": "01.xml",
+    "status": 200,
+    "content_type": "text/html; charset=utf-8"
+  },
+  "https://typescriptjobs.net/jobs/mid-level-product-engineer-at-lattice-forge-inc": {
+    "file": "02.xml",
+    "status": 200,
+    "content_type": "text/html; charset=utf-8"
+  },
+  "https://typescriptjobs.net/feed.xml": {
+    "file": "03.xml",
     "status": 200,
     "content_type": "application/rss+xml; charset=utf-8"
   }

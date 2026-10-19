@@ -674,7 +674,37 @@ def pyjobs(endpoint: str) -> dict[str, Any]:
         )
 
     ns = ' xmlns:atom="http://www.w3.org/2005/Atom"'
+    page = "https://www.pyjobs.com/job/{}".format
     return {
+        # The feed has one line per job; the page's JobPosting has the rest.
+        page("senior-python-engineer-Qz12Ab34"): (
+            HTML,
+            job_page(
+                job_posting(
+                    "Senior Python Engineer",
+                    description="<p>Build our <strong>Django</strong> APIs.</p>"
+                    "<p>Remote, but you must be in one of these countries.</p>",
+                    jobLocationType="TELECOMMUTE",
+                    applicantLocationRequirements=[
+                        {"@type": "Country", "name": "Canada"},
+                        {"@type": "Country", "name": "Mexico"},
+                    ],
+                )
+            ),
+        ),
+        page("data-engineer-intern-Bp56Cd78"): (
+            HTML,
+            job_page(
+                job_posting(
+                    "Data Engineer Intern",
+                    jobLocation={
+                        "@type": "Place",
+                        "address": {"addressLocality": "Berlin", "addressCountry": "DE"},
+                    },
+                )
+            ),
+        ),
+        page("backend-engineer-rd-Ob90Ef12"): (HTML, job_page(None, "<p>Gone.</p>")),
         endpoint: (
             RSS,
             rss(
@@ -700,7 +730,7 @@ def pyjobs(endpoint: str) -> dict[str, Any]:
                 ],
                 ns,
             ),
-        )
+        ),
     }
 
 
@@ -715,7 +745,39 @@ def typescriptjobs(endpoint: str) -> dict[str, Any]:
             description=escape(body),
         )
 
+    page = "https://typescriptjobs.net/jobs/{}".format
+    places = [{"@type": "Place", "address": {"addressCountry": c}} for c in ("MX", "CO")]
     return {
+        # The feed and the page's JobPosting carry a summary; the posting is the .prose block.
+        page("senior-typescript-engineer-at-cobalt-systems"): (
+            HTML,
+            job_page(
+                job_posting(
+                    "Senior TypeScript Engineer",
+                    description="Cobalt Systems is hiring a TypeScript engineer.",
+                    jobLocationType="TELECOMMUTE",
+                    applicantLocationRequirements={"@type": "Country", "name": "MX"},
+                    jobLocation=places,
+                ),
+                '<div class="prose dark:prose-invert max-w-none"><p><strong>Location</strong>: '
+                "Remote in Mexico or Colombia</p><p>Next.js and Node services.</p></div>",
+            ),
+        ),
+        page("mid-level-product-engineer-at-lattice-forge-inc"): (
+            HTML,
+            job_page(
+                job_posting(
+                    "Mid-Level Product Engineer",
+                    description="Lattice Forge is hiring a product engineer.",
+                    jobLocation={
+                        "@type": "Place",
+                        "address": {"addressLocality": "Lisbon", "addressCountry": "PT"},
+                    },
+                ),
+                '<div class="prose"><p>Product work.</p>'
+                "<p>Relocation to Lisbon is required.</p></div>",
+            ),
+        ),
         endpoint: (
             RSS,
             rss(
@@ -733,7 +795,7 @@ def typescriptjobs(endpoint: str) -> dict[str, Any]:
                     ),
                 ],
             ),
-        )
+        ),
     }
 
 

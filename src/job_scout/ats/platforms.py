@@ -8,7 +8,6 @@ Jobvite and iCIMS 2026-10-15).
 from __future__ import annotations
 
 import html
-import json
 import logging
 import re
 from collections.abc import Callable, Iterable
@@ -22,6 +21,7 @@ import httpx
 from job_scout.fetch.base import labelled_salary
 from job_scout.fetch.models import Posting
 from job_scout.fetch.normalize import Salary, as_float, html_to_text, iso_to_utc
+from job_scout.fetch.pages import as_dict, as_list, job_posting_ld, ld_place
 
 log = logging.getLogger(__name__)
 
@@ -428,45 +428,11 @@ def _map_workday(job: dict[str, Any], board: Board) -> Posting:
 # datePosted, jobLocation, employmentType, sometimes baseSalary and jobLocationType). A list
 # item: {"id", "title", "url" (the job's page), "page" (what to fetch for its JobPosting)}.
 
-_JSON_LD = re.compile(r"<script[^>]*application/ld\+json[^>]*>(.*?)</script>", re.S | re.I)
 _SCHEMA_PERIODS = {"YEAR": "year", "MONTH": "month", "WEEK": "week", "DAY": "day", "HOUR": "hour"}
-
-
-def job_posting_ld(page: str) -> dict[str, Any] | None:
-    """The page's schema.org JobPosting, if it has one."""
-    for block in _JSON_LD.findall(page):
-        try:
-            data = json.loads(block)
-        except ValueError:
-            continue
-        for item in data if isinstance(data, list) else [data]:
-            if isinstance(item, dict) and item.get("@type") == "JobPosting":
-                return item
-    return None
 
 
 def _page_posting(requests: Requests, board: Board, job: dict[str, Any]) -> dict[str, Any]:
     return {**job, "posting": job_posting_ld(requests.get(job["page"]).text) or {}}
-
-
-def _place(place: Any) -> str | None:
-    address = _dict(place).get("address")
-    if isinstance(address, str):
-        return address
-    address = _dict(address)
-    country = address.get("addressCountry")
-    if isinstance(country, dict):
-        country = _dict(country).get("name")
-    parts = [address.get("addressLocality"), address.get("addressRegion"), country]
-    return ", ".join(str(p) for p in parts if p and p != "UNAVAILABLE") or None
-
-
-def _as_list(value: Any) -> list[Any]:
-    return value if isinstance(value, list) else [value] if value else []
-
-
-def _dict(value: Any) -> dict[str, Any]:
-    return value if isinstance(value, dict) else {}
 
 
 def _map_job_page(job: dict[str, Any], board: Board) -> Posting:
@@ -475,11 +441,11 @@ def _map_job_page(job: dict[str, Any], board: Board) -> Posting:
     ld: dict[str, Any] = job.get("posting") or {}
     applicants = [
         f"Remote: {a.get('name')}"
-        for a in _as_list(ld.get("applicantLocationRequirements"))
+        for a in as_list(ld.get("applicantLocationRequirements"))
         if isinstance(a, dict) and a.get("name")
     ]
-    salary = _dict(ld.get("baseSalary"))
-    value = _dict(salary.get("value"))
+    salary = as_dict(ld.get("baseSalary"))
+    value = as_dict(salary.get("value"))
     description = ld.get("description")
     posting = Posting(
         source_job_id=f"{board.ats}:{board.token}:{job['id']}",
@@ -487,10 +453,10 @@ def _map_job_page(job: dict[str, Any], board: Board) -> Posting:
         apply_url=job["url"],
         company=board.company,
         title=html.unescape(ld.get("title") or job["title"]),
-        location_raw=_join([*(_place(p) for p in _as_list(ld.get("jobLocation"))), *applicants]),
+        location_raw=_join([*(ld_place(p) for p in as_list(ld.get("jobLocation"))), *applicants]),
         remote_raw="remote" if ld.get("jobLocationType") == "TELECOMMUTE" else None,
         description_text=html_to_text(html.unescape(description)) if description else None,
-        tags=_tags(f"ats: {board.ats}", *_as_list(ld.get("employmentType"))),
+        tags=_tags(f"ats: {board.ats}", *as_list(ld.get("employmentType"))),
         posted_at=iso_to_utc(ld.get("datePosted")),
         raw={
             **{k: v for k, v in job.items() if k != "posting"},

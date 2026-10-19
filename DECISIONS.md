@@ -2327,3 +2327,46 @@ Its files are in the gitignored `instances/ngo/config/`; nothing personal is log
   failed). New jobs passing the filter run about 80–190 a day once the initial fetch is
   done, above the old 150 (10 calls of 15). Replies shrink from about 30,000 tokens to
   about 20,000, and 20 calls fit well inside the run's 2-hour limit.
+- **P12-B4 Two sources gave Claude only a summary.** You found three jobs in the digest's
+  unclear section whose pages plainly rule them out (relocation to Warsaw; "must be in
+  Germany"; hybrid in Ghent or Bucharest). typescriptjobs' feed (and its page's JobPosting
+  description) is a two-sentence summary, at most 465 characters; pyjobs' is one line, at
+  most 146 ("Geo remote · Contractor · USD …"). The location sentences are only on the job
+  pages, so Claude rightly said unclear, and a short skill list scored high (40/40 from one
+  line). Both sites' robots.txt allows the job pages (they block only `/api` and
+  `/job/*/apply`).
+- **P12-D33 A page step for feeds with only a summary** (`RssFetcher.details`, the same
+  idea as Workday's per-job request): each new job whose title passes filters.yaml gets its
+  page read once, one request at the host's spacing; a page that fails keeps the feed's
+  posting. pyjobs: the page's JobPosting gives the full description and
+  `applicantLocationRequirements`. typescriptjobs: the posting is the page's `.prose`
+  block, and its JobPosting gives the places. The countries applicants must be in are
+  worded "must be based in X or Y", which the pre-filter's location rule already drops
+  when they exclude Guatemala, and Claude reads as a fail otherwise. Checked live on your
+  three jobs: "must be based in Germany"; Warsaw plus the relocation sentence; Ghent and
+  Bucharest plus the hybrid sentence.
+- **P12-B5 typescriptjobs names one country as the requirement.** A remote job listed in
+  Colombia, Costa Rica, Peru and Bolivia had `applicantLocationRequirements` = Peru alone.
+  For a remote JobPosting, its places count as countries applicants may be in too: "must
+  be based in PE or CR or CO or BO".
+- **P12-B6 4dayweek: a remote location with a country is a residency rule.** Its job pages
+  show such a location as "Must be based in: USA" (checked live on five jobs of different
+  shapes: one country, several, a city, continents only, none); the API has no other
+  field for it, and the mapper wrote "United States (remote)", which the profile reads as
+  unclear. It now writes "remote, must be based in United States or Canada"; a remote
+  location with only a continent stays a region ("South America (remote)"). On the laptop
+  copy, 1,967 of 2,044 stored 4dayweek jobs changed, and the pre-filter then dropped 958
+  groups on the "must be based in" rule: 4dayweek's pass rate fell to 9%.
+- **P12-B7 pyjobs put "Contractor" in the location.** The job types it recognised lacked
+  "Contractor", so "Geo remote · Contractor · USD …" stored the location "Contractor". It's
+  a tag now.
+- **P12-D34 `job-scout refresh --source ID`** applies a mapper fix to the jobs already
+  stored: each is mapped again from its saved payload (no request), and a source with a
+  page step reads the pages its stored jobs lack. A job whose description, location or
+  remote text changed loses its group's pre-filter verdict and its score is queued again;
+  `filter` then judges it, and `score` redoes it only if it still passes (a pending score
+  whose group is dropped stays out of every report). Identity fields (title, company)
+  never change, so groups stay as they were. `--dry-run` reads no pages and saves nothing.
+  On a laptop copy: pyjobs read 60 pages (15 were 404s, jobs taken down), typescriptjobs
+  82. The JSON-LD helpers moved from `ats/platforms.py` to `fetch/pages.py` so both
+  packages use them; the company-board mappers are unchanged.

@@ -1,4 +1,4 @@
-"""`fetch` and `sources check`."""
+"""`fetch`, `refresh` and `sources check`."""
 
 from __future__ import annotations
 
@@ -14,13 +14,16 @@ from rich.table import Table
 from sqlalchemy import select
 
 from job_scout.ats.store import counts as ats_counts
-from job_scout.cli.common import SourceOpt, TierOpt, console, fail, load, open_db
+from job_scout.cli.common import DryRunOpt, SourceOpt, TierOpt, console, fail, load, open_db
 from job_scout.config import AppConfig, SourceConfig
 from job_scout.config.secrets import secret
 from job_scout.db.models import AtsStatus, Source, SourceRun, SourceRunKind, SourceRunStatus
 from job_scout.db.types import utcnow
 from job_scout.fetch.http import HttpClient, Recorder
+from job_scout.fetch.refresh import can_refresh, refresh_source
 from job_scout.fetch.runner import NOT_YET, SourceOutcome, run_fetch
+from job_scout.prefilter.runner import forget_verdicts
+from job_scout.scoring.queue import requeue_changed
 
 
 def fetch(
@@ -61,6 +64,47 @@ def fetch(
     outcomes = fetch_sources(config, source_ids=source or [], tier=tier, force=force, record=record)
     print_outcomes(outcomes, "Fetch results")
     exit_if_all_failed(outcomes)
+
+
+def refresh(
+    ctx: typer.Context,
+    source: Annotated[str, typer.Option("--source", help="The source to refresh.")],
+    dry_run: DryRunOpt = False,
+) -> None:
+    """Apply a fix of a source's mapping to its stored jobs.
+
+    Each stored job is mapped again from its saved payload, and a source whose feed has only
+    a summary (pyjobs, typescriptjobs) reads the page of each job that hasn't had it. The
+    jobs whose text changed lose their pre-filter verdict and are queued to be scored again:
+    the next `filter`, then `score` (or `run`), redoes them. --dry-run reads no pages and
+    saves nothing.
+    """
+    config = load(ctx)
+    if source not in {s.id for s in config.sources.sources}:
+        raise fail(source, label="unknown source id")
+    if not can_refresh(source):
+        raise fail(source, label="this source's jobs can't be mapped again")
+    session_factory = open_db(config)
+    with HttpClient(config.sources.defaults) as http, session_factory() as session:
+        outcome = refresh_source(
+            config, session, http, source, now=utcnow(), read_pages=not dry_run
+        )
+        forget_verdicts(session, outcome.changed)
+        requeued = requeue_changed(session, outcome.changed)
+        if dry_run:
+            session.rollback()
+        else:
+            session.commit()
+    console.print(
+        f"{source}: {outcome.jobs} stored jobs, {outcome.remapped} changed by mapping again, "
+        f"{outcome.pages} job pages read ({outcome.failed_pages} failed, "
+        f"{outcome.requests} requests); {len(outcome.changed)} job groups to filter again, "
+        f"{requeued} scores queued again"
+    )
+    if dry_run:
+        console.print("dry run: no pages read, nothing saved")
+    elif outcome.changed:
+        console.print("next: `job-scout filter`, then `job-scout score` (or `run`)")
 
 
 def check(

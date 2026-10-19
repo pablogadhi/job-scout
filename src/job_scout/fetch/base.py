@@ -48,7 +48,8 @@ class FetchContext:
     board_results: dict[str, str | None] = field(default_factory=dict)
     # For platforms that pay a request per job for its details (Workday): this source's jobs
     # already stored with a description, and the title rules of filters.yaml. A job stored
-    # without one gets its details once its title passes (the store fills them in).
+    # without one gets its details once its title passes (the store fills them in). For a
+    # feed with a page step (`RssFetcher.details`): every job of the source already stored.
     known_ids: frozenset[str] = frozenset()
     title_ok: Callable[[str], bool] = _any_title
 
@@ -151,13 +152,32 @@ def rss_posting(
     return posting
 
 
+Details = Callable[[FetchContext, Posting], Posting]
+
+
+def with_details(ctx: FetchContext, postings: list[Posting], details: Details) -> list[Posting]:
+    """Each new posting whose title passes filters.yaml, completed from its job page (one
+    request each). A page that fails keeps the feed's posting."""
+    done: list[Posting] = []
+    for posting in postings:
+        if posting.source_job_id not in ctx.known_ids and ctx.title_ok(posting.title):
+            try:
+                posting = details(ctx, posting)
+            except FetchError as exc:
+                log.warning("%s: no job page for %s: %s", ctx.source.id, posting.canonical_url, exc)
+        done.append(posting)
+    return done
+
+
 @dataclass
 class RssFetcher:
     """`shared` gives the fields every item of one endpoint has, read from its URL (e.g. a
-    feed filtered to remote jobs whose items don't say so themselves)."""
+    feed filtered to remote jobs whose items don't say so themselves). `details` completes a
+    posting from its job page, for feeds that carry only a summary."""
 
     map_entry: Callable[[FeedEntry], Posting | None]
     shared: Callable[[str], dict[str, Any]] | None = None
+    details: Details | None = None
 
     def fetch(self, ctx: FetchContext) -> list[Posting]:
         postings: list[Posting] = []
@@ -169,7 +189,7 @@ class RssFetcher:
             postings.extend(
                 p.model_copy(update=shared) for p in collect(ctx, feed.entries, self.map_entry)
             )
-        return postings
+        return with_details(ctx, postings, self.details) if self.details else postings
 
 
 # --- JSON --------------------------------------------------------------------------------

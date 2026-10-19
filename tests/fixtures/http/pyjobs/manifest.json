@@ -1,6 +1,21 @@
 {
-  "https://www.pyjobs.com/rss": {
+  "https://www.pyjobs.com/job/senior-python-engineer-Qz12Ab34": {
     "file": "01.xml",
+    "status": 200,
+    "content_type": "text/html; charset=utf-8"
+  },
+  "https://www.pyjobs.com/job/data-engineer-intern-Bp56Cd78": {
+    "file": "02.xml",
+    "status": 200,
+    "content_type": "text/html; charset=utf-8"
+  },
+  "https://www.pyjobs.com/job/backend-engineer-rd-Ob90Ef12": {
+    "file": "03.xml",
+    "status": 200,
+    "content_type": "text/html; charset=utf-8"
+  },
+  "https://www.pyjobs.com/rss": {
+    "file": "04.xml",
     "status": 200,
     "content_type": "application/rss+xml; charset=utf-8"
   }

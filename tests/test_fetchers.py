@@ -65,6 +65,7 @@ def fetch(
     *,
     environ: dict[str, str] | None = None,
     last_success_at: datetime | None = None,
+    known_ids: frozenset[str] = frozenset(),
 ) -> list[Posting]:
     source = app_config.sources.get(source_id)
     ctx = FetchContext(
@@ -75,6 +76,7 @@ def fetch(
         last_success_at=last_success_at,
         environ=environ or {},
         boards=fixture_boards(app_config) if source.method in BOARD_METHODS else [],
+        known_ids=known_ids,
     )
     with http:
         postings = FETCHERS[source_id].fetch(ctx)
@@ -114,10 +116,37 @@ def test_4dayweek(app_config: AppConfig, make_http: Callable[..., HttpClient]) -
     tidewater = postings[1]  # remote job listing, hybrid company: policy goes to tags only
     assert tidewater.remote_raw == "remote"
     assert "company remote level: hybrid" in tidewater.tags
-    assert p.location_raw == "Germany (remote); timezones: CET"
+    # A remote location with a country is where applicants must live ("Must be based in").
+    assert p.location_raw == "remote, must be based in Germany; timezones: CET"
     assert postings[1].location_raw == "Austin, Texas, United States (hybrid)"
     assert postings[3].location_raw == "company hires worldwide"
     assert (postings[3].salary_max, postings[3].salary_period) == (11_000, "month")
+
+
+def test_4dayweek_remote_countries_are_a_residency_rule() -> None:
+    from job_scout.fetch.sources import _fourdayweek_location
+
+    def loc(city: str | None, country: str | None, continent: str, arrangement: str) -> dict:
+        return {
+            "city": city,
+            "country": country,
+            "continent": continent,
+            "work_arrangement": arrangement,
+        }
+
+    item = {
+        "locations": [
+            loc("Austin", "United States", "North America", "hybrid"),
+            loc("New York", "United States", "North America", "remote"),
+            loc(None, "United States", "North America", "remote"),
+            loc(None, "Canada", "North America", "remote"),
+            loc(None, None, "South America", "remote"),
+        ]
+    }
+    assert _fourdayweek_location(item) == (
+        "remote, must be based in United States or Canada; "
+        "Austin, United States (hybrid); South America (remote)"
+    )
 
 
 def test_4dayweek_incremental_window(
@@ -232,17 +261,23 @@ def test_remotefirstjobs_salary_typo(
 def test_pyjobs(app_config: AppConfig, make_http: Callable[..., HttpClient]) -> None:
     postings = fetch(app_config, make_http(), "pyjobs")
     p = postings[0]
+    # The feed's one line, completed from the job page's JobPosting.
     assert (p.title, p.company, p.location_raw, p.remote_raw) == (
         "Senior Python Engineer",
         "Quetzal Labs",
-        None,
+        "must be based in Canada or Mexico",
         "Geo remote",
     )
+    assert p.description_text == (
+        "Build our Django APIs.\n\nRemote, but you must be in one of these countries."
+    )
+    assert p.raw["page"]["jobLocationType"] == "TELECOMMUTE"
+    assert "description" not in p.raw["page"]
     assert (p.salary_min, p.salary_max, p.salary_period) == (140_000, 170_000, "year")
     intern = postings[1]
     assert (intern.company, intern.location_raw, intern.remote_raw, intern.tags) == (
         "Brightpath GmbH",
-        "Berlin",
+        "Berlin, DE",
         "on-site (Office)",
         ["Internship"],
     )
@@ -251,7 +286,74 @@ def test_pyjobs(app_config: AppConfig, make_http: Callable[..., HttpClient]) -> 
         "EUR",
         "month",
     )
-    assert postings[2].title == "Backend Engineer (R&D)"  # &amp; inside CDATA unescaped
+    rd = postings[2]
+    assert rd.title == "Backend Engineer (R&D)"  # &amp; inside CDATA unescaped
+    # A page without a JobPosting keeps the feed's line, and is marked as read.
+    assert (rd.description_text or "").startswith("Backend Engineer (R&D) at Orbit Analytics.")
+    assert rd.raw["page"] == {}
+
+
+def test_pyjobs_contractor_is_not_a_place() -> None:
+    from job_scout.fetch.sources import _map_pyjobs
+
+    p = _map_pyjobs(
+        {
+            "title": "AI Engineer",
+            "link": "https://www.pyjobs.com/job/ai-engineer-Xy12",
+            "summary": "AI Engineer at Arise. Geo remote · Contractor · USD 150,000 per year.",
+        }
+    )
+    assert (p.location_raw, p.remote_raw, p.tags) == (None, "Geo remote", ["Contractor"])
+
+
+def test_typescriptjobs_reads_the_posting_from_its_page(
+    app_config: AppConfig, make_http: Callable[..., HttpClient]
+) -> None:
+    cobalt, lattice = fetch(app_config, make_http(), "typescriptjobs")
+    # The page names one country as the requirement and lists the rest as job locations.
+    assert (cobalt.location_raw, cobalt.remote_raw) == ("must be based in MX or CO", "remote")
+    assert cobalt.description_text == (
+        "Location: Remote in Mexico or Colombia\n\nNext.js and Node services."
+    )
+    assert (lattice.location_raw, lattice.remote_raw) == ("Lisbon, PT", None)
+    assert lattice.description_text is not None
+    assert "Relocation to Lisbon is required." in lattice.description_text
+
+
+def test_job_pages_are_read_once_for_new_jobs_whose_title_passes(
+    app_config: AppConfig, make_http: Callable[..., HttpClient]
+) -> None:
+    def no_page(request: httpx.Request) -> httpx.Response:
+        raise AssertionError(f"page read: {request.url}")
+
+    pages = "https://typescriptjobs.net/jobs/"
+    known = frozenset(
+        f"{pages}{slug}"
+        for slug in (
+            "senior-typescript-engineer-at-cobalt-systems",
+            "mid-level-product-engineer-at-lattice-forge-inc",
+        )
+    )
+    stored = fetch(app_config, make_http({pages: no_page}), "typescriptjobs", known_ids=known)
+    assert [p.description_text for p in stored] == ["Next.js and Node.", "Product work."]
+
+    source = app_config.sources.get("typescriptjobs")
+    http = make_http({pages: no_page})
+    ctx = FetchContext(
+        source=source, http=http, budget=RequestBudget(), now=NOW, title_ok=lambda _t: False
+    )
+    with http:
+        dropped = FETCHERS["typescriptjobs"].fetch(ctx)
+    assert all("page" not in p.raw for p in dropped)
+
+
+def test_a_job_page_that_fails_keeps_the_feed_posting(
+    app_config: AppConfig, make_http: Callable[..., HttpClient]
+) -> None:
+    gone = {"https://www.pyjobs.com/job/senior-python": lambda _r: httpx.Response(404)}
+    p = fetch(app_config, make_http(gone), "pyjobs")[0]
+    assert p.location_raw is None and "page" not in p.raw
+    assert (p.description_text or "").startswith("Senior Python Engineer at Quetzal Labs.")
 
 
 def test_remotegamejobs(app_config: AppConfig, make_http: Callable[..., HttpClient]) -> None:

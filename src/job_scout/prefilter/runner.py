@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import random
+from collections.abc import Sequence
 from dataclasses import dataclass
 
-from sqlalchemy import Select, case, exists, func, or_, select
+from sqlalchemy import Select, case, delete, exists, func, or_, select
 from sqlalchemy.orm import Session, aliased, sessionmaker
 
 from job_scout.config import AppConfig
@@ -41,6 +42,12 @@ def pending_query(fingerprint: str, rerun: bool = False) -> Select[int]:
             newer_copy,
         )
     )
+
+
+def forget_verdicts(session: Session, job_ids: Sequence[int]) -> None:
+    """Drop these groups' verdicts (their text changed): the next `filter` judges them as new."""
+    if job_ids:
+        session.execute(delete(PrefilterResult).where(PrefilterResult.job_id.in_(job_ids)))
 
 
 @dataclass(frozen=True)

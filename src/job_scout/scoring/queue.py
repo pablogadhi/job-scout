@@ -172,6 +172,23 @@ def snapshot(session: Session, job_ids: Sequence[int]) -> dict[int, tuple[ScoreS
     return {job_id: rows.get(job_id) for job_id in job_ids}
 
 
+def requeue_changed(session: Session, job_ids: Sequence[int]) -> int:
+    """Queue again the scores of jobs whose text changed (`refresh`). They wait for the
+    pre-filter's new verdict: a group it now drops stays pending, out of every report."""
+    scores = session.scalars(
+        select(Score).where(
+            Score.job_id.in_(job_ids),
+            Score.status.in_([ScoreStatus.SCORED, ScoreStatus.SCORE_FAILED]),
+        )
+    )
+    requeued = 0
+    for score in scores:
+        score.status, score.attempts = ScoreStatus.PENDING, 0
+        requeued += 1
+    session.flush()
+    return requeued
+
+
 def _set_pending(session: Session, profile_hash: str, job_ids: Sequence[int]) -> int:
     for job_id in job_ids:
         score = session.scalars(select(Score).where(Score.job_id == job_id)).one_or_none()

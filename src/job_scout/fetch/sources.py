@@ -13,6 +13,8 @@ from collections.abc import Iterator
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
+from selectolax.lexbor import LexborHTMLParser
+
 from job_scout.ats.fetcher import AtsFetcher
 from job_scout.config.secrets import secret
 from job_scout.fetch.base import (
@@ -35,6 +37,7 @@ from job_scout.fetch.normalize import (
     iso_to_utc,
     parse_salary,
 )
+from job_scout.fetch.pages import job_posting_ld, ld_locations
 
 # --- 4dayweek (JSON, paginated) ----------------------------------------------------------
 
@@ -60,11 +63,18 @@ def _fourdayweek_pages(ctx: FetchContext, url: str) -> Iterator[Any]:
 
 
 def _fourdayweek_location(item: dict[str, Any]) -> str | None:
-    parts = []
+    """A remote location with a country is where applicants must live: the job's page shows
+    it as "Must be based in: USA". A remote one with only a continent stays a region."""
+    parts, based_in = [], []
     for loc in item.get("locations") or []:
+        if loc.get("work_arrangement") == "remote" and loc.get("country"):
+            based_in.append(loc["country"])
+            continue
         place = ", ".join(p for p in (loc.get("city"), loc.get("state"), loc.get("country")) if p)
         place = place or loc.get("continent") or "unspecified"
         parts.append(f"{place} ({loc.get('work_arrangement', '?')})")
+    if based_in:
+        parts.insert(0, f"remote, must be based in {' or '.join(dict.fromkeys(based_in))}")
     if timezones := item.get("timezones"):
         parts.append(f"timezones: {', '.join(timezones)}")
     if (item.get("company") or {}).get("hires_worldwide"):
@@ -234,6 +244,40 @@ def _map_weworkremotely(entry: FeedEntry) -> Posting:
     )
 
 
+def _from_job_page(posting: Posting, page: str, body: str | None = None) -> Posting:
+    """The feed's posting completed from its job page: the full description (`body`, the
+    page's posting HTML, or else its JobPosting's), the JobPosting's places and the countries
+    applicants must be in. `raw["page"]` marks a job whose page was read."""
+    ld = job_posting_ld(page) or {}
+    description = html_to_text(body) or (
+        html_to_text(html.unescape(ld["description"])) if ld.get("description") else None
+    )
+    update: dict[str, Any] = {
+        "raw": {**posting.raw, "page": {k: v for k, v in ld.items() if k != "description"}}
+    }
+    if description:
+        update["description_text"] = description
+    if locations := ld_locations(ld):
+        update["location_raw"] = "; ".join(locations)
+    if ld.get("jobLocationType") == "TELECOMMUTE" and not posting.remote_raw:
+        update["remote_raw"] = "remote"
+    return posting.model_copy(update=update)
+
+
+def _pyjobs_page(ctx: FetchContext, posting: Posting) -> Posting:
+    """The feed has one line per job; the page's JobPosting has the description and, for
+    "Geo remote" jobs, the countries applicants must be in."""
+    return _from_job_page(posting, ctx.get(posting.canonical_url).text)
+
+
+def _typescriptjobs_page(ctx: FetchContext, posting: Posting) -> Posting:
+    """The feed has a two-sentence summary, and so does the page's JobPosting: the posting
+    itself is the page's `.prose` block."""
+    page = ctx.get(posting.canonical_url).text
+    body = LexborHTMLParser(page).css_first("div.prose")
+    return _from_job_page(posting, page, body.html if body else None)
+
+
 def _map_title_at_company(entry: FeedEntry) -> Posting:
     """RWFA, Remote First Jobs, TypeScriptJobs: 'Title at Company', author = company if set."""
     title, company = _split_at_company(entry["title"], entry.get("author"))
@@ -252,7 +296,7 @@ def _pyjobs_details(summary: str, title: str) -> tuple[str | None, list[str]]:
 
 
 _JOB_TYPES = re.compile(
-    r"^(full[- ]time|part[- ]time|internship|contract|freelance|temporary)$", re.I
+    r"^(full[- ]time|part[- ]time|internship|contract(or)?|freelance|temporary)$", re.I
 )
 
 
@@ -373,8 +417,8 @@ FETCHERS: dict[str, Fetcher] = {
     "weworkremotely": RssFetcher(_map_weworkremotely),
     "realworkfromanywhere": RssFetcher(_map_title_at_company),
     "remotefirstjobs": RssFetcher(_map_title_at_company),
-    "typescriptjobs": RssFetcher(_map_title_at_company),
-    "pyjobs": RssFetcher(_map_pyjobs),
+    "typescriptjobs": RssFetcher(_map_title_at_company, details=_typescriptjobs_page),
+    "pyjobs": RssFetcher(_map_pyjobs, details=_pyjobs_page),
     "remotegamejobs": RssFetcher(_map_remotegamejobs),
     "findjobit": RssFetcher(_map_findjobit),
     "remotive": RssFetcher(_map_remotive),
@@ -383,3 +427,9 @@ FETCHERS: dict[str, Fetcher] = {
     "remoteintech": AtsFetcher(),
     "company_boards": AtsFetcher(),
 }
+
+
+def has_details(source_id: str) -> bool:
+    """The source's feed carries only a summary, so each new job's page is read too."""
+    fetcher = FETCHERS.get(source_id)
+    return isinstance(fetcher, RssFetcher) and fetcher.details is not None

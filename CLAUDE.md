@@ -24,6 +24,7 @@ uv sync                                         # install deps into .venv
 uv run --env-file .env alembic upgrade head     # create/upgrade the DB
 uv run --env-file .env job-scout sources check  # validate config, show source health
 uv run --env-file .env job-scout fetch --tier 1  # fetch and store (--force ignores min interval)
+uv run --env-file .env job-scout refresh --source ID  # a mapper fix applied to stored jobs
 uv run --env-file .env job-scout filter          # pre-filter new/stale groups, pass rate per source
 uv run --env-file .env job-scout explain ID      # a job, its group, verdict, score breakdown
 uv run --env-file .env job-scout score --dry-run # plan calls (and est. API cost), no spend
@@ -89,6 +90,13 @@ instance; an instance's files never go into git.
     marks temporary failures (429, 5xx, timeouts).
   - `base.py`: generic `RssFetcher` and `JsonFetcher`, plus `FetchContext`.
   - `sources.py`: per-source mappers and the `FETCHERS` registry. `hn.py`: HN Who is hiring.
+    A feed with only a summary per job (pyjobs, typescriptjobs) has a page step
+    (`RssFetcher.details`): each new job whose title passes filters.yaml gets its page read
+    once (`pages.py`: the page's schema.org JobPosting and its locations, worded "must be
+    based in …" when applicants must live somewhere), and `raw["page"]` marks it.
+  - `refresh.py`: `job-scout refresh`, a mapper fix applied to a source's stored jobs: each
+    is mapped again from its saved payload, and the pages a page step lacks are read. A job
+    whose text changed loses its group's verdict and its score is queued again.
   - `normalize.py`: pure helpers (HTML to text, salary parsing, company/title normalization).
   - `store.py`: dedupe and insert. `runner.py`: per-source orchestration and health.
 - `src/job_scout/prefilter/`: `rules.py` (pure filters.yaml rules, `Prefilter`, no I/O),

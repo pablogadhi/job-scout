@@ -20,7 +20,7 @@ from job_scout.db.models import Job, Source, SourceRun, SourceRunKind, SourceRun
 from job_scout.db.types import utcnow
 from job_scout.fetch.base import FetchContext
 from job_scout.fetch.http import FetchError, HttpClient, RequestBudget
-from job_scout.fetch.sources import FETCHERS
+from job_scout.fetch.sources import FETCHERS, has_details
 from job_scout.fetch.store import store_postings
 from job_scout.prefilter.runner import build_prefilter
 
@@ -160,6 +160,10 @@ def _run_one(
                         Job.source_id == source.id, Job.description_text.is_not(None)
                     )
                 )
+            )
+        elif has_details(source.id):  # a job page is read once, when the job is new
+            known_ids = frozenset(
+                session.scalars(select(Job.source_job_id).where(Job.source_id == source.id))
             )
 
     prefilter = build_prefilter(config)
