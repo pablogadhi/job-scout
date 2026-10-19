@@ -422,7 +422,8 @@ def simulate(
         console.print(moved)
     if sim.spreads:
         spread = Table(
-            title=f"Spread among alike jobs ({', '.join(GROUP_FIELDS)})", title_justify="left"
+            title=f"Spread among alike jobs ({', '.join(GROUP_FIELDS)}; not disqualified)",
+            title_justify="left",
         )
         for column in ("alike", "jobs", "lowest", "highest"):
             spread.add_column(column, justify="left" if column == "alike" else "right")

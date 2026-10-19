@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 from rich.table import Table
 from sqlalchemy import select
+from sqlalchemy.orm import Session, sessionmaker
 from typer.testing import CliRunner
 
 from job_scout.ats.refresh import RefreshReport
@@ -18,8 +19,9 @@ from job_scout.db.models import Backend, Job, Score, ScoreStatus, Source
 from job_scout.fetch.models import Posting
 from job_scout.fetch.store import store_postings
 from job_scout.scoring.calibrate import ConfigSpec
+from job_scout.scoring.simulate import simulate
 from tests.conftest import TEST_CONFIG, edit
-from tests.scoring_helpers import result_for, seed_jobs, with_points
+from tests.scoring_helpers import TEST_TABLE, result_for, seed_jobs, with_points
 
 runner = CliRunner()
 
@@ -468,6 +470,21 @@ def test_simulate_compares_a_candidate_table(db_url: str, tmp_path: Path) -> Non
 
     candidate.write_text("components: {}\n")
     assert invoke("simulate", "--table", str(candidate)).exit_code == 2
+
+
+def test_simulate_spreads_leave_out_disqualified_jobs(
+    app_config: AppConfig, session_factory: sessionmaker[Session]
+) -> None:
+    ids = seed_jobs(session_factory, 3)
+    facts = [result_for(ids[0], score=80), result_for(ids[1], score=70)]
+    facts.append(result_for(ids[2], score=75, remote="no"))  # alike, but disqualified
+    with session_factory.begin() as session:
+        for result in facts:
+            score = Score(job_id=result["job_id"], profile_hash="p", status=ScoreStatus.SCORED)
+            session.add(with_points(score, result))
+    with session_factory() as session:
+        sim = simulate(session, TEST_TABLE, app_config.settings.digest, set())
+    assert [(s.jobs, s.lowest, s.highest) for s in sim.spreads] == [(2, 70, 80)]
 
 
 def test_editing_the_points_table_re_ranks_stored_scores(db_url: str, config_dir: Path) -> None:

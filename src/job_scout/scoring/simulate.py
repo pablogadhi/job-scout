@@ -18,6 +18,7 @@ from job_scout.scoring.points import Breakdown, compute
 
 BANDS = ((85, "85-100"), (70, "70-84"), (50, "50-69"), (21, "21-49"), (0, "0-20"))
 # Jobs alike on these are compared: any spread left among them has a cause in the breakdown.
+# Disqualified jobs are left out: their cause (a rule on any field) is already plain.
 GROUP_FIELDS = ("seniority_level", "role_category", "salary", "location_eligibility")
 
 
@@ -117,6 +118,8 @@ def simulate(
 
     alike: dict[tuple[str, ...], list[int]] = defaultdict(list)
     for item, breakdown in pairs:
+        if breakdown.disqualified:
+            continue
         result = item.score.result or {}
         alike[tuple(str(result.get(name)) for name in GROUP_FIELDS)].append(breakdown.total)
     spreads = [Spread(k, len(v), min(v), max(v)) for k, v in alike.items() if len(v) > 1]

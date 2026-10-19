@@ -2282,3 +2282,7 @@ Its files are in the gitignored `instances/ngo/config/`; nothing personal is log
 - **P12-D30 The cost estimate assumes 2,100 output tokens per posting** (was 1,750, from
   P12-U13). Your server's rescore of the main profile, one Batches API run: 2,920 postings,
   6,137,039 output tokens (2,102 per posting, thinking included), $1.94.
+- **P12-B3 `simulate`'s spread table counted disqualified jobs.** On your server data every
+  group's lowest score was 20: a job disqualified by a rule on a field outside the grouping
+  (`remote: no`, `language: other`) looked like spread among alike jobs. Disqualified jobs
+  are now left out of that table (its title says so); a test covers it.
