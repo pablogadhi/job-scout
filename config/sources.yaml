@@ -656,7 +656,26 @@ watchlist:
 # ---------------------------------------------------------------------------------------------
 # Companies: this instance's own organizations, detected like seed companies (`ats detect`)
 # and polled once their board is found. For an instance whose field the remoteintech seed
-# doesn't cover. A watchlist entry for the same company wins.
+# doesn't cover, or a company whose board detection can't find (the careers URL is then the
+# board itself). A watchlist entry for the same company wins.
 # ---------------------------------------------------------------------------------------------
 
-companies: []
+companies:
+  # Seed companies detection marked unknown: the board's name differs from the company's, or
+  # it's a parent company's board. Each answered with jobs on 2026-10-19.
+  - {company: Automattic, careers_url: "https://job-boards.greenhouse.io/automatticcareers"}  # also Parse.ly
+  - {company: MariaDB, careers_url: "https://job-boards.greenhouse.io/mariadbplc"}
+  - {company: Bird, careers_url: "https://job-boards.greenhouse.io/bird"}  # formerly MessageBird
+  - {company: Xapo, careers_url: "https://job-boards.greenhouse.io/xapo61"}
+  - {company: Contentsquare, careers_url: "https://jobs.lever.co/contentsquare"}  # owns Hotjar
+  - {company: DuckDuckGo, careers_url: "https://jobs.ashbyhq.com/duck-duck-go"}
+  - {company: Polygon, careers_url: "https://jobs.ashbyhq.com/polygon-labs"}
+  - {company: Tyk, careers_url: "https://apply.workable.com/tyk-technologies/"}
+  - {company: Zignaly, careers_url: "https://zignaly.recruitee.com/"}
+  # Workday: detection never guesses these boards
+  - {company: CrowdStrike, careers_url: "https://crowdstrike.wd5.myworkdayjobs.com/crowdstrikecareers"}
+  - {company: Broadcom, careers_url: "https://broadcom.wd1.myworkdayjobs.com/External_Career"}  # VMware, Carbon Black
+  - {company: SUSE, careers_url: "https://suse.wd3.myworkdayjobs.com/Jobsatsuse"}
+  - {company: Rackspace, careers_url: "https://rackspace.wd1.myworkdayjobs.com/External"}
+  - {company: Yahoo, careers_url: "https://ouryahoo.wd5.myworkdayjobs.com/careers"}
+  - {company: Safeguard Global, careers_url: "https://safeguardglobal.wd3.myworkdayjobs.com/External_Careers"}

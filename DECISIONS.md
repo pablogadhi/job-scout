@@ -2370,3 +2370,20 @@ Its files are in the gitignored `instances/ngo/config/`; nothing personal is log
   On a laptop copy: pyjobs read 60 pages (15 were 404s, jobs taken down), typescriptjobs
   82. The JSON-LD helpers moved from `ats/platforms.py` to `fetch/pages.py` so both
   packages use them; the company-board mappers are unchanged.
+- **P12-U23 Fifteen company boards added to `companies:`** (sources.yaml), not the
+  watchlist (no badge, no lower threshold). You had another session look up the boards of
+  the 268 seed companies the laptop's detection marked unknown. Claude checked every board
+  it named on a platform we support against the live API: about 24 of 66 answered with
+  jobs; several marked "high" were 404s (Hubspot, Retool, Strapi, Iterative, toggl) and 22
+  of 25 Workable boards were empty. Added: Automattic (covers Parse.ly), MariaDB, Bird
+  (MessageBird), Xapo, Contentsquare (Hotjar), DuckDuckGo, Polygon, Tyk, Zignaly, and on
+  Workday CrowdStrike, Broadcom (VMware, Carbon Black), SUSE, Rackspace, Yahoo, Safeguard
+  Global. Detection missed them because the board's name differs from the company's
+  (`automatticcareers`, `xapo61`, `polygon-labs`), it's a parent's board, or it's Workday,
+  which is never guessed; so each careers URL is the board itself. GoDaddy (Over) was
+  already polled from the seed. Left out: the large Workday boards outside software
+  (CVS, Wells Fargo, Nationwide, Parexel, RTX, Rakuten), and Salesforce.
+- **P12-D35 No new ATS platforms.** The unsupported platforms in that list hold almost no
+  jobs (2026-10-19): Rippling 18 over 3 boards, Breezy HR 11 over 6, Pinpoint 9 over 5,
+  SmartRecruiters 4 over 5 (and its API's robots.txt disallows bots), Personio,
+  Teamtailor, JazzHR, JOIN and the rest 0–2 each.
