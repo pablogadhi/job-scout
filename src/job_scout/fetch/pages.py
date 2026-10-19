@@ -8,6 +8,8 @@ import json
 import re
 from typing import Any
 
+from job_scout.fetch.normalize import Salary, as_float
+
 _JSON_LD = re.compile(r"<script[^>]*application/ld\+json[^>]*>(.*?)</script>", re.S | re.I)
 
 
@@ -61,3 +63,19 @@ def ld_locations(ld: dict[str, Any]) -> list[str]:
             countries, places = [*countries, *places], []
         places.append(f"must be based in {' or '.join(dict.fromkeys(countries))}")
     return places
+
+
+_PERIODS = {"YEAR": "year", "MONTH": "month", "WEEK": "week", "DAY": "day", "HOUR": "hour"}
+
+
+def ld_salary(ld: dict[str, Any]) -> Salary | None:
+    """The JobPosting's baseSalary, when it gives an amount, a currency and a period."""
+    salary = as_dict(ld.get("baseSalary"))
+    value = as_dict(salary.get("value"))
+    low = as_float(value.get("minValue") or value.get("value"))
+    high = as_float(value.get("maxValue"))
+    period = _PERIODS.get(str(value.get("unitText") or "").upper())
+    currency = salary.get("currency")
+    if not (low or high) or not currency or period is None:
+        return None
+    return Salary(min=low, max=high, currency=str(currency).upper(), period=period)

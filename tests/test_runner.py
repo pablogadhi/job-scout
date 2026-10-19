@@ -126,13 +126,13 @@ def test_sources_that_cannot_run_are_skipped(
                 app_config,
                 session_factory,
                 http,
-                source_ids=["findwork", "remoteintech", "nodesk"],
+                source_ids=["findwork", "remoteintech", "hiring_lat"],
                 environ={},
             )
         )
     assert outcomes["findwork"].reason == "FINDWORK_API_KEY is not set"
     assert outcomes["remoteintech"].reason == "no company boards yet: run `job-scout ats detect`"
-    assert "Phase 7" in (outcomes["nodesk"].reason or "")
+    assert outcomes["hiring_lat"].reason == "scraper not built"
     assert {o.status for o in outcomes.values()} == {"skipped"}
 
 
@@ -161,6 +161,6 @@ def test_tier_1_end_to_end(
     assert stored == {
         "4dayweek", "remoteok", "weworkremotely", "remotive", "workingnomads",
         "realworkfromanywhere", "remotefirstjobs", "hn_whoishiring", "pyjobs",
-        "typescriptjobs", "remotegamejobs", "findjobit",
+        "typescriptjobs", "nodesk", "remotegamejobs", "findjobit",
     }  # fmt: skip
     assert {outcomes["findwork"].status, outcomes["remoteintech"].status} == {"skipped"}

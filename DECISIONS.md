@@ -972,6 +972,64 @@ daemon) and `systemd-analyze verify` (read-only filesystem). 308 offline tests (
 
 ---
 
+## Phase 7: Tier 2 scrapers (branch `phase-7-scrapers`)
+
+Built after Phase 12 (P8-U1 had skipped it), so `phase-7-scrapers` starts from
+`phase-12-points-score`. Every site was checked live on 2026-10-19 (robots.txt, feeds,
+JSON-LD, job pages) before building.
+
+### P7 Your decisions
+
+- **P7-U1 NoDesk added, and scrapers for 4DayJob and RemoteJobs.lat tried**, the two
+  Tier 2 sites you're interested in. The other Tier 2 sites stay unbuilt: hiring.lat
+  (most salaries "$0-$0", listings up to two years old), Real Jobs From Anywhere (its
+  `feed.xml` is a leftover template), Remote.io (a JavaScript app), Daily Remote and Remote
+  Backend Jobs (aggregators: duplicates), DevOpsJobs (narrow), JobsByCulture (company
+  culture, not jobs).
+
+### P7 Config fixes
+
+- **P7-C1 NoDesk has feeds.** `sources.yaml` said "No feed"; `/remote-jobs/index.xml` (all
+  jobs) and `/remote-jobs/engineering/index.xml` exist, 10 newest jobs each (the devops and
+  remote-first pages it listed have none). NoDesk moved to Tier 1 as `rss`.
+- **P7-C2 4DayJob answers only on `www.4dayjob.com`;** the bare domain returns 403.
+
+### P7 Decisions (Claude)
+
+- **P7-D1 NoDesk reads each new job's page** (like pyjobs): the feed has a summary, the
+  page's JobPosting the whole posting. Its applicant location is always "Anywhere", even
+  for a job "anywhere in India", so the place comes from the page's location line
+  ("Remote" over "India", "Worldwide", "DE" or nothing), and the page's tags are added.
+  On the laptop: 11 new jobs, 4 of 11 groups passed the pre-filter.
+- **P7-D2 4DayJob is not built.** It lists 4dayweek.io's jobs (the same companies; logos
+  served from `media.fourdayweek.io`), and its copies are worse: a hybrid Slovak bank job
+  shows as remote in the US at $50k–$150k, posted in April. The `4dayweek` API source
+  already has them, with their real arrangement. It stays in `sources.yaml` (Tier 2,
+  unbuilt) with that note; say if you want it skipped for good.
+- **P7-D3 RemoteJobs.lat is the first HTML scraper** (`fetch/remotejobs_lat.py`, Tier 2
+  with `enabled: true`). Endpoints: the programming and devops-qa category pages (the
+  Guatemala country page lists ~30 jobs, almost none in engineering). A page lists 50
+  cards, newest first, each with its place, company, type, salary text and whole
+  description; reading stops at a page with no new job, at most `max_pages: 5` per
+  category. Each new job whose title passes gets its page read once, for the salary's
+  period (the card shows "$2500 - $3000" with none) and the exact posting date; a card
+  is otherwise dated from "10 days ago". A job listed in both categories is read once.
+- **P7-D4 RemoteJobs.lat's applicant countries are ignored.** Every job whose card says
+  "Remote" or "Remote Latin America" gets the same six (Argentina, Mexico, Colombia,
+  Chile, Peru, Brazil) in its JobPosting: 66 of 67 on the first try. Worded "must be based
+  in …", they'd have made the pre-filter drop nearly every job. The card's place is used.
+- **P7-D5 Expect little from RemoteJobs.lat.** Most salaries are monthly, $1,500–$8,000
+  ($18k–$96k a year). On the laptop, 10 of 97 jobs passed the pre-filter; 55 dropped as
+  under $100k a year (no Claude spend), 32 on their titles. Many listings come from Get on
+  Board (getonbrd.com), which has its own API; not researched yet.
+- **P7-D6 A `scrape` source without a scraper** is skipped as "scraper not built"
+  (`runner.not_built`), replacing the "Phase 7" placeholder; `sources check` and the
+  digest's source health use the same rule. `ld_salary` (`fetch/pages.py`) reads a
+  JobPosting's baseSalary for both RemoteJobs.lat and the Jobvite/iCIMS boards (same
+  rules as before).
+- **P7-D7 Scraped jobs can't be refreshed** (`refresh` maps only feed and API payloads
+  again). The stored card is enough to add that later.
+
 ## Phase 8: Feedback loop (branch `phase-8-feedback`)
 
 **Acceptance:** built and tested offline. End to end on a throwaway copy of the local

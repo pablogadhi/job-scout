@@ -1,4 +1,5 @@
-"""Per-source mappers for the Tier 1 API and RSS sources, and the fetcher registry.
+"""Per-source mappers for the Tier 1 API and RSS sources, and the fetcher registry (HTML
+scrapers have a module each).
 
 Each mapper turns one payload item into a Posting. Shapes were taken from live payloads
 on 2026-10-12; recorded samples live in tests/fixtures/http/<source_id>/.
@@ -38,6 +39,7 @@ from job_scout.fetch.normalize import (
     parse_salary,
 )
 from job_scout.fetch.pages import job_posting_ld, ld_locations
+from job_scout.fetch.remotejobs_lat import RemoteJobsLatFetcher
 
 # --- 4dayweek (JSON, paginated) ----------------------------------------------------------
 
@@ -278,8 +280,29 @@ def _typescriptjobs_page(ctx: FetchContext, posting: Posting) -> Posting:
     return _from_job_page(posting, page, body.html if body else None)
 
 
+def _nodesk_page(ctx: FetchContext, posting: Posting) -> Posting:
+    """The page's JobPosting has the description, but its applicant location is "Anywhere"
+    even for a job in one country: the place is the page's location line ("Remote" over
+    "India", "Worldwide" or nothing). The page's tags name the stack."""
+    page = ctx.get(posting.canonical_url).text
+    posting = _from_job_page(posting, page)
+    tree = LexborHTMLParser(page)
+    line = tree.css_first("div.dtc.grey-700")
+    place = [t for p in line.css("p") if (t := p.text(strip=True))] if line else []
+    main = tree.css_first("main[data-job-tags]")
+    tags = str(main.attributes.get("data-job-tags") or "").split(", ") if main else []
+    return posting.model_copy(
+        update={
+            "location_raw": ", ".join(place) or None,
+            "tags": [*posting.tags, *(t for t in tags if t)],
+            "raw": {**posting.raw, "page": {**posting.raw["page"], "location_line": place}},
+        }
+    )
+
+
 def _map_title_at_company(entry: FeedEntry) -> Posting:
-    """RWFA, Remote First Jobs, TypeScriptJobs: 'Title at Company', author = company if set."""
+    """RWFA, Remote First Jobs, TypeScriptJobs, NoDesk: 'Title at Company', author =
+    company if set."""
     title, company = _split_at_company(entry["title"], entry.get("author"))
     return rss_posting(entry, title=title, company=company)
 
@@ -419,17 +442,21 @@ FETCHERS: dict[str, Fetcher] = {
     "remotefirstjobs": RssFetcher(_map_title_at_company),
     "typescriptjobs": RssFetcher(_map_title_at_company, details=_typescriptjobs_page),
     "pyjobs": RssFetcher(_map_pyjobs, details=_pyjobs_page),
+    "nodesk": RssFetcher(_map_title_at_company, details=_nodesk_page),
     "remotegamejobs": RssFetcher(_map_remotegamejobs),
     "findjobit": RssFetcher(_map_findjobit),
     "remotive": RssFetcher(_map_remotive),
     "reliefweb": RssFetcher(_map_reliefweb),
     "unvacancies": RssFetcher(_map_unvacancies, shared=_unvacancies_shared),
+    "remotejobs_lat": RemoteJobsLatFetcher(),
     "remoteintech": AtsFetcher(),
     "company_boards": AtsFetcher(),
 }
 
 
 def has_details(source_id: str) -> bool:
-    """The source's feed carries only a summary, so each new job's page is read too."""
+    """The source's list lacks what a job's page has, so each new job's page is read too."""
     fetcher = FETCHERS.get(source_id)
+    if isinstance(fetcher, RemoteJobsLatFetcher):
+        return True
     return isinstance(fetcher, RssFetcher) and fetcher.details is not None

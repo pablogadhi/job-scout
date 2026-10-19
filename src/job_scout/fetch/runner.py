@@ -26,7 +26,10 @@ from job_scout.prefilter.runner import build_prefilter
 
 log = logging.getLogger(__name__)
 
-NOT_YET = {"scrape": "scraper (Phase 7)"}
+
+def not_built(source: SourceConfig) -> bool:
+    """A site listed for scraping whose scraper isn't written."""
+    return source.method == "scrape" and source.id not in FETCHERS
 
 
 @dataclass
@@ -70,8 +73,8 @@ def _skip_reason(
     now: datetime,
     respect_interval: bool,
 ) -> str | None:
-    if source.method in NOT_YET:
-        return f"{NOT_YET[source.method]} not implemented yet"
+    if not_built(source):
+        return "scraper not built"
     if source.id not in FETCHERS:
         return "no fetcher registered"
     if source.auth_env and secret(environ, source.auth_env) is None:

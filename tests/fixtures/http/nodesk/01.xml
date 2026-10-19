@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+<channel>
+<title>NoDesk</title>
+<link>https://example.invalid/</link>
+<description>Synthetic fixture feed</description>
+<item>
+  <title>Senior Platform Engineer at Ceiba Cloud</title>
+  <description>Ceiba Cloud runs Kubernetes for small teams.</description>
+  <pubDate>Sat, 17 Oct 2026 03:04:30 +0200</pubDate>
+  <guid>https://nodesk.co/remote-jobs/ceiba-cloud-senior-platform-engineer/</guid>
+  <link>https://nodesk.co/remote-jobs/ceiba-cloud-senior-platform-engineer/</link>
+</item>
+<item>
+  <title>Account Executive at Mango Sales</title>
+  <description>Close deals.</description>
+  <pubDate>Fri, 16 Oct 2026 10:00:00 +0200</pubDate>
+  <guid>https://nodesk.co/remote-jobs/mango-sales-account-executive/</guid>
+  <link>https://nodesk.co/remote-jobs/mango-sales-account-executive/</link>
+</item>
+</channel>
+</rss>

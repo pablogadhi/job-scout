@@ -1,0 +1,27 @@
+{
+  "https://nodesk.co/remote-jobs/index.xml": {
+    "file": "01.xml",
+    "status": 200,
+    "content_type": "application/rss+xml; charset=utf-8"
+  },
+  "https://nodesk.co/remote-jobs/engineering/index.xml": {
+    "file": "02.xml",
+    "status": 200,
+    "content_type": "application/rss+xml; charset=utf-8"
+  },
+  "https://nodesk.co/remote-jobs/ceiba-cloud-senior-platform-engineer/": {
+    "file": "03.xml",
+    "status": 200,
+    "content_type": "text/html; charset=utf-8"
+  },
+  "https://nodesk.co/remote-jobs/mango-sales-account-executive/": {
+    "file": "04.xml",
+    "status": 200,
+    "content_type": "text/html; charset=utf-8"
+  },
+  "https://nodesk.co/remote-jobs/jade-analytics-senior-python-engineer-india/": {
+    "file": "05.xml",
+    "status": 200,
+    "content_type": "text/html; charset=utf-8"
+  }
+}

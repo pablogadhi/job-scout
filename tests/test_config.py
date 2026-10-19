@@ -31,19 +31,22 @@ def test_test_config_is_valid() -> None:
     PointsTable.model_validate(yaml_table)
 
 
-def test_only_tier_1_enabled_by_default() -> None:
+def test_tier_1_enabled_by_default_tier_2_by_flag() -> None:
     sources = load_config(TEST_CONFIG).sources
-    enabled = sources.enabled()
-    assert {s.tier for s in enabled} == {1}
-    assert "remoteok" in {s.id for s in enabled}
-    assert sources.enabled(tier=2) == []
+    assert "remoteok" in {s.id for s in sources.enabled(tier=1)}
+    assert [s.id for s in sources.enabled(tier=2)] == ["remotejobs_lat"]  # enabled: true
+    assert sources.enabled(tier=3) == []
 
 
 def test_enabled_flag_overrides_tier(config_dir: Path) -> None:
-    edit(config_dir / "sources.yaml", "  - id: nodesk\n", "  - id: nodesk\n    enabled: true\n")
+    edit(
+        config_dir / "sources.yaml",
+        "  - id: hiring_lat\n",
+        "  - id: hiring_lat\n    enabled: true\n",
+    )
     edit(config_dir / "sources.yaml", "  - id: pyjobs\n", "  - id: pyjobs\n    enabled: false\n")
     ids = {s.id for s in load_config(config_dir).sources.enabled()}
-    assert "nodesk" in ids
+    assert "hiring_lat" in ids
     assert "pyjobs" not in ids
 
 

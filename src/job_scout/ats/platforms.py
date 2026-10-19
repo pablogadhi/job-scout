@@ -21,7 +21,7 @@ import httpx
 from job_scout.fetch.base import labelled_salary
 from job_scout.fetch.models import Posting
 from job_scout.fetch.normalize import Salary, as_float, html_to_text, iso_to_utc
-from job_scout.fetch.pages import as_dict, as_list, job_posting_ld, ld_place
+from job_scout.fetch.pages import as_list, job_posting_ld, ld_place, ld_salary
 
 log = logging.getLogger(__name__)
 
@@ -428,8 +428,6 @@ def _map_workday(job: dict[str, Any], board: Board) -> Posting:
 # datePosted, jobLocation, employmentType, sometimes baseSalary and jobLocationType). A list
 # item: {"id", "title", "url" (the job's page), "page" (what to fetch for its JobPosting)}.
 
-_SCHEMA_PERIODS = {"YEAR": "year", "MONTH": "month", "WEEK": "week", "DAY": "day", "HOUR": "hour"}
-
 
 def _page_posting(requests: Requests, board: Board, job: dict[str, Any]) -> dict[str, Any]:
     return {**job, "posting": job_posting_ld(requests.get(job["page"]).text) or {}}
@@ -444,8 +442,6 @@ def _map_job_page(job: dict[str, Any], board: Board) -> Posting:
         for a in as_list(ld.get("applicantLocationRequirements"))
         if isinstance(a, dict) and a.get("name")
     ]
-    salary = as_dict(ld.get("baseSalary"))
-    value = as_dict(salary.get("value"))
     description = ld.get("description")
     posting = Posting(
         source_job_id=f"{board.ats}:{board.token}:{job['id']}",
@@ -463,15 +459,7 @@ def _map_job_page(job: dict[str, Any], board: Board) -> Posting:
             "posting": {k: v for k, v in ld.items() if k != "description"},
         },
     )
-    return _with_salary(
-        posting,
-        _salary(
-            value.get("minValue") or value.get("value"),
-            value.get("maxValue"),
-            salary.get("currency"),
-            _SCHEMA_PERIODS.get(str(value.get("unitText") or "").upper()),
-        ),
-    )
+    return _with_salary(posting, ld_salary(ld))
 
 
 # Jobvite: GET jobs.jobvite.com/{company}/jobs, an HTML page linking every job as

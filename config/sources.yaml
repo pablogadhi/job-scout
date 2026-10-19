@@ -237,6 +237,23 @@ sources:
     format: rss
     notes: Synced every 30 minutes. Feed is not remote-only; rely on the remote pre-filter.
 
+  - id: nodesk
+    name: NoDesk
+    list: job_boards
+    url: https://nodesk.co
+    method: rss
+    tier: 1
+    checked: 2026-10-19
+    endpoints:
+      - https://nodesk.co/remote-jobs/index.xml
+      - https://nodesk.co/remote-jobs/engineering/index.xml
+    format: rss
+    notes: >
+      Each feed holds its newest 10 jobs (all categories, and engineering), a few a day.
+      Items carry a summary; each job's page has the full posting as a schema.org JobPosting
+      with its applicant location ("Anywhere"), read once per new job whose title passes.
+      Other categories (devops, python, ...) have no feed.
+
   - id: remotegamejobs
     name: Remote Game Jobs
     list: job_boards
@@ -354,9 +371,20 @@ sources:
     url: https://remotejobs.lat
     method: scrape
     tier: 2
-    checked: 2026-10-09
-    endpoints: ["https://remotejobs.lat/"]
-    notes: LATAM-focused, ~1,700 open jobs, listings visible in HTML, updated daily.
+    enabled: true
+    checked: 2026-10-19
+    endpoints:
+      - https://remotejobs.lat/en/category/programming
+      - https://remotejobs.lat/en/category/devops-qa
+    max_pages: 5             # 50 jobs a page, newest first; stops at a page with nothing new
+    notes: >
+      LATAM-focused, ~1,700 open jobs (many from Get on Board), no feed or API; robots.txt
+      allows the category and job pages. A category page lists each job with its place and
+      whole description; the job's page has a schema.org JobPosting with the salary's period
+      (the list shows "$2500 - $3000" without one), read once per new job whose title
+      passes. Its applicant countries are a placeholder (the same six for every "Remote"
+      job), so the card's place is used. Most salaries are monthly, $1,500-$8,000. The
+      /en/country/guatemala page lists only ~30 jobs, almost none in engineering.
 
   - id: 4dayjob
     name: 4DayJob
@@ -365,10 +393,12 @@ sources:
     method: scrape
     tier: 2
     checked: 2026-10-09
-    endpoints: ["https://4dayjob.com/?page=1"]
+    endpoints: ["https://www.4dayjob.com/?page=1"]   # the bare domain answers 403
     notes: >
-      No feed, but listings appear in HTML with plain ?page=N pagination. High value for the
-      4-day-week preference. Will overlap partly with 4dayweek.io.
+      Not built (2026-10-19): it lists 4dayweek.io's jobs (the same companies, logos served
+      from media.fourdayweek.io), and its copies are worse: a hybrid job in Slovakia shows as
+      remote in the US with a $50k-$150k salary. The 4dayweek source already has them.
+      No feed; listings in HTML with ?page=N (36 pages under /jobs/location/remote).
 
   - id: devopsprojectshq
     name: DevOpsJobs (devopsprojectshq.com)
@@ -392,19 +422,6 @@ sources:
     checked: 2026-10-09
     endpoints: ["https://realjobsfromanywhere.com/page/1"]
     notes: No feed. Listings in HTML, /page/N pagination. Mixed tech and non-tech; filter by category.
-
-  - id: nodesk
-    name: NoDesk
-    list: job_boards
-    url: https://nodesk.co
-    method: scrape
-    tier: 2
-    checked: 2026-10-09
-    endpoints:
-      - https://nodesk.co/remote-jobs/engineering/
-      - https://nodesk.co/remote-jobs/devops/
-      - https://nodesk.co/remote-jobs/remote-first/
-    notes: No feed. Has a Worldwide location page (remote-first).
 
   - id: jobsbyculture
     name: JobsByCulture

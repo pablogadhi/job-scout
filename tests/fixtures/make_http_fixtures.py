@@ -799,6 +799,235 @@ def typescriptjobs(endpoint: str) -> dict[str, Any]:
     }
 
 
+def nodesk(endpoints: list[str]) -> dict[str, Any]:
+    def job(slug: str, title: str, summary: str, date: str) -> str:
+        url = f"https://nodesk.co/remote-jobs/{slug}/"
+        return item(
+            title=escape(title),
+            description=escape(summary),
+            pubDate=date,
+            guid=url,
+            link=url,
+        )
+
+    def page(title: str, place: str, tags: str, description: str) -> bytes:
+        # The JobPosting's applicant location is "Anywhere" whatever the job's place.
+        posting = job_posting(
+            title,
+            description=escape(description),
+            jobLocationType="TELECOMMUTE",
+            applicantLocationRequirements={"@type": "Country", "name": "Anywhere"},
+        )
+        line = (
+            '<div class="dt"><div class="dtc grey-700"><p class="grey-900 mb1 mt0">Remote</p>'
+            f'<p class="mb1 mt0">{place}</p></div></div>'
+        )
+        return job_page(posting, f'<main class="ph5" data-job-tags="{tags}">{line}</main>')
+
+    platform = job(
+        "ceiba-cloud-senior-platform-engineer",
+        "Senior Platform Engineer at Ceiba Cloud",
+        "Ceiba Cloud runs Kubernetes for small teams.",
+        "Sat, 17 Oct 2026 03:04:30 +0200",
+    )
+    url = "https://nodesk.co/remote-jobs/{}/".format
+    return {
+        endpoints[0]: (
+            RSS,
+            rss(
+                "NoDesk",
+                [
+                    platform,
+                    job(
+                        "mango-sales-account-executive",
+                        "Account Executive at Mango Sales",
+                        "Close deals.",
+                        "Fri, 16 Oct 2026 10:00:00 +0200",
+                    ),
+                ],
+            ),
+        ),
+        # The engineering feed repeats a job from the full one.
+        endpoints[1]: (
+            RSS,
+            rss(
+                "NoDesk",
+                [
+                    platform,
+                    job(
+                        "jade-analytics-senior-python-engineer-india",
+                        "Senior Python Engineer - India at Jade Analytics",
+                        "Jade Analytics builds data pipelines.",
+                        "Thu, 15 Oct 2026 09:30:00 +0200",
+                    ),
+                ],
+            ),
+        ),
+        url("ceiba-cloud-senior-platform-engineer"): (
+            HTML,
+            page(
+                "Senior Platform Engineer",
+                "Worldwide",
+                "Remote Work, Engineering, Kubernetes, Go",
+                "<p>Run our <strong>Kubernetes</strong> platform.</p><p>Work from anywhere.</p>",
+            ),
+        ),
+        url("mango-sales-account-executive"): (
+            HTML,
+            page("Account Executive", "", "Remote Work, Sales", "<p>Close deals.</p>"),
+        ),
+        url("jade-analytics-senior-python-engineer-india"): (
+            HTML,
+            page(
+                "Senior Python Engineer - India",
+                "India",
+                "Remote Work, Engineering, Python",
+                "<p>Remote anywhere in India.</p>",
+            ),
+        ),
+    }
+
+
+def remotejobs_lat(endpoints: list[str]) -> dict[str, Any]:
+    def card(
+        job_id: int,
+        title: str,
+        company: str,
+        place: str | None,
+        ago: str,
+        body: str,
+        *,
+        salary: str | None = None,
+        job_type: str = "Full time",
+        tags: tuple[str, ...] = (),
+    ) -> str:
+        where = f'<span><i class="bi bi-geo-alt"></i> {place}</span>' if place else ""
+        pay = f'<span class="rj-pill rj-pill-salary">{salary}</span>' if salary else ""
+        pills = "".join(f'<span class="rj-pill">{t}</span>' for t in tags)
+        return f"""
+<article class="rj-job job-list-collapse " id="heading-job-{job_id}" data-category="programming">
+ <div class="rj-job-row" data-bs-toggle="collapse" data-bs-target="#collapse-job-{job_id}">
+  <img class="rj-job-logo company-logo" src="https://example.invalid/logo.svg" alt="{company}">
+  <div class="rj-job-main">
+   <h3 class="h6 mb-0 d-inline"><a class="rj-job-title" href="{job_url(job_id)}">{title}</a></h3>
+   <div class="rj-job-meta"><strong>{company}</strong> {where} <span>{job_type}</span></div>
+  </div>
+  <div class="rj-job-side">{pay} <span class="rj-muted small">{ago}</span></div>
+ </div>
+ <div class="collapse" id="collapse-job-{job_id}">
+  <div class="rj-job-body">
+   <div class="rj-job-tags mb-3">{pills}</div>
+   <div class="rj-prose job-body">{body}</div>
+  </div>
+ </div>
+</article>"""
+
+    def listing(cards: list[str], next_page: str | None = None) -> bytes:
+        more = f'<a class="next_page" rel="next" href="{next_page}">Next →</a>' if next_page else ""
+        return (
+            '<html><body><div class="rj-jobs" id="accordion">'
+            + "".join(cards)
+            + f'</div><div role="navigation" class="pagination">{more}</div></body></html>'
+        ).encode()
+
+    def page(title: str, **fields: Any) -> bytes:
+        # Every "Remote" job gets the same six countries: a placeholder, not a requirement.
+        six = ["Argentina", "Mexico", "Colombia", "Chile", "Peru", "Brazil"]
+        return job_page(
+            job_posting(
+                title,
+                datePosted="2026-10-10T13:29:58Z",
+                jobLocationType="TELECOMMUTE",
+                applicantLocationRequirements=[{"@type": "Country", "name": c} for c in six],
+                **fields,
+            )
+        )
+
+    def salary(low: int, high: int, unit: str) -> dict[str, Any]:
+        value = {"@type": "QuantitativeValue", "minValue": low, "maxValue": high, "unitText": unit}
+        return {"@type": "MonetaryAmount", "currency": "USD", "value": value}
+
+    def job_url(job_id: int) -> str:
+        return f"/en/job-offers/{job_id}-synthetic-job"
+
+    full = "https://remotejobs.lat{}".format
+    backend = card(
+        70001,
+        "Senior Backend Engineer (Python)",
+        "Ceiba Cloud",
+        "Remote",
+        "2 days ago",
+        "<div>We build <strong>Django</strong> services.<br><br></div><div>Remote.</div>",
+        salary="$7000 - $9000",
+        tags=("Python", "Django"),
+    )
+    programming, devops = endpoints
+    return {
+        f"{programming}?page=1": (
+            HTML,
+            listing(
+                [
+                    backend,
+                    card(
+                        70002,
+                        "Full-Stack Developer",
+                        "Tikal Soft",
+                        "México Guatemala Costa Rica",
+                        "1 day ago",
+                        "<div>React and Node.</div>",
+                    ),
+                ],
+                next_page="/en/category/programming?page=2",
+            ),
+        ),
+        f"{programming}?page=2": (
+            HTML,
+            listing(
+                [
+                    card(
+                        69990,
+                        "Staff Software Engineer",
+                        "Brightpath",
+                        "Remote Latin America",
+                        "3 weeks ago",
+                        "<div>Own our platform.</div>",
+                        salary="$150000 - $180000",
+                    )
+                ]
+            ),
+        ),
+        # A job listed in two categories is read once.
+        f"{devops}?page=1": (
+            HTML,
+            listing(
+                [
+                    backend,
+                    card(
+                        70003,
+                        "Site Reliability Engineer",
+                        "Nimbus Works",
+                        "Remote",
+                        "5 hours ago",
+                        "<div>Keep things up.</div>",
+                        salary="$4000 - $5000",
+                        job_type="Contract",
+                    ),
+                ]
+            ),
+        ),
+        full(job_url(70001)): (
+            HTML,
+            page("Senior Backend Engineer (Python)", baseSalary=salary(7000, 9000, "MONTH")),
+        ),
+        full(job_url(70002)): (HTML, page("Full-Stack Developer")),
+        full(job_url(69990)): (
+            HTML,
+            page("Staff Software Engineer", baseSalary=salary(150_000, 180_000, "YEAR")),
+        ),
+        full(job_url(70003)): (HTML, job_page(None, "<p>This job was removed.</p>")),
+    }
+
+
 def remotegamejobs(endpoint: str) -> dict[str, Any]:
     def job(slug: str, title: str, body: str) -> str:
         url = f"https://remotegamejobs.com/jobs/{slug}"
@@ -1369,6 +1598,8 @@ def main() -> None:
         "hn_whoishiring": hn(endpoints["hn_whoishiring"]),
         "pyjobs": pyjobs(endpoints["pyjobs"][0]),
         "typescriptjobs": typescriptjobs(endpoints["typescriptjobs"][0]),
+        "nodesk": nodesk(endpoints["nodesk"]),
+        "remotejobs_lat": remotejobs_lat(endpoints["remotejobs_lat"]),
         "remotegamejobs": remotegamejobs(endpoints["remotegamejobs"][0]),
         "findjobit": findjobit(endpoints["findjobit"][0]),
         "remoteintech": remoteintech(

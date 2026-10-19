@@ -91,10 +91,16 @@ instance; an instance's files never go into git.
     marks temporary failures (429, 5xx, timeouts).
   - `base.py`: generic `RssFetcher` and `JsonFetcher`, plus `FetchContext`.
   - `sources.py`: per-source mappers and the `FETCHERS` registry. `hn.py`: HN Who is hiring.
-    A feed with only a summary per job (pyjobs, typescriptjobs) has a page step
+    A feed with only a summary per job (pyjobs, typescriptjobs, nodesk) has a page step
     (`RssFetcher.details`): each new job whose title passes filters.yaml gets its page read
-    once (`pages.py`: the page's schema.org JobPosting and its locations, worded "must be
-    based in …" when applicants must live somewhere), and `raw["page"]` marks it.
+    once (`pages.py`: the page's schema.org JobPosting, its locations, worded "must be
+    based in …" when applicants must live somewhere, and its salary), and `raw["page"]`
+    marks it. A site's JobPosting can carry placeholders (NoDesk's "Anywhere",
+    RemoteJobs.lat's six countries): check them against the page before trusting them.
+  - `remotejobs_lat.py`: an HTML scraper (`method: scrape`), one module per site: the
+    category pages' job cards (newest first, stopping at a page with nothing new), then
+    the same page step. A `scrape` source without a fetcher is skipped as "scraper not
+    built" (`runner.not_built`). Scraped jobs can't be refreshed (`refresh`).
   - `refresh.py`: `job-scout refresh`, a mapper fix applied to a source's stored jobs: each
     is mapped again from its saved payload, and the pages a page step lacks are read. A job
     whose text changed loses its group's verdict and its score is queued again.

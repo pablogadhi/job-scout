@@ -1,7 +1,7 @@
 """Each Tier 1 mapper against responses recorded from a live fetch (tests/fixtures/http)."""
 
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
@@ -354,6 +354,77 @@ def test_a_job_page_that_fails_keeps_the_feed_posting(
     p = fetch(app_config, make_http(gone), "pyjobs")[0]
     assert p.location_raw is None and "page" not in p.raw
     assert (p.description_text or "").startswith("Senior Python Engineer at Quetzal Labs.")
+
+
+def test_nodesk_takes_the_place_from_the_page(
+    app_config: AppConfig, make_http: Callable[..., HttpClient]
+) -> None:
+    postings = fetch(app_config, make_http(), "nodesk")
+    platform = by_title(postings, "Senior Platform Engineer")
+    assert (platform.company, platform.location_raw, platform.remote_raw) == (
+        "Ceiba Cloud",
+        "Remote, Worldwide",
+        "remote",
+    )
+    assert platform.description_text == "Run our Kubernetes platform.\n\nWork from anywhere."
+    assert platform.tags[-2:] == ["Kubernetes", "Go"]
+    # The JobPosting says "Anywhere" for a job in India; the page's location line doesn't.
+    india = by_title(postings, "Senior Python Engineer - India")
+    assert india.location_raw == "Remote, India"
+    assert india.raw["page"]["location_line"] == ["Remote", "India"]
+    assert by_title(postings, "Account Executive").location_raw == "Remote"
+
+
+def test_remotejobs_lat(app_config: AppConfig, make_http: Callable[..., HttpClient]) -> None:
+    postings = fetch(app_config, make_http(), "remotejobs_lat")
+    # Both programming pages, then devops; the job listed in both categories once.
+    assert [p.source_job_id for p in postings] == ["70001", "70002", "69990", "70003"]
+    backend = postings[0]
+    assert (backend.title, backend.company, backend.remote_raw) == (
+        "Senior Backend Engineer (Python)",
+        "Ceiba Cloud",
+        "remote",
+    )
+    # The page's six countries are a placeholder: the card's place stays.
+    assert backend.location_raw == "Remote"
+    assert backend.description_text == "We build Django services.\n\nRemote."
+    assert backend.tags == ["Python", "Django", "Full time"]
+    # The list shows "$7000 - $9000"; the page says per month.
+    assert (backend.salary_min, backend.salary_max, backend.salary_period) == (
+        7000,
+        9000,
+        "month",
+    )
+    assert backend.posted_at == datetime(2026, 10, 10, 13, 29, 58, tzinfo=UTC)
+    assert postings[1].location_raw == "México Guatemala Costa Rica"
+    assert postings[1].salary_max is None
+    staff = postings[2]
+    assert (staff.salary_max, staff.salary_period) == (180_000, "year")
+    # A page without a JobPosting: no salary, and the card's age dates it.
+    sre = postings[3]
+    assert sre.salary_max is None and sre.raw["page"] == {}
+    assert sre.posted_at == NOW - timedelta(hours=5)
+    assert "Contract" in sre.tags
+
+
+def test_remotejobs_lat_stops_at_a_page_with_nothing_new(
+    app_config: AppConfig, make_http: Callable[..., HttpClient]
+) -> None:
+    def refuse(request: httpx.Request) -> httpx.Response:
+        raise AssertionError(f"read: {request.url}")
+
+    known = frozenset({"70001", "70002", "70003"})
+    http = make_http(
+        {
+            "https://remotejobs.lat/en/category/programming?page=2": refuse,
+            "https://remotejobs.lat/en/job-offers/": refuse,
+        }
+    )
+    postings = fetch(app_config, http, "remotejobs_lat", known_ids=known)
+    assert [p.source_job_id for p in postings] == ["70001", "70002", "70003"]
+    # Stored jobs keep the card's fields; their pages were read when they were new.
+    assert all("page" not in p.raw for p in postings)
+    assert postings[0].posted_at == NOW - timedelta(days=2)
 
 
 def test_remotegamejobs(app_config: AppConfig, make_http: Callable[..., HttpClient]) -> None:

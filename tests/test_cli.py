@@ -34,7 +34,7 @@ def invoke(*args: str, config_dir: Path = TEST_CONFIG):
 def test_sources_check_lists_enabled_sources() -> None:
     result = invoke("sources", "check")
     assert result.exit_code == 0, result.output
-    assert "Enabled sources (14)" in result.output
+    assert "Enabled sources (16)" in result.output
     assert "never run" in result.output
     assert "needs FINDWORK_API_KEY" in result.output
     assert "Canonical" in result.output
@@ -46,8 +46,8 @@ def test_sources_check_by_tier() -> None:
     assert result.exit_code == 0, result.output
     table, disabled = result.output.split("disabled")
     assert "remoteok" in table
-    assert "nodesk" not in table
-    assert "nodesk" in disabled
+    assert "remotejobs_lat" not in table  # tier 2
+    assert "hiring_lat" in disabled
 
 
 def test_console_without_a_terminal_is_wide(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -1,0 +1,37 @@
+{
+  "https://remotejobs.lat/en/category/programming?page=1": {
+    "file": "01.xml",
+    "status": 200,
+    "content_type": "text/html; charset=utf-8"
+  },
+  "https://remotejobs.lat/en/category/programming?page=2": {
+    "file": "02.xml",
+    "status": 200,
+    "content_type": "text/html; charset=utf-8"
+  },
+  "https://remotejobs.lat/en/category/devops-qa?page=1": {
+    "file": "03.xml",
+    "status": 200,
+    "content_type": "text/html; charset=utf-8"
+  },
+  "https://remotejobs.lat/en/job-offers/70001-synthetic-job": {
+    "file": "04.xml",
+    "status": 200,
+    "content_type": "text/html; charset=utf-8"
+  },
+  "https://remotejobs.lat/en/job-offers/70002-synthetic-job": {
+    "file": "05.xml",
+    "status": 200,
+    "content_type": "text/html; charset=utf-8"
+  },
+  "https://remotejobs.lat/en/job-offers/69990-synthetic-job": {
+    "file": "06.xml",
+    "status": 200,
+    "content_type": "text/html; charset=utf-8"
+  },
+  "https://remotejobs.lat/en/job-offers/70003-synthetic-job": {
+    "file": "07.xml",
+    "status": 200,
+    "content_type": "text/html; charset=utf-8"
+  }
+}

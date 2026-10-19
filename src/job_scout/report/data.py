@@ -28,7 +28,7 @@ from job_scout.config.settings import Digest as DigestSettings
 from job_scout.db.groups import Group, load_groups
 from job_scout.db.models import Digest, Score, ScoreStatus, Source
 from job_scout.fetch.normalize import normalize_company
-from job_scout.fetch.runner import NOT_YET
+from job_scout.fetch.runner import not_built
 from job_scout.scoring.points import Breakdown, Item, Part
 from job_scout.scoring.prompt import salary_line
 from job_scout.scoring.schema import CoreResult
@@ -331,7 +331,7 @@ def source_health(
     rows = {s.id: s for s in session.scalars(select(Source))}
     health = []
     for source in config.sources.sources:
-        if not source.is_enabled or source.method in NOT_YET:
+        if not source.is_enabled or not_built(source):
             continue
         row = rows.get(source.id)
         health.append(

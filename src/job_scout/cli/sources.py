@@ -21,7 +21,7 @@ from job_scout.db.models import AtsStatus, Source, SourceRun, SourceRunKind, Sou
 from job_scout.db.types import utcnow
 from job_scout.fetch.http import HttpClient, Recorder
 from job_scout.fetch.refresh import can_refresh, refresh_source
-from job_scout.fetch.runner import NOT_YET, SourceOutcome, run_fetch
+from job_scout.fetch.runner import SourceOutcome, not_built, run_fetch
 from job_scout.prefilter.runner import forget_verdicts
 from job_scout.scoring.queue import requeue_changed
 
@@ -265,8 +265,8 @@ def _age(when: datetime | None, now: datetime) -> str:
 
 
 def _health(source: SourceConfig, state: Source | None, last_run: SourceRun | None) -> str:
-    if source.method in NOT_YET:
-        return f"[dim]{NOT_YET[source.method]}[/dim]"
+    if not_built(source):
+        return "[dim]scraper not built[/dim]"
     if source.auth_env and secret(os.environ, source.auth_env) is None:
         return f"[yellow]needs {source.auth_env}[/yellow]"
     if state is None or state.last_run_at is None:

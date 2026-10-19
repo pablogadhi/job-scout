@@ -1,0 +1,17 @@
+<html><body><div class="rj-jobs" id="accordion">
+<article class="rj-job job-list-collapse " id="heading-job-69990" data-category="programming">
+ <div class="rj-job-row" data-bs-toggle="collapse" data-bs-target="#collapse-job-69990">
+  <img class="rj-job-logo company-logo" src="https://example.invalid/logo.svg" alt="Brightpath">
+  <div class="rj-job-main">
+   <h3 class="h6 mb-0 d-inline"><a class="rj-job-title" href="/en/job-offers/69990-synthetic-job">Staff Software Engineer</a></h3>
+   <div class="rj-job-meta"><strong>Brightpath</strong> <span><i class="bi bi-geo-alt"></i> Remote Latin America</span> <span>Full time</span></div>
+  </div>
+  <div class="rj-job-side"><span class="rj-pill rj-pill-salary">$150000 - $180000</span> <span class="rj-muted small">3 weeks ago</span></div>
+ </div>
+ <div class="collapse" id="collapse-job-69990">
+  <div class="rj-job-body">
+   <div class="rj-job-tags mb-3"></div>
+   <div class="rj-prose job-body"><div>Own our platform.</div></div>
+  </div>
+ </div>
+</article></div><div role="navigation" class="pagination"></div></body></html>

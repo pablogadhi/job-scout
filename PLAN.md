@@ -342,6 +342,8 @@ current one's acceptance check passes.
   healthchecks alert.
 
 ### Phase 7: Tier 2 scrapers
+- Built (2026-10-19): RemoteJobs.lat. NoDesk turned out to have a feed (now Tier 1);
+  4DayJob is a copy of 4dayweek.io's jobs and isn't built. The rest wait.
 - Implement Tier 2 sources one at a time (hiring.lat, RemoteJobs.lat, 4DayJob, DevOpsJobs,
   Real Jobs From Anywhere, NoDesk, Remote Backend Jobs, Remote.io, Daily Remote).
 - Check each for a hidden JSON endpoint (network tab) before writing HTML parsing.
