@@ -29,8 +29,8 @@ scoring:
   modes:
     daily:
       cli:
-        postings_per_call: 15 # 20 per call dropped 1 of 20 results with the nested reply format
-        max_calls: 10
+        postings_per_call: 10 # 15 per call left out ~6% of results (retried); about 200 a day
+        max_calls: 20
         max_input_tokens_per_call: 60000
         max_output_tokens_per_call: 12000
       api:
@@ -39,7 +39,7 @@ scoring:
         use_batches_api: true
     backlog:
       cli:
-        postings_per_call: 15 # 40 per call lost 33 of 50 results, 60 timed out; 20 dropped 1 of 20
+        postings_per_call: 10 # 40 per call lost 33 of 50 results, 60 timed out; 15 left out ~6%
         max_calls: 25
         max_input_tokens_per_call: 60000
         max_output_tokens_per_call: 12000

@@ -2321,3 +2321,9 @@ Its files are in the gitignored `instances/ngo/config/`; nothing personal is log
   that field, Claude added one exception: a request for proposals or expressions of
   interest from consultants is a job; a funding call inviting organizations to apply for
   grants is not. Copy the instance's `profile.md` and `scoring.yaml` to the server.
+- **P12-U22 CLI calls carry 10 postings, up to 20 calls a day** (daily mode; backlog mode
+  10 per call, still 25 calls). Your server, two days of manual runs: 32 CLI calls sent
+  515 postings and 31 jobs needed a retry (about 6%; all scored on the retry, none
+  failed). New jobs passing the filter run about 80–190 a day once the initial fetch is
+  done, above the old 150 (10 calls of 15). Replies shrink from about 30,000 tokens to
+  about 20,000, and 20 calls fit well inside the run's 2-hour limit.

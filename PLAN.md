@@ -364,7 +364,7 @@ current one's acceptance check passes.
   digest, `explain` and the CSV show how it was reached. `simulate` tries a changed table
   on the stored scores for free; `rescore --legacy` re-extracts jobs scored before points.
 - Both profiles converted (the second one's `scoring.yaml` written with me).
-- CLI calls carry 15 postings (20 dropped a result with the longer replies).
+- CLI calls carry 10 postings, up to 20 a day (longer replies left results out at 15 and 20).
 
 ## 11. Ground rules
 
