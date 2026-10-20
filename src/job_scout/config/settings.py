@@ -162,6 +162,7 @@ class Email(StrictModel):
     smtp_host: str = "smtp.protonmail.ch"
     smtp_port: PositiveInt = 587  # STARTTLS
     from_address: str | None = None  # also the SMTP username
+    from_name: str | None = None  # shown instead of the address by mail clients
     # Comma-separated recipients; usually set with JOB_SCOUT_DIGEST__EMAIL__TO_ADDRESS. Checked
     # when sending (like the token), so a machine without it still loads the config.
     to_address: str | None = None

@@ -189,7 +189,7 @@ instance; an instance's files never go into git.
   Templates guard every non-core field with `is defined` (they use `StrictUndefined`).
 - **Reports are untrusted-content HTML:** Jinja2 autoescape stays on, links go through the
   `http_url` filter (http/https only), and CSV cells that start like a formula get a `'`.
-- **Email:** `digest.email` in settings.yaml; the recipient(s) from
+- **Email:** `digest.email` in settings.yaml (`from_name` is the sender's display name); the recipient(s) from
   `JOB_SCOUT_DIGEST__EMAIL__TO_ADDRESS` (comma-separated) and the SMTP token only from
   `JOB_SCOUT_SMTP_TOKEN`, both checked at send time. The token is wrapped in `SecretStr`,
   never stored in settings or logged. Tests that load a config turn email off.

@@ -2566,6 +2566,12 @@ three levels: sections, companies and jobs.
   fail as a whole. `rescore --failed` queues every `score_failed` job; `--dry-run` shows
   the count and the planned calls, then leaves them as they were.
 
+- **P13-U6 A sender name.** You asked for a name instead of the bare address in the
+  inbox. `digest.email.from_name` (optional) goes in the `From` header as
+  `job-scout <job-scout@gadhi.one>`, for the digest and the failure email; the SMTP login
+  stays the address. Claude set `job-scout` in your settings.yaml and in ngo's (instance
+  file, not in git).
+
 ### P13 Bugs found and fixed
 
 - **P13-B2 The systemd units couldn't find a snap's Docker.** A manual start of

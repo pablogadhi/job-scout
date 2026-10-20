@@ -275,8 +275,18 @@ def test_digest_email(tmp_path: Path, session_factory: sessionmaker[Session]) ->
     assert smtp.login_args == ("job-scout@example.test", "tok")
     (message,) = smtp.messages
     assert message["To"] == "me@example.test" and "1 top" in message["Subject"]
+    assert message["From"] == "job-scout@example.test"
     assert body_of(message, "plain").count("[80]") == 1
     assert "Senior Backend Engineer 1" in body_of(message, "html")
+
+
+def test_sender_name(tmp_path: Path, session_factory: sessionmaker[Session]) -> None:
+    config = config_with(tmp_path, email={**EMAIL, "from_name": "Búsqueda, NGO"})
+    make_digest(config, session_factory, now=NOW, environ={TOKEN_ENV: "t"}, smtp_factory=FakeSmtp)
+    (message,) = FakeSmtp.instances[0].messages
+    assert message["From"].addresses[0].display_name == "Búsqueda, NGO"
+    assert message["From"].addresses[0].addr_spec == "job-scout@example.test"
+    assert FakeSmtp.instances[0].login_args == ("job-scout@example.test", "t")
 
 
 def test_plain_text_has_one_field_per_line(

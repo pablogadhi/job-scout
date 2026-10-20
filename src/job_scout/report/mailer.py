@@ -9,6 +9,7 @@ import smtplib
 import ssl
 from collections.abc import Callable, Mapping
 from datetime import datetime
+from email.headerregistry import Address
 from email.message import EmailMessage
 from email.utils import format_datetime, make_msgid
 from types import TracebackType
@@ -56,7 +57,9 @@ def build_message(
     assert settings.from_address
     message = EmailMessage()
     message["Subject"] = subject
-    message["From"] = settings.from_address
+    message["From"] = Address(
+        display_name=settings.from_name or "", addr_spec=settings.from_address
+    )
     message["To"] = ", ".join(settings.recipients)
     message["Date"] = format_datetime(now)
     message["Message-ID"] = make_msgid(domain=settings.from_address.rpartition("@")[2])

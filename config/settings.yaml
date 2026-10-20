@@ -100,6 +100,7 @@ digest:
     smtp_host: smtp.protonmail.ch
     smtp_port: 587 # STARTTLS
     from_address: job-scout@gadhi.one # the alias; also the SMTP username
+    from_name: job-scout # the sender's name mail clients show instead of the address
 
 ats:
   # Company job boards from the remoteintech seed and the watchlist (sources.yaml).
