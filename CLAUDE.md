@@ -132,7 +132,9 @@ instance; an instance's files never go into git.
   board source, `remoteintech` or `company_boards`, polls every board with status ok).
 - `src/job_scout/report/`: what the user reads. `data.py` (scored groups into sections:
   watchlist, top, unclear location, below threshold; source health), `render.py` (Jinja2
-  templates in `templates/`, HTML + plain text), `build.py` (digest and backlog report:
+  templates in `templates/`, HTML + plain text; sections, then companies by their best
+  job (`data.by_company`), then each job as a one-line `<details>` headline: no scripts,
+  since the HTML is the email), `build.py` (digest and backlog report:
   write, email, record in `digests`), `mailer.py` (SMTP), `export.py` (CSV, SQLite snapshot).
 - `src/job_scout/feedback/`: your votes. `links.py` (signed per-job links, secret from
   `JOB_SCOUT_FEEDBACK_SECRET`), `store.py` (one `feedback` row per canonical job, with the

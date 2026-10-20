@@ -2,10 +2,10 @@
 {{ heading }}
 Generated {{ generated_at }}, threshold {{ settings.min_score }} (watchlist {{ settings.watchlist_min_score }}){% if since %}, new since {{ since }}{% endif %}
 {{ sections.watchlist | length }} watchlist, {{ sections.top | length }} top matches, {{ sections.unclear | length }} with unclear location
-{%- macro job(item) %}
+{%- macro job(item, show_company=true) %}
 {%- set r = item.result %}
 
-[{{ item.overall }}] {{ item.title }} - {{ item.company }}{% if item.watchlist %} (watchlist){% endif %}{% for badge in item.badges %} ({{ badge }}){% endfor %}
+[{{ item.overall }}] {{ item.title }}{% if show_company %} - {{ item.company }}{% if item.watchlist %} (watchlist){% endif %}{% endif %}{% for badge in item.badges %} ({{ badge }}){% endfor %}
   {{ r.summary }}
   Score: {{ item.breakdown.line() if item.breakdown else "old scoring (Claude's own 0-100, before points)" }}
 {%- if item.disqualified %}
@@ -38,29 +38,41 @@ Generated {{ generated_at }}, threshold {{ settings.min_score }} (watchlist {{ s
   Not for me: {{ feedback.url(item.job_id, "down") }}
 {%- endif %}
 {%- endmacro %}
+{#- A company with several jobs: a header line, its jobs indented under it. #}
+{%- macro companies(groups) %}
+{%- for c in groups %}
+{%- if c.items | length > 1 %}
+
+{{ c.name }} ({{ c.items | length }} jobs, best {{ c.best }}){% if c.watchlist %} (watchlist){% endif %}
+{%- for item in c.items %}{{ job(item, false) | indent(2) }}{% endfor %}
+{%- else %}{{ job(c.items[0]) }}{% endif %}
+{%- endfor %}
+{%- endmacro %}
 {%- if sections.watchlist %}
 {%- set cutoff = settings.watchlist_collapse_below %}
-{%- set weak = sections.watchlist | selectattr("overall", "lt", cutoff) | list %}
+{%- set groups = sections.watchlist | by_company %}
+{%- set weak = groups | selectattr("best", "lt", cutoff) | list %}
 
 == Watchlist matches ==
-{%- for item in sections.watchlist | selectattr("overall", "ge", cutoff) %}{{ job(item) }}{% endfor %}
+{{- companies(groups | selectattr("best", "ge", cutoff)) }}
 {%- if weak %}
 
-Watchlist below {{ cutoff }} ({{ weak | length }}), details in the HTML version:
-{%- for item in weak %}
+Watchlist below {{ cutoff }} ({{ weak | map(attribute="items") | map("length") | sum }}), details in the HTML version:
+{%- for c in weak %}{% for item in c.items %}
   [{{ item.overall }}] {{ item.title }} - {{ item.company }} (job #{{ item.job_id }})
-{%- endfor %}
+{%- endfor %}{% endfor %}
 {%- endif %}
 {%- endif %}
 
 == Top matches ==
-{%- for item in sections.top %}{{ job(item) }}{% else %}
+{{- companies(sections.top | by_company) }}
+{%- if not sections.top %}
 Nothing new at or above {{ settings.min_score }}.
-{%- endfor %}
+{%- endif %}
 {%- if sections.unclear %}
 
 == Unclear location: worth a manual look ==
-{%- for item in sections.unclear %}{{ job(item) }}{% endfor %}
+{{- companies(sections.unclear | by_company) }}
 {%- endif %}
 
 == Pipeline health ==

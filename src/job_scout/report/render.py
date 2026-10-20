@@ -12,7 +12,7 @@ from jinja2 import Environment, PackageLoader, StrictUndefined, select_autoescap
 
 from job_scout.config import AppConfig
 from job_scout.feedback.links import FeedbackLinks
-from job_scout.report.data import Sections, SourceHealth, item_mark
+from job_scout.report.data import Sections, SourceHealth, by_company, item_mark
 from job_scout.scoring.points import fingerprint
 from job_scout.scoring.status import ScoringStatus
 
@@ -43,6 +43,7 @@ def http_url(url: str | None) -> str:
 
 _ENV.filters["http_url"] = http_url
 _ENV.filters["mark"] = _TEXT_ENV.filters["mark"] = item_mark
+_ENV.filters["by_company"] = _TEXT_ENV.filters["by_company"] = by_company
 
 
 @dataclass(frozen=True)

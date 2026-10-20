@@ -370,6 +370,11 @@ current one's acceptance check passes.
 - Both profiles converted (the second one's `scoring.yaml` written with me).
 - CLI calls carry 10 postings, up to 20 a day (longer replies left results out at 15 and 20).
 
+### Phase 13: A digest you can skim
+- The digest and the backlog report fold three levels deep, with no scripts, since they're
+  also the email: sections, then companies (best job first), then each job as a one-line
+  headline.
+
 ## 11. Ground rules
 
 - Respect robots.txt and each source's terms in `sources.yaml` (attribution, no reposting,

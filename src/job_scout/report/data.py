@@ -216,6 +216,37 @@ class ReportItem:
         return parts
 
 
+@dataclass(frozen=True)
+class CompanyGroup:
+    """A section's jobs from one company, best first."""
+
+    items: tuple[ReportItem, ...]
+
+    @property
+    def name(self) -> str:
+        return self.items[0].company
+
+    @property
+    def best(self) -> int:
+        return self.items[0].overall
+
+    @property
+    def watchlist(self) -> bool:
+        return any(item.watchlist for item in self.items)
+
+
+def by_company(items: Iterable[ReportItem]) -> list[CompanyGroup]:
+    """Ranked jobs grouped by company, each company where its best job ranks (so it leads
+    with its best job even when its others rank lower). A job without a company is a group
+    of its own."""
+    groups: dict[tuple[str, str | int], list[ReportItem]] = {}
+    for item in items:
+        name = item.group.canonical.company_normalized
+        key = ("company", name) if name else ("job", item.job_id)
+        groups.setdefault(key, []).append(item)
+    return [CompanyGroup(tuple(group)) for group in groups.values()]
+
+
 @dataclass
 class Sections:
     watchlist: list[ReportItem] = field(default_factory=list)

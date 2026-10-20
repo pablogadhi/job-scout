@@ -14,7 +14,12 @@ from sqlalchemy.orm import Session, sessionmaker
 from job_scout.config import AppConfig, load_config
 from job_scout.db.models import Digest, DigestKind, Job, Score, ScoreStatus
 from job_scout.report.build import make_backlog_report, make_digest
-from job_scout.report.data import build_sections, extra_output_fields, scored_items
+from job_scout.report.data import (
+    build_sections,
+    by_company,
+    extra_output_fields,
+    scored_items,
+)
 from job_scout.report.export import export_csv, snapshot_sqlite
 from job_scout.report.mailer import TOKEN_ENV
 from job_scout.report.render import http_url
@@ -126,11 +131,11 @@ def test_sections(tmp_path: Path, session_factory: sessionmaker[Session]) -> Non
     assert sorted(sections.job_ids) == sorted([a, b, e, f])  # below isn't "reported"
 
 
-def test_weak_watchlist_jobs_are_collapsed(
+def test_weak_watchlist_companies_are_collapsed(
     tmp_path: Path, session_factory: sessionmaker[Session]
 ) -> None:
     config = config_with(tmp_path, min_score=50, watchlist_min_score=21, email=EMAIL)
-    strong, weak = seed_jobs(session_factory, 2)
+    strong, weak, later = seed_jobs(session_factory, 3)
     with session_factory.begin() as session:
         session.execute(update(Job).values(company_normalized="canonical"))  # on the watchlist
     score_jobs(session_factory, config, {strong: {"score": 70}, weak: {"score": 30}})
@@ -138,11 +143,69 @@ def test_weak_watchlist_jobs_are_collapsed(
         config, session_factory, now=NOW, environ={TOKEN_ENV: "t"}, smtp_factory=FakeSmtp
     )
     assert [i.job_id for i in outcome.sections.watchlist] == [strong, weak]  # both reported
-    shown, collapsed = outcome.path.read_text().split("<summary>Watchlist below 50 (1)</summary>")
-    assert f"job #{strong}" in shown and f"job #{weak}" not in shown
-    assert f"job #{weak}" in collapsed.split("</details>")[0]
+    html = outcome.path.read_text()
+    # The company's best job is strong, so its weak one stays with it.
+    assert "Watchlist below" not in html
+    assert "<strong>Company 1</strong> &middot; 2 jobs &middot; best 70" in html
     text = body_of(FakeSmtp.instances[0].messages[0], "plain")
-    assert f"  [30] Senior Backend Engineer {weak} - " in text and f"(job #{weak})" in text
+    assert "Company 1 (2 jobs, best 70) (watchlist)" in text
+    assert f"\n  [30] Senior Backend Engineer {weak}\n" in text
+
+    score_jobs(session_factory, config, {later: {"score": 30}})
+    outcome = make_digest(
+        config,
+        session_factory,
+        now=NOW + timedelta(days=1),
+        environ={TOKEN_ENV: "t"},
+        smtp_factory=FakeSmtp,
+    )
+    shown, collapsed = outcome.path.read_text().split("<summary>Watchlist below 50 (1)</summary>")
+    assert f"job #{later}" not in shown and f"job #{later}" in collapsed.split("</details>")[0]
+    text = body_of(FakeSmtp.instances[1].messages[0], "plain")
+    assert f"  [30] Senior Backend Engineer {later} - " in text and f"(job #{later})" in text
+
+
+def test_jobs_are_grouped_by_company(
+    tmp_path: Path, session_factory: sessionmaker[Session]
+) -> None:
+    config = config_with(tmp_path, min_score=50)
+    a, b, c, d, e, f = seed_jobs(session_factory, 6)
+    with session_factory.begin() as session:
+        session.execute(update(Job).where(Job.id.in_([a, c])).values(company_normalized="quetzal"))
+        session.execute(
+            update(Job).where(Job.id.in_([d, e])).values(company=None, company_normalized=None)
+        )
+    score_jobs(
+        session_factory,
+        config,
+        {
+            a: {"score": 82},
+            b: {"score": 75},
+            c: {"score": 60},
+            d: {"score": 58},
+            e: {"score": 55},
+            f: {"score": 65, "location_eligibility": "unclear"},
+        },
+    )
+    with session_factory() as session:
+        items = scored_items(session, set())
+    sections = build_sections(items, config.settings.digest, include_below=False)
+    groups = by_company(sections.top)
+    # The company with the best job leads, its weaker job with it; no company never merges.
+    assert [[i.job_id for i in g.items] for g in groups] == [[a, c], [b], [d], [e]]
+    assert (groups[0].name, groups[0].best, groups[0].watchlist) == ("Company 1", 82, False)
+
+    html = make_digest(config, session_factory, now=NOW, environ={}).path.read_text()
+    assert '<details class="section" open>\n<summary><h2>Top matches (5)</h2>' in html
+    assert '<details class="section">\n<summary><h2>Unclear location (1)</h2>' in html
+    company = html.split('<details class="company" open>')[1].split("</details></details>")[0]
+    assert "<strong>Company 1</strong> &middot; 2 jobs &middot; best 82" in company
+    assert f"job #{a}" in company and f"job #{c}" in company and f"job #{b}" not in company
+    # A lone job names its company in its line; a grouped one doesn't need to.
+    assert "<strong>Senior Backend Engineer 2</strong> &mdash; Company 2" in html
+    assert "<strong>Senior Backend Engineer 3</strong> &mdash;" not in html
+    assert "&middot; location: pass &middot; salary: unlisted" in html
+    assert html.index(f"job #{a}") < html.index(f"job #{c}") < html.index(f"job #{b}")
 
 
 def test_digest_shows_only_new_matches(

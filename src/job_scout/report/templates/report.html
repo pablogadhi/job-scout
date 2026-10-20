@@ -14,9 +14,16 @@
   h1 { font-size: 22px; margin: 0 0 4px; }
   h2 { font-size: 18px; margin: 28px 0 8px; border-bottom: 1px solid #d9dde3; padding-bottom: 4px; }
   .muted { color: #5b6473; font-size: 13px; }
-  .job { background: #fff; border: 1px solid #d9dde3; border-radius: 8px; padding: 12px 14px;
-         margin: 10px 0; }
-  .job h3 { font-size: 16px; margin: 0 0 2px; }
+  details > summary { cursor: pointer; }
+  details.section > summary { margin: 28px 0 8px; border-bottom: 1px solid #d9dde3;
+                              padding-bottom: 4px; }
+  details.section > summary h2 { display: inline; margin: 0; border: 0; padding: 0; }
+  details.company { margin: 10px 0; }
+  details.company > summary { padding: 4px 0; }
+  details.company > .job { margin-left: 16px; }
+  .job { background: #fff; border: 1px solid #d9dde3; border-radius: 8px; padding: 8px 12px;
+         margin: 6px 0; }
+  .job[open] > summary { margin-bottom: 6px; }
   .score { display: inline-block; min-width: 30px; text-align: center; font-weight: 700;
            border-radius: 6px; padding: 0 6px; margin-right: 6px; background: #e7ecf3; }
   .s-high { background: #d5f2dc; color: #135c26; }
@@ -28,7 +35,7 @@
   .row { margin: 4px 0; }
   .label { color: #5b6473; }
   a { color: #1d5bd8; }
-  details > summary { cursor: pointer; font-weight: 600; margin: 8px 0; }
+  details.more > summary { font-weight: 600; margin: 8px 0; }
   table.health { border-collapse: collapse; font-size: 13px; }
   table.health td, table.health th { border-bottom: 1px solid #e3e6eb; padding: 3px 8px;
                                       text-align: left; }
@@ -53,14 +60,19 @@
   {%- if score >= 70 %}s-high{% elif score >= 50 %}s-mid{% else %}s-low{% endif -%}
 {%- endmacro %}
 
-{%- macro job(item) %}
+{#- A job is one line (score, title, location, salary) that opens to the details. The title
+    isn't a link there: a click on the line only opens it. -#}
+{%- macro job(item, show_company=true) %}
 {%- set r = item.result %}
-<div class="job">
-  <h3><span class="score {{ score_class(item.overall) }}">{{ item.overall }}</span>
-    <a href="{{ item.apply_url | http_url }}">{{ item.title }}</a> &mdash; {{ item.company }}
-    {%- if item.watchlist %}<span class="badge">watchlist</span>{% endif %}
+<details class="job">
+  <summary><span class="score {{ score_class(item.overall) }}">{{ item.overall }}</span>
+    <strong>{{ item.title }}</strong>{% if show_company %} &mdash; {{ item.company }}{% endif %}
+    {%- if item.watchlist and show_company %}<span class="badge">watchlist</span>{% endif %}
     {%- for badge in item.badges %}<span class="badge">{{ badge }}</span>{% endfor %}
-  </h3>
+    {%- if item.disqualified %} <span class="flag">disqualified</span>{% endif %}
+    <span class="muted">&middot; location: {{ r.location_eligibility }} &middot; {{ item.salary or "salary: " ~ r.salary }}</span>
+  </summary>
+  <div class="row"><a href="{{ item.apply_url | http_url }}">Open the posting</a></div>
   <div class="row">{{ r.summary }}</div>
   {%- if item.breakdown %}
   <div class="row muted"><span class="label">Score:</span> {{ item.breakdown.line() }}</div>
@@ -117,38 +129,58 @@
   <div class="row feedback"><a href="{{ feedback.url(item.job_id, 'up') | http_url }}">👍 Good fit</a>
     &middot; <a href="{{ feedback.url(item.job_id, 'down') | http_url }}">👎 Not for me</a></div>
   {%- endif %}
-</div>
+</details>
+{%- endmacro %}
+
+{#- A section's companies, the one with the best job first. A company with several jobs
+    opens to them; a lone job needs no extra click. -#}
+{%- macro companies(groups, open) %}
+{%- for c in groups %}
+{%- if c.items | length > 1 %}
+<details class="company"{% if open %} open{% endif %}>
+<summary><strong>{{ c.name }}</strong> &middot; {{ c.items | length }} jobs &middot; best {{ c.best }}
+  {%- if c.watchlist %}<span class="badge">watchlist</span>{% endif %}</summary>
+{%- for item in c.items %}{{ job(item, false) }}{% endfor %}
+</details>
+{%- else %}{{ job(c.items[0]) }}{% endif %}
+{%- endfor %}
 {%- endmacro %}
 
 {%- if sections.watchlist %}
 {%- set cutoff = settings.watchlist_collapse_below %}
-{%- set weak = sections.watchlist | selectattr("overall", "lt", cutoff) | list %}
-<h2>Watchlist matches</h2>
-{%- for item in sections.watchlist | selectattr("overall", "ge", cutoff) %}{{ job(item) }}{% endfor %}
+{%- set groups = sections.watchlist | by_company %}
+{%- set weak = groups | selectattr("best", "lt", cutoff) | list %}
+<details class="section" open>
+<summary><h2>Watchlist matches ({{ sections.watchlist | length }})</h2></summary>
+{{- companies(groups | selectattr("best", "ge", cutoff), true) }}
 {%- if weak %}
-<details>
-<summary>Watchlist below {{ cutoff }} ({{ weak | length }})</summary>
-{%- for item in weak %}{{ job(item) }}{% endfor %}
+<details class="more">
+<summary>Watchlist below {{ cutoff }} ({{ weak | map(attribute="items") | map("length") | sum }})</summary>
+{{- companies(weak, false) }}
 </details>
 {%- endif %}
+</details>
 {%- endif %}
 
-<h2>Top matches</h2>
-{%- for item in sections.top %}{{ job(item) }}{% else %}
+<details class="section" open>
+<summary><h2>Top matches ({{ sections.top | length }})</h2></summary>
+{{- companies(sections.top | by_company, true) }}
+{%- if not sections.top %}
 <p class="muted">{{ "No matches" if include_below else "Nothing new" }} at or above {{ settings.min_score }}.</p>
-{%- endfor %}
+{%- endif %}
+</details>
 
 {%- if sections.unclear %}
-<details>
-<summary>Unclear location ({{ sections.unclear | length }}): worth a manual look</summary>
-{%- for item in sections.unclear %}{{ job(item) }}{% endfor %}
+<details class="section">
+<summary><h2>Unclear location ({{ sections.unclear | length }})</h2> <span class="muted">worth a manual look</span></summary>
+{{- companies(sections.unclear | by_company, false) }}
 </details>
 {%- endif %}
 
 {%- if include_below and sections.below %}
-<details>
-<summary>Below threshold ({{ sections.below | length }})</summary>
-{%- for item in sections.below %}{{ job(item) }}{% endfor %}
+<details class="section">
+<summary><h2>Below threshold ({{ sections.below | length }})</h2></summary>
+{{- companies(sections.below | by_company, false) }}
 </details>
 {%- endif %}
 

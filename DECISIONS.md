@@ -2508,3 +2508,56 @@ Its files are in the gitignored `instances/ngo/config/`; nothing personal is log
   $120k rule have `below` for a $100k–$120k range, so `rescore --where salary=below`
   re-extracts them (7 on the laptop). Changing the thresholds later needs the same, since
   Claude applies them; changing near's points doesn't.
+
+## Phase 13: A digest you can skim (branch `phase-13-digest-layout`)
+
+Started on 2026-10-19 from `phase-7-scrapers`. The digest and the backlog report fold at
+three levels: sections, companies and jobs.
+
+### P13 Your decisions
+
+- **P13-U1 Sections, companies and jobs fold.** You: "make every category collapsible,
+  also to group postings in the [sections] by companies, sorting the companies by their
+  highest score job ... companies also collapsible." ngo's lists are long: World Vision
+  alone has 132 scored jobs, Room to Read 39 and IRC 36.
+- **P13-U2 Built for Proton Mail.** You and the ngo reader read the digest in Proton Mail,
+  where `<details>` blocks open and close. Everything folds with nested `<details>` in the
+  email itself.
+- **P13-U3 No expand/collapse-all button.** It needs a script, which email clients strip.
+  Claude offered a browser copy of the digest served by the feedback service; you chose to
+  skip the button.
+- **P13-U4 Each job is a one-line headline.** It shows the score, title, company, badges,
+  location verdict and salary, and opens to the details.
+
+### P13 Decisions (Claude)
+
+- **P13-D1 Open by default:** watchlist and top matches; closed: unclear location and below
+  threshold, as before. A company's block starts open where its section does.
+- **P13-D2 A company with one job gets no block of its own:** its job line sits directly in
+  the section and names the company, so it's never two clicks. A block's header reads
+  "UNICEF · 4 jobs · best 62" (plus a watchlist badge).
+- **P13-D3 Grouping key:** the canonical job's normalized company. A job without a company
+  is a group of its own, as in dedupe. Companies come in the order of their best job, which
+  is the order jobs were already ranked in (score, then newest posting), and jobs inside a
+  company stay ranked.
+- **P13-D4 The title in a job line isn't a link:** a click on the line only opens it.
+  "Open the posting" is the body's first row; the source links and feedback links stay at
+  the bottom.
+- **P13-D5 `watchlist_collapse_below` applies per company,** by its best job: a watchlist
+  company whose best job is below 50 goes into "Watchlist below 50"; a weak job of a strong
+  company stays with its company. The setting is unchanged.
+- **P13-D6 The plain-text part** groups the same way: a company line ("UNICEF (4 jobs, best
+  62)") with its jobs indented under it. It can't fold, so nothing else changed.
+- **P13-D7 A disqualified job says so in its line** (below threshold, backlog report only).
+- Checked on a copy of ngo's database: the backlog report's 348 below-threshold jobs fold
+  into company lines (World Vision's 132 are one line), and the page fits a 390px-wide
+  screen without sideways scrolling.
+
+### P13 Bugs found and fixed
+
+- **P13-B1 Claude ran `backlog` without `--dry-run` to preview the layout,** on a copy of
+  ngo's database. `backlog` fetches and scores before it writes the report. The sandbox
+  blocked every connection, so nothing was fetched or spent; ngo's real database was
+  unchanged (checked). `backlog --dry-run` writes no report, so a preview of the full
+  layout is `make_backlog_report` called directly on a copied database, or `digest
+  --dry-run`.
