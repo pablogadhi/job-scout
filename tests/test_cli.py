@@ -19,6 +19,7 @@ from job_scout.db.models import Backend, Job, Score, ScoreStatus, Source
 from job_scout.fetch.models import Posting
 from job_scout.fetch.store import store_postings
 from job_scout.scoring.calibrate import ConfigSpec
+from job_scout.scoring.queue import requeue_for_rescore
 from job_scout.scoring.simulate import simulate
 from tests.conftest import TEST_CONFIG, edit
 from tests.scoring_helpers import TEST_TABLE, result_for, seed_jobs, with_points
@@ -459,6 +460,33 @@ def test_rescore_where_queues_jobs_with_that_value(db_url: str) -> None:
     assert result.exit_code != 0 and "salary is one of meets, below, unlisted" in result.output
     result = invoke("rescore", "--where", "pay=below", "--dry-run")
     assert result.exit_code != 0 and "a field of the output format" in result.output
+
+
+def test_failed_jobs_show_in_status_and_rescore_failed_queues_them(db_url: str) -> None:
+    engine = make_engine(db_url)
+    sf = make_session_factory(engine)
+    ids = seed_jobs(sf, 3)
+    with sf.begin() as session:
+        for job_id, status in zip(ids, ("score_failed", "scored", "score_failed"), strict=True):
+            session.add(
+                Score(job_id=job_id, profile_hash="p", status=ScoreStatus(status), attempts=2)
+            )
+    engine.dispose()
+    result = invoke("status")
+    assert result.exit_code == 0, result.output
+    assert "2 jobs failed to score; `rescore --failed` queues them again" in result.output
+
+    result = invoke("rescore", "--failed", "--dry-run")
+    assert result.exit_code == 0, result.output
+    assert "would queue 2 jobs" in result.output
+    assert _statuses(db_url) == ["score_failed", "scored", "score_failed"]
+
+    engine = make_engine(db_url)
+    with make_session_factory(engine).begin() as session:
+        assert requeue_for_rescore(session, "p", failed=True) == 2
+    engine.dispose()
+    assert _statuses(db_url) == ["pending", "scored", "pending"]
+    assert "failed to score" not in invoke("status").output
 
 
 def test_simulate_compares_a_candidate_table(db_url: str, tmp_path: Path) -> None:

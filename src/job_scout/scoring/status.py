@@ -10,7 +10,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from job_scout.db.models import Backend, CallStatus, Run, ScoringCall
-from job_scout.scoring.queue import pending_count
+from job_scout.scoring.queue import failed_count, pending_count
 
 TOKEN_VALIDITY = timedelta(days=365)  # `claude setup-token` tokens last one year
 TOKEN_WARN_BEFORE = timedelta(days=30)
@@ -34,6 +34,7 @@ def token_warning(created: date | None, today: date) -> str | None:
 @dataclass(frozen=True)
 class ScoringStatus:
     pending: int
+    failed: int  # jobs that failed every attempt (`rescore --failed`)
     batches_in_flight: int
     last_run: Run | None
     calls_today: int
@@ -66,6 +67,7 @@ def scoring_status(
 
     return ScoringStatus(
         pending=pending_count(session),
+        failed=failed_count(session),
         batches_in_flight=session.scalar(
             select(func.count()).where(ScoringCall.status == CallStatus.SUBMITTED)
         )

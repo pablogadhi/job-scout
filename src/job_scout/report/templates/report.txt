@@ -76,7 +76,8 @@ Nothing new at or above {{ settings.min_score }}.
 {%- endif %}
 
 == Pipeline health ==
-{{ status.pending }} job groups waiting to be scored{% if status.token_warning %}
+{{ status.pending }} job groups waiting to be scored{% if status.failed %}
+{{ status.failed }} jobs failed to score: `rescore --failed` queues them again{% endif %}{% if status.token_warning %}
 {{ status.token_warning }}{% endif %}
 {%- for s in health %}{% if s.problem %}
 {{ s.source_id }}: {{ s.problem }}{% endif %}{% endfor %}

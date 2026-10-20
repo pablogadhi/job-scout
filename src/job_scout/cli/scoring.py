@@ -98,6 +98,9 @@ def rescore(
             "--where", metavar="FIELD=VALUE", help="Jobs whose result has it (salary=below)."
         ),
     ] = None,
+    failed: Annotated[
+        bool, typer.Option("--failed", help="Every job that failed all its attempts.")
+    ] = False,
     mode: Annotated[ScoringMode, typer.Option("--mode")] = ScoringMode.DAILY,
     backend: BackendOpt = None,
     model: ModelOpt = None,
@@ -106,16 +109,20 @@ def rescore(
     max_input_tokens: MaxInputTokensOpt = None,
     dry_run: DryRunOpt = False,
 ) -> None:
-    """Re-score top, recent, old-format or matching jobs under the current profile (after
-    editing profile.md). With --dry-run nothing stays queued."""
-    if top is None and since is None and not legacy and where is None:
-        raise fail("give --top N, --since YYYY-MM-DD, --legacy and/or --where FIELD=VALUE")
+    """Re-score top, recent, old-format, matching or failed jobs under the current profile
+    (after editing profile.md). With --dry-run nothing stays queued."""
+    if top is None and since is None and not legacy and where is None and not failed:
+        raise fail(
+            "give --top N, --since YYYY-MM-DD, --legacy, --where FIELD=VALUE and/or --failed"
+        )
     config = load(ctx, scoring_overrides(backend, model))
     field_value = _field_value(config, where) if where is not None else None
     session_factory = open_db(config)
     since_utc = since.replace(tzinfo=ZoneInfo(config.settings.schedule.timezone)) if since else None
     with session_factory.begin() as session:
-        ids = rescore_ids(session, top=top, since=since_utc, legacy=legacy, where=field_value)
+        ids = rescore_ids(
+            session, top=top, since=since_utc, legacy=legacy, where=field_value, failed=failed
+        )
         before = snapshot(session, ids)
         queued = requeue_for_rescore(
             session,
@@ -124,6 +131,7 @@ def rescore(
             since=since_utc,
             legacy=legacy,
             where=field_value,
+            failed=failed,
         )
     verb = "would queue" if dry_run else "queued"
     console.print(f"{verb} {queued} jobs for re-scoring under profile {config.profile.sha256[:12]}")
@@ -158,6 +166,11 @@ def status(ctx: typer.Context) -> None:
         )
     console.print(f"backend: {settings.scoring.backend}  model: {settings.scoring.model}")
     console.print(f"pending job groups: {st.pending}  batches in flight: {st.batches_in_flight}")
+    if st.failed:
+        console.print(
+            f"[yellow]{st.failed} jobs failed to score; `rescore --failed` queues them again"
+            "[/yellow]"
+        )
     if st.last_run is None:
         console.print("last run: none")
     else:

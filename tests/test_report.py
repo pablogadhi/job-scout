@@ -227,6 +227,22 @@ def test_digest_shows_only_new_matches(
 
     three = make_digest(config, session_factory, now=NOW + timedelta(days=2), environ={})
     assert len(three.sections) == 0 and "Nothing new at or above 50" in three.path.read_text()
+    assert "failed to score" not in three.path.read_text()
+
+
+def test_failed_jobs_are_reported_in_the_health_footer(
+    tmp_path: Path, session_factory: sessionmaker[Session]
+) -> None:
+    config = config_with(tmp_path, min_score=50, email=EMAIL)
+    (job,) = seed_jobs(session_factory, 1)
+    with session_factory.begin() as session:
+        session.add(Score(job_id=job, profile_hash="p", status=ScoreStatus.SCORE_FAILED))
+    outcome = make_digest(
+        config, session_factory, now=NOW, environ={TOKEN_ENV: "t"}, smtp_factory=FakeSmtp
+    )
+    assert "1 jobs failed to score:\n  <code>rescore --failed</code>" in outcome.path.read_text()
+    text = body_of(FakeSmtp.instances[0].messages[0], "plain")
+    assert "1 jobs failed to score: `rescore --failed` queues them again" in text
 
 
 def test_backlog_report_includes_below_and_is_not_repeated(

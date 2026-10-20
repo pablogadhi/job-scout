@@ -109,6 +109,11 @@ def pending_count(session: Session) -> int:
     return session.scalar(select(func.count()).select_from(pending_query().subquery())) or 0
 
 
+def failed_count(session: Session) -> int:
+    """Jobs that failed every attempt: no run retries them until `rescore --failed`."""
+    return session.scalar(select(func.count()).where(Score.status == ScoreStatus.SCORE_FAILED)) or 0
+
+
 def rescore_ids(
     session: Session,
     *,
@@ -116,10 +121,12 @@ def rescore_ids(
     since: datetime | None = None,
     legacy: bool = False,
     where: tuple[str, str] | None = None,
+    failed: bool = False,
 ) -> list[int]:
     """Jobs to score again: the top N by score, eligible jobs first seen since a date,
-    (`legacy`) every job scored before points (it has no breakdown), and/or (`where`) every
-    job whose stored result has that value in that field."""
+    (`legacy`) every job scored before points (it has no breakdown), (`where`) every job
+    whose stored result has that value in that field, and/or (`failed`) every job that
+    failed all its attempts."""
     ids: list[int] = []
     if top:
         ids += session.scalars(
@@ -142,6 +149,12 @@ def rescore_ids(
             select(Score).where(Score.status == ScoreStatus.SCORED).order_by(Score.job_id)
         )
         ids += [s.job_id for s in scored if s.result and s.result.get(field) == value]
+    if failed:
+        ids += session.scalars(
+            select(Score.job_id)
+            .where(Score.status == ScoreStatus.SCORE_FAILED)
+            .order_by(Score.job_id)
+        )
     return list(dict.fromkeys(ids))
 
 
@@ -153,9 +166,10 @@ def requeue_for_rescore(
     since: datetime | None = None,
     legacy: bool = False,
     where: tuple[str, str] | None = None,
+    failed: bool = False,
 ) -> int:
     """Queue `rescore_ids` to be scored again under the current profile. Returns jobs queued."""
-    ids = rescore_ids(session, top=top, since=since, legacy=legacy, where=where)
+    ids = rescore_ids(session, top=top, since=since, legacy=legacy, where=where, failed=failed)
     return _set_pending(session, profile_hash, ids)
 
 

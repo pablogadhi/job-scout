@@ -2553,6 +2553,19 @@ three levels: sections, companies and jobs.
   into company lines (World Vision's 132 are one line), and the page fits a 390px-wide
   screen without sideways scrolling.
 
+- **P13-U5 Failed scorings are reported, and `rescore --failed` retries them.** You found
+  9 `score_failed` jobs on the server (2026-10-19) only through a database query: all were
+  RemoteJobs.lat jobs from one CLI call of 10 that came back with 29,988 output tokens
+  (the laptop's 10-posting calls average about 16,600). Claude had left them out of a
+  reply that otherwise succeeded, so no call was marked failed and the run ended normally.
+  Queued again and scored on their own, all 9 succeeded. You asked for a way to notice
+  such failures without reading the logs.
+- **P13-D8 Where failures show:** a line in the digest's Pipeline health footer, shown only
+  when there are any ("9 jobs failed to score: `rescore --failed` queues them again"), and
+  the same in `job-scout status`. No extra email: the failure email stays for runs that
+  fail as a whole. `rescore --failed` queues every `score_failed` job; `--dry-run` shows
+  the count and the planned calls, then leaves them as they were.
+
 ### P13 Bugs found and fixed
 
 - **P13-B1 Claude ran `backlog` without `--dry-run` to preview the layout,** on a copy of

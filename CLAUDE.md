@@ -39,6 +39,7 @@ uv run --env-file .env job-scout feedback report # the scores vs your votes
 uv run --env-file .env job-scout simulate --table candidate.yaml  # a scoring.yaml vs stored scores
 uv run --env-file .env job-scout rescore --legacy --dry-run  # re-extract jobs scored before points
 uv run --env-file .env job-scout rescore --where salary=below --dry-run  # jobs whose result has it
+uv run --env-file .env job-scout rescore --failed --dry-run  # jobs that failed every attempt
 uv run --env-file .env pytest -m live tests/test_live_email.py  # sends 1 real email
 uv run --env-file .env pytest -m live tests/test_live_scoring.py  # spends 1 Pro prompt + ~$0.01
 uv run --env-file .env job-scout calibrate --sample 50 --configs "api:claude-haiku-5-5:1,cli:claude-haiku-5-5:20"
@@ -254,7 +255,10 @@ instance; an instance's files never go into git.
   changed). Editing profile.md re-scores nothing (editing scoring.yaml recomputes, above); `profile_hash` on the row records which
   profile scored it (`explain` marks older ones). Pending rows belong to no backend. Every
   call is committed before the next one. A job is retried at most once (`MAX_ATTEMPTS`); a
-  failed multi-posting call is split in half for the retry. Postings are untrusted: they're
+  failed multi-posting call is split in half for the retry. A job missing or invalid in a
+  call that succeeded counts the same. One that fails every attempt is `score_failed`: no
+  run retries it, the digest's health footer and `status` count it, and `rescore --failed`
+  queues it again. Postings are untrusted: they're
   wrapped in `<posting job_id="N">` and can't forge the delimiter.
 - **Never spend without approval:** live tests are opt-in (`-m live`); `calibrate` needs
   `--yes`; dry runs need no credentials. The `claude` subprocess gets an allowlisted

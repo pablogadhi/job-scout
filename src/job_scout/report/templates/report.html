@@ -190,6 +190,8 @@
   {%- if status.batches_in_flight %} &middot; {{ status.batches_in_flight }} batch(es) in flight{% endif %}
   {%- if status.last_run %} &middot; last scoring run: {{ status.last_run.calls_made }} calls,
   stop reason {{ status.last_run.stop_reason or "?" }}{% endif %}
+  {%- if status.failed %}<br><span class="flag">{{ status.failed }} jobs failed to score:
+  <code>rescore --failed</code> queues them again</span>{% endif %}
   {%- if status.token_warning %}<br><span class="flag">{{ status.token_warning }}</span>{% endif %}
 </p>
 <table class="health">
