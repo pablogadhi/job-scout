@@ -99,7 +99,7 @@ def test_services_find_docker_wherever_it_is_installed() -> None:
     """The snap installs docker in /snap/bin, outside systemd's default search path."""
     for name in ("job-scout.service", "job-scout@.service", "job-scout-failure.service"):
         service = unit(name)
-        assert re.search(r"^ExecSearchPath=\S*:/snap/bin$", service, re.M), name
+        assert re.search(r"^Environment=PATH=\S*:/snap/bin$", service, re.M), name
         assert "/usr/bin/docker" not in service, name
 
 

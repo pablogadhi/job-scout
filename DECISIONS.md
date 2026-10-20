@@ -2572,9 +2572,11 @@ three levels: sections, companies and jobs.
   `job-scout.service` on the server (2026-10-20) failed with status 124 after 5 minutes:
   the wait for Docker ran `/usr/bin/docker info`, but the server's Docker is the snap, in
   `/snap/bin`. The run, the ngo run and the failure email all named `/usr/bin/docker`, so
-  the failure email couldn't be sent either. The units now say `docker` and search
-  `/usr/local/bin:/usr/bin:/bin:/snap/bin` (`ExecSearchPath=`, systemd 250+; the README
-  already asks for 251). A test checks all three units.
+  the failure email couldn't be sent either. The units now set
+  `PATH=/usr/local/bin:/usr/bin:/bin:/snap/bin` and run `/usr/bin/env docker` (or `docker`
+  inside `sh -c`). A first try with `ExecSearchPath=` and a bare `docker` failed
+  `systemd-analyze verify` on the server ("Command docker is not executable"). A test
+  checks all three units.
 
 - **P13-B1 Claude ran `backlog` without `--dry-run` to preview the layout,** on a copy of
   ngo's database. `backlog` fetches and scores before it writes the report. The sandbox

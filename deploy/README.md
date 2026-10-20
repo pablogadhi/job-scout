@@ -21,7 +21,7 @@ Needs Docker with the compose plugin, your user in the `docker` group (the conta
 UID/GID 1000 and writes to `data/` as that user; rootless Docker would map it to another
 UID), and systemd 251 or later (`systemctl --version`), for the `MONITOR_*` variables the
 failure email uses. Docker from apt, Docker's packages or the snap all work: the units look
-for `docker` in `/usr/local/bin`, `/usr/bin`, `/bin` and `/snap/bin` (`ExecSearchPath=`).
+for `docker` in `/usr/local/bin`, `/usr/bin`, `/bin` and `/snap/bin` (their `PATH`).
 
 ## First install
 
