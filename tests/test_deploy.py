@@ -95,6 +95,14 @@ def test_service_reports_failures_and_hangs() -> None:
     assert "notify-failure" in (DEPLOY / "entrypoint.sh").read_text()  # skips migrations
 
 
+def test_services_find_docker_wherever_it_is_installed() -> None:
+    """The snap installs docker in /snap/bin, outside systemd's default search path."""
+    for name in ("job-scout.service", "job-scout@.service", "job-scout-failure.service"):
+        service = unit(name)
+        assert re.search(r"^ExecSearchPath=\S*:/snap/bin$", service, re.M), name
+        assert "/usr/bin/docker" not in service, name
+
+
 def test_compose_mounts_the_configured_paths(app_config: AppConfig) -> None:
     compose = yaml.safe_load((DEPLOY / "compose.yaml").read_text())["services"]["job-scout"]
     assert compose["env_file"] == f"{INSTANCE_DIR}/.env"

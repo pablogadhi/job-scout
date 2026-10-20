@@ -2568,6 +2568,14 @@ three levels: sections, companies and jobs.
 
 ### P13 Bugs found and fixed
 
+- **P13-B2 The systemd units couldn't find a snap's Docker.** A manual start of
+  `job-scout.service` on the server (2026-10-20) failed with status 124 after 5 minutes:
+  the wait for Docker ran `/usr/bin/docker info`, but the server's Docker is the snap, in
+  `/snap/bin`. The run, the ngo run and the failure email all named `/usr/bin/docker`, so
+  the failure email couldn't be sent either. The units now say `docker` and search
+  `/usr/local/bin:/usr/bin:/bin:/snap/bin` (`ExecSearchPath=`, systemd 250+; the README
+  already asks for 251). A test checks all three units.
+
 - **P13-B1 Claude ran `backlog` without `--dry-run` to preview the layout,** on a copy of
   ngo's database. `backlog` fetches and scores before it writes the report. The sandbox
   blocked every connection, so nothing was fetched or spent; ngo's real database was

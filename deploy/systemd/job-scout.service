@@ -9,9 +9,12 @@ OnFailure=job-scout-failure.service
 [Service]
 Type=oneshot
 WorkingDirectory=%h/job-scout/deploy
+# Where docker is found: apt and Docker's own packages install it in /usr/bin, the snap in
+# /snap/bin. Also the PATH of the commands below.
+ExecSearchPath=/usr/local/bin:/usr/bin:/bin:/snap/bin
 # User units can't order themselves after the system's docker.service: right after boot,
 # wait for the Docker daemon instead.
-ExecStartPre=/usr/bin/timeout 5m /bin/sh -c 'until /usr/bin/docker info >/dev/null 2>&1; do sleep 5; done'
-ExecStart=/usr/bin/docker compose run --rm -T job-scout run
+ExecStartPre=/usr/bin/timeout 5m /bin/sh -c 'until docker info >/dev/null 2>&1; do sleep 5; done'
+ExecStart=docker compose run --rm -T job-scout run
 # A hung run (e.g. a stuck Claude call) is killed and reported instead of waiting forever.
 TimeoutStartSec=2h

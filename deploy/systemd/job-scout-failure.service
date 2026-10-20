@@ -8,6 +8,9 @@ Description=Email the report of a failed job-scout run
 [Service]
 Type=oneshot
 WorkingDirectory=%h/job-scout/deploy
+# Where docker is found: apt and Docker's own packages install it in /usr/bin, the snap in
+# /snap/bin. Also the PATH of the commands below.
+ExecSearchPath=/usr/local/bin:/usr/bin:/bin:/snap/bin
 ExecStart=/bin/sh -c 'journalctl --user _SYSTEMD_INVOCATION_ID="$MONITOR_INVOCATION_ID" + USER_INVOCATION_ID="$MONITOR_INVOCATION_ID" -o cat --no-pager \
-  | /usr/bin/docker compose run --rm -T job-scout notify-failure \
+  | docker compose run --rm -T job-scout notify-failure \
       --unit "$MONITOR_UNIT" --result "$MONITOR_SERVICE_RESULT" --exit-status "$MONITOR_EXIT_STATUS"'
