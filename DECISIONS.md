@@ -8,6 +8,9 @@ IDs: `D` = Claude's decision, `U` = your decision, `C` = config fix, `B` = bug f
 fixed, `R` = left for you to review. Status of each phase's acceptance check is at the top
 of its section.
 
+A decision that changes an earlier one replaces it: the newest entry says what holds now,
+and the earlier one is removed. A review item goes once its outcome is logged.
+
 ---
 
 ## Phase 0: Scaffold (branch `phase-0-scaffold`)
@@ -61,9 +64,9 @@ check` validates all four config files and lists enabled sources.
 
 ## Phase 1: Tier 1 fetchers (branch `phase-1-fetchers`)
 
-**Acceptance:** passed, except Findwork (needs `FINDWORK_API_KEY`, see P1-R1).
-Live run on 2026-10-12: 12 sources stored 2,734 postings; a second run added 0 duplicates
-(one genuinely new HN comment); `sources check` shows per-source health.
+**Acceptance:** passed (Findwork, which needs `FINDWORK_API_KEY`, was checked live in
+Phase 9). Live run on 2026-10-12: 12 sources stored 2,734 postings; a second run added 0
+duplicates (one genuinely new HN comment); `sources check` shows per-source health.
 
 ### P1 Decisions (Claude)
 
@@ -72,8 +75,6 @@ Live run on 2026-10-12: 12 sources stored 2,734 postings; a second run added 0 d
 - **P1-D2 One HTTP gateway** (`fetch/http.py`) for every request: User-Agent, timeout,
   robots.txt (cached per host per run), spacing per host = max(1 s, robots `Crawl-delay`,
   the source's `min_request_interval_seconds`), request budgets.
-- **P1-D3 robots.txt handling** (401/403 part superseded by P5-U1): 404 = allow all; 401/403 = disallow all; 5xx or network
-  error = the source fails for this run.
 - **P1-D4 New table `source_runs`** (migration `832d7dbee9d9`): one row per source attempt
   with requests made, items fetched/new/duplicate/skipped, error. Used for the rolling-24h
   request budget and for source health.
@@ -100,9 +101,8 @@ Live run on 2026-10-12: 12 sources stored 2,734 postings; a second run added 0 d
   are only parsed on lines labelled salary/compensation/pay/rate, never anywhere else.
   Claude still reads the full text in Phase 3.
 - **P1-D12 4dayweek incremental fetch:** after the first success, `posted_after` = days
-  since the last success + 1, minimum 2, so windows overlap. First run fetches everything
-  (2,044 postings, 21 pages). Page cap 30.
-- **P1-D13 Working Nomads:** keeps `category_name == "Development"` only.
+  since the last success + 1, so windows overlap (the minimum is P4-D13). First run fetches
+  everything (2,044 postings, 21 pages). Page cap 30.
 - **P1-D14 HN:** title = the comment's first line; company = first segment when the line
   is split by `|`, ` — ` or ` – `; salary parsed per segment only; deleted comments and
   replies skipped.
@@ -126,18 +126,13 @@ Live run on 2026-10-12: 12 sources stored 2,734 postings; a second run added 0 d
   `tests/fixtures/make_http_fixtures.py` generates invented data that mirrors each source's
   payload structure and quirks. `fetch --record` refuses to write under `tests/` and is for
   studying shapes in the gitignored `data/recordings/`.
-- **P1-U3 User-Agent without contact email.** *Interpretation to confirm:* you wrote "Do not
-  send the User-Agent". I read it as "don't add the email to the User-Agent", so requests
-  still send `job-scout/0.1 (personal job search)`, because PLAN.md requires a configured
-  User-Agent and robots.txt rules match on it. If you meant "send no User-Agent header",
-  say so; note that httpx would then send its default `python-httpx/…` instead.
+- **P1-U3 User-Agent without contact email.** You wrote "Do not send the User-Agent",
+  meaning "don't add the email to the User-Agent" (you confirmed), so requests send
+  `job-scout/0.1 (personal job search)`: PLAN.md requires a configured User-Agent and
+  robots.txt rules match on it.
 
 ### P1 Config fixes
 
-- **P1-C1 Remotive:** category `software-dev` doesn't exist (valid: `software-development`).
-  The free API also ignores the category filter (every category URL returned the same 15
-  jobs), so it now has one endpoint. Added `max_requests_per_day: 4`,
-  `min_request_interval_seconds: 31`. Marked checked.
 - **P1-C2 Findjobit:** `/rss-feed` is an HTML page listing feeds, not a feed. Switched to
   `/jobs/country/guatemala/feed` (only postings open to Guatemala). Marked checked.
 - **P1-C3 Remote First Jobs `alt_api`:** robots.txt disallows `/api`; marked "don't use"
@@ -165,13 +160,12 @@ Live run on 2026-10-12: 12 sources stored 2,734 postings; a second run added 0 d
 
 ### P1 For you to review
 
-- **P1-R1 Findwork** is implemented from its docs but unverified: create a free account,
-  put the key in `FINDWORK_API_KEY`, then run `job-scout fetch --source findwork`.
 - **P1-R2 4dayweek multi-country postings:** 469 of 2,044 are per-country copies of one job
   (e.g. one title ×9 countries). With your dedupe key they link to the first copy; P1-U1
-  makes sure all their locations are considered.
-- **P1-R3 Low-yield sources:** Remotive's free API serves only 15 delayed jobs across all
-  categories. Kept, at 1 request per run.
+  makes sure all their locations are considered. You: fine as is.
+- **P1-R3 Low-yield sources:** Remotive serves only 15 delayed jobs across all categories.
+  Kept, at 1 request per run. You: they stay, since after the first run dedupe means only
+  new postings reach Claude; remove them later if they prove useless.
 
 ---
 
@@ -180,8 +174,9 @@ Live run on 2026-10-12: 12 sources stored 2,734 postings; a second run added 0 d
 **Acceptance:** passed on the local data (fetched 2026-10-12): `job-scout filter` judged
 2,511 job groups (3,023 postings, 512 linked duplicates), 1,120 passed (45%), with a pass
 rate per source and the top drop rules. Spot check of 20 passed and 20 dropped (seed 7)
-done by Claude, not by you: no verdict was wrong against the rules as written. Misses
-caused by the rules themselves are listed under P2-R1. Please re-check (P2-R5).
+done by Claude, not by you: no verdict was wrong against the rules as written. The title
+rules' own misses ("Staff Engineer", "Forward Deployed Engineer") were fixed in P4-U5.
+Please re-check (P2-R5).
 
 ### How combined locations work
 
@@ -199,11 +194,11 @@ caused by the rules themselves are listed under P2-R1. Please re-check (P2-R5).
    One verdict row is stored, on the canonical job.
 4. **Late copies.** If a new copy is linked after the group was judged (the LATAM listing
    appears a week later), the next `job-scout filter` re-judges the group automatically.
-5. **Scoring (Phase 3, planned).** The prompt for a group carries the canonical posting
+5. **Scoring (Phase 3).** The prompt for a group carries the canonical posting
    plus a "Locations across all listings of this job" list built from
    `combined_locations()`, so Claude judges eligibility on all of them. One score per group,
    stored on the canonical job. When a group gains a copy with a new location after it was
-   scored, it will be re-queued for scoring (to be built in Phase 3).
+   scored, it's re-queued for scoring (P3-D3, P3-D4).
 6. **Seeing it.** `job-scout explain ID` (any member of the group) lists every copy with its
    location and prints the combined list exactly as Claude will get it.
 
@@ -260,21 +255,16 @@ caused by the rules themselves are listed under P2-R1. Please re-check (P2-R5).
 
 ### P2 For you to review
 
-- **P2-R1 Title include gaps** (filters.yaml is read-only, so not changed). Dropped but
-  possibly relevant: "Staff Engineer", "Principal Engineer", "Senior Engineer (.NET)",
-  "Forward Deployed Engineer" (often backend/DevOps), "Senior Integration Engineer"
-  (integrations are in your profile). About 20 of 1,148 title drops. Possible additions:
-  `'\b(staff|principal|senior|lead) engineer\b'` and
-  `'\b(integration|forward deployed|deployment) engineer\b'`. The rest of the title drops
-  are ML/AI, frontend, management, sales and data science, as intended.
 - **P2-R2 Non-USD salaries are never filtered in code** (about 350 4dayweek jobs in CAD,
-  EUR, GBP, PLN…). Option: approximate `fx_to_usd` rates in filters.yaml.
+  EUR, GBP, PLN…). Option: approximate `fx_to_usd` rates in filters.yaml. You: fine as is,
+  Claude judges them.
 - **P2-R3 Description-only signals** (hybrid, US-only, clearance) are left to Claude
   (P2-D2). If you prefer the stricter behaviour, it's a one-line change per rule.
 - **P2-R4 HN passes anything that mentions remote**, including non-engineering roles
-  (e.g. a product manager post), as PLAN.md specifies; Claude scores those low.
+  (e.g. a product manager post), as PLAN.md specifies; Claude scores those low. You: fine
+  as is.
 - **P2-R5 Re-check the spot check:** `job-scout filter --sample 20`, then
-  `job-scout explain ID` on a few.
+  `job-scout explain ID` on a few. You'll do it.
 
 ---
 
@@ -290,25 +280,23 @@ without your OK.
 
 ### P3 Your decisions
 
-- **P3-U1 Batch size 20 per CLI call** for daily and backlog runs (open decision #5), from
-  the calibration. The backlog CLI limits went from 40 postings / 120k input / 24k output
-  tokens to the daily values: 20 / 60k / 12k (settings.yaml and the built-in default).
 - **P3-U2 Backends (open decision #6):** `cli` during development and testing (the default,
   `scoring.backend: cli`); you switch to `api` (Batches API) yourself for the real initial
   backlog. Nothing changed in code for this.
-- **P3-U3 "Place (remote)" locations stay unclear for the pre-filter (P3-R6).** No
-  filters.yaml rule drops them: you'd rather have Haiku read the whole posting and drop
-  them than have a regex drop an opening that could pass. All 704 such groups keep going to
-  Claude.
+- **P3-U3 "Place (remote)" locations stay unclear for the pre-filter.** 4dayweek lists
+  where a role is open as `<place> (remote)` entries: 704 of the 1,120 passed groups list
+  only such places, none of them allowed (294 are just "United States (remote)"). Of
+  those, 53 mention LATAM, anywhere, South America or "open to candidates", and none of
+  the ones Claude read opened the role to Guatemala. No filters.yaml rule drops them:
+  you'd rather have Haiku read the whole posting and drop them than have a regex drop an
+  opening that could pass. All 704 keep going to Claude.
 - **P3-U4 profile.md: remote roles listed under a country.** New bullet under location
   eligibility (you approved the edit): a label such as "United States (remote)" alone is
   unclear; it fails only when the description clearly requires being located in that
   country or region ("open to candidates residing in the US"), even though the role is
   remote. Customers, offices or headquarters in a country don't count. The wording is mine,
   from your rule. This changes `profile_hash`; no scores were stored yet, so nothing is
-  re-scored. Note: filters.yaml still drops a location field that is exactly
-  "Remote - US"-style (its last `exclude_any` pattern) without reading the description.
-  (Superseded by P3-U5: that pattern is gone.)
+  re-scored.
 - **P3-U5 Location filters drop only explicit restrictions.** Your rule: exclude only when
   it's super clear the applicant must be in the place; "usa" passes to Claude, "usa only"
   is dropped. You approved editing filters.yaml. `location.exclude_any` now has 4 patterns
@@ -332,9 +320,15 @@ without your OK.
   Claude does the location judging. 15 new test cases (both directions).
 
 - **P3-U6 Default model `claude-haiku-5-5`** (your decision, from the model comparison
-  below). Changed in settings.yaml and the built-in default; `effort` stays null, so 5.5
-  uses its default, medium. Haiku 4.5 still works (with `effort: null`). Both live tests
-  pass on 5.5 (2026-10-12), including the CLI one.
+  below), in settings.yaml and the built-in default. Claude Haiku 5.5 was released on
+  2026-10-07; the Models API on your key lists it (checked 2026-10-12). From the docs,
+  against 4.5: 10× cheaper per token ($0.10 / $0.50 per million input / output, for
+  prompts up to 100k tokens; 5× that above), about 30% more tokens for the same text (new
+  tokenizer), adaptive thinking on by default at `medium` effort (thinking tokens are
+  billed as output and count toward `max_tokens`), prompt caching from 512 tokens, and
+  `temperature`/`top_p`/`top_k` and assistant prefill are rejected (we send none of
+  them). Haiku 4.5 still works (with `effort: null`). Both live tests pass on 5.5
+  (2026-10-12), including the CLI one.
 
 ### P3 Calibration results
 
@@ -354,9 +348,9 @@ without your OK.
   *reference* being wrong: 1274 and 2218 (Canada / US-only listings) got 78 and 82 from
   api x1, and 178 (max C$159k, about US$115k) got 71. Haiku also contradicts itself at x1
   (1363, "United States (remote)", got 0). The disagreements come from how
-  "Country (remote)" labels are judged (P3-R6), not from batching.
+  "Country (remote)" labels are judged (P3-U3, P3-U4), not from batching.
 - The x20 CLI cost ($0.44 for 50) is about double what I'd expect for Haiku; the report
-  can't show why (P3-R7).
+  couldn't show why; P3-R7 added the per-call detail.
 
 **Model comparison** (`data/reports/calibration-20261013T014624Z.json`, 2026-10-12): 50
 passed groups, current profile.md (with P3-U4) and filters (P3-U5), `api haiku-4-5 x1` as
@@ -386,7 +380,7 @@ reference.
 - 4.5 is also inconsistent with itself across batch sizes: 38 disqualified at x1 vs 22 at
   x20.
 - `cli haiku-5-5 x20`: 2 of its 3 calls failed and it reported 616k input tokens for 3
-  calls (vs 162k for 4.5). The report can't say why: that's P3-R7.
+  calls (vs 162k for 4.5). The effort comparison below explains it (P3-R10).
 
 **Effort comparison** (`data/reports/calibration-20261013T023203Z.json`, 2026-10-12): the
 same 50 groups, Haiku 5.5, `api x1` at medium (the default) as reference. The `claude` CLI
@@ -411,23 +405,12 @@ this time.
 - High effort's largest API output was 2,772 tokens, far below `thinking_headroom_tokens`
   (8,000); nothing was truncated.
 - CLI x20 is a bit noisier than the API (7.8 vs 4.6) but usable.
-- **Why the CLI uses so many tokens (P3-R10):** per-call detail shows each `claude -p` call
+- **Why the CLI uses so many tokens:** per-call detail shows each `claude -p` call
   took 2 to 5 turns (`stop_reason: tool_use`), all on claude-haiku-5-5. `--json-schema`
   works through a structured-output tool, and every extra turn resends the whole prompt
   (20 postings, about 27–35k tokens). One call used 5 turns and 237k input tokens. That
   explains the 616k in the model comparison.
 
-- **P3-C1 Model ID: my mistake, corrected.** I claimed `claude-haiku-5-5` (PLAN.md and
-  settings.yaml) was not a real model ID and switched the default to `claude-haiku-4-5`.
-  It is real: Claude Haiku 5.5, released 2026-10-07, after what I knew about. You caught it;
-  the Models API on your key lists it (checked 2026-10-12). The default stays
-  `claude-haiku-4-5` until you decide from the comparison (P3-R9). Haiku 5.5 vs 4.5, from
-  the docs: 10× cheaper per token ($0.10 / $0.50 per million input / output, for prompts up
-  to 100k tokens; 5× that above), about 30% more tokens for the same text (new tokenizer),
-  adaptive thinking on by default at `medium` effort (thinking tokens are billed as output
-  and count toward `max_tokens`), prompt caching from 512 tokens (so caching the ~3k-token
-  profile works on 5.5), and `temperature`/`top_p`/`top_k` and assistant prefill are
-  rejected (we send none of them).
 - **P3-C2 New settings:** `scoring.api.prices` per model (input, output, cache write, cache
   read), `batch_discount: 0.5`, `batch_poll_seconds: 60`, `batch_max_wait_minutes: 120`, and
   `scoring.cli.token_created` (date `claude setup-token` was run; drives the expiry warning).
@@ -457,7 +440,7 @@ this time.
   --strict-mcp-config --setting-sources "" --disable-slash-commands
   --no-session-persistence`, postings on stdin, run in the empty `scoring.cli.workdir`.
   No `--bare` (it ignores subscription logins). `--max-turns` isn't in this CLI version's
-  help; with every tool disabled the call is a single turn anyway.
+  help (calls take 2–5 turns, P3-R10).
 - **P3-D7 The CLI subprocess environment is an allowlist** (PATH, HOME, locale, TMPDIR, XDG
   dirs, CLAUDE_CONFIG_DIR, CLAUDE_CODE_OAUTH_TOKEN, proxy variables), not "everything minus
   ANTHROPIC_API_KEY". This blocks ANTHROPIC_AUTH_TOKEN and any other credential too.
@@ -484,9 +467,9 @@ this time.
   next run can't see (it would resubmit those jobs, paying twice for them).
 - **P3-D12 API max_tokens** per call = min(16,000, 1,000 + 900 × postings), which keeps
   non-streaming requests inside SDK timeouts.
-- **P3-D13 Prompt caching is marked but has no effect today:** Haiku 4.5 caches only
-  prefixes of 4,096+ tokens, and profile.md plus the rules is about 3,000. It starts paying
-  off automatically if the profile grows or the model changes.
+- **P3-D13 Prompt caching is marked** on the system prompt (profile.md plus the rules,
+  about 3,000 tokens). Haiku 5.5 caches prefixes from 512 tokens; Haiku 4.5 needs 4,096+,
+  so it gets no benefit.
 - **P3-D14 `rescore --top N`** takes the top N jobs by their best score under any profile;
   `--since DATE` takes eligible jobs first seen on/after DATE (in your timezone). Then it
   runs a scoring pass with the usual flags.
@@ -500,9 +483,9 @@ this time.
   agreement, and saves a JSON report under `paths.reports`. It requires `--yes`, after
   showing what it will spend.
 - **P3-D17 Dry runs need no credentials** and show an estimated API cost.
-- **P3-D19 `scoring.effort`** (new, default null = not sent): passed as
-  `output_config.effort` (api) and `--effort` (cli). Haiku 4.5 rejects it, so it stays null
-  for 4.5.
+- **P3-D19 `scoring.effort`** (built-in default null = not sent; your value is P9-U25):
+  passed as `output_config.effort` (api) and `--effort` (cli). Haiku 4.5 rejects it, so it
+  must be null for 4.5.
 - **P3-D20 `scoring.api.thinking_headroom_tokens: 8000`** (new): added to `max_tokens` on
   every API request, because Haiku 5.5's thinking counts toward `max_tokens` and the old
   limit (1,000 + 900 per posting) would cut it off. It only raises the cap; unused tokens
@@ -522,66 +505,31 @@ this time.
 - **P3-B2 Schema stripping** would have deleted any *property* named `title` or `default`;
   caught in review before any field had such a name.
 - **P3-B3 Dry run with `--backend api`** demanded an API key; caught on the local data.
-- **P3-B4 A test pinned the old model ID** (`claude-haiku-5-5`); updated with P3-C1.
-- **P3-B5 Double-escaped HTML in descriptions** (found in the calibration, P3-R8; a Phase 1
+- **P3-B5 Double-escaped HTML in descriptions** (found in the calibration; a Phase 1
   bug). Some boards send `&lt;p&gt;…`; `html_to_text` decoded it once, leaving literal
-  `<div><p><strong>` for Claude. Now, if the text left after one pass still has at least two
-  different HTML tags, it gets a second pass (one mentioned tag, like "use a `<div>`", is left
-  alone). Data migration `f680c1d27195` re-cleans stored descriptions, because a job that's
+  `<div><p><strong>` for Claude (10 of 39 realworkfromanywhere jobs, 3 of 99 remoteok).
+  Now, if the text left after one pass still has at least two different HTML tags, it
+  gets a second pass (one mentioned tag, like "use a `<div>`", is left alone). Data migration `f680c1d27195` re-cleans stored descriptions, because a job that's
   already stored is never re-mapped: 13 in the local DB (10 realworkfromanywhere, 3
   remoteok), 0 left after it. 2 new tests.
 
 ### P3 For you to review
 
-- **P3-R1 Live checks** (done by you on 2026-10-12, kept for reference):
-  1. `claude setup-token`, then put `CLAUDE_CODE_OAUTH_TOKEN` and the date in
-     `scoring.cli.token_created`; put `ANTHROPIC_API_KEY` in `.env`.
-  2. `uv run --env-file .env pytest -m live tests/test_live_scoring.py`: one Pro prompt
-     plus about $0.01. The cli test is the plan's "does Pro accept Haiku through the CLI"
-     check: it fails, never falls back.
-  3. `uv run --env-file .env job-scout calibrate --sample 50 --yes`: 50 API requests
-     (about $0.35) and 6 Pro prompts.
-- **P3-R2 Batch-size defaults (open decision #5):** decided, P3-U1.
 - **P3-R3 Two CLI details unverified** until the first live call: whether
   `--setting-sources ""` (load no settings files) is accepted, and the exact wording of
-  the Pro usage-limit message (detection uses a regex over several known phrasings).
-- **P3-R4 Backlog backend (open decision #6):** decided, P3-U2. Estimates on the 1,120 groups in the local
-  DB: `cli` backlog = 56 prompts at 20 per call (Pro allows roughly 10–40 prompts per
-  5 hours, shared with your chats); `api` with the Batches API ≈ $3.68
-  for all of them; `api` daily without batches ≈ $3.16 for 500.
-- **P3-R5 CLI calls per daily run (open decision #7):** still 5 (100 postings at 20 per
-  call).
-- **P3-R6 "Country (remote)" locations** (decided, P3-U3). 4dayweek lists where a role is open as
-  `<place> (remote)` entries. 704 of the 1,120 passed groups list only such places, none of
-  them allowed (e.g. 294 are just "United States (remote)"). profile.md doesn't say whether
-  that label alone is a fail or unclear, and Haiku flips between the two. Checked against
-  descriptions: of those 704, 53 mention LATAM / anywhere / South America / "open to
-  candidates", and none of the ones I read opens the role to Guatemala (most confirm
-  "residing in the US", or say "customers worldwide"). Options: a location `exclude_any`
-  rule in filters.yaml on the location field (drops them before Claude; "North America
-  (remote)", 12 groups, would have to stay unclear per profile.md), and/or one line in
-  profile.md. Both files are read-only: your call.
-- **P3-R7 Calibration report detail** (done): each configuration's `calls_detail` lists, per
+  the Pro usage-limit message (detection uses a regex over several known phrasings). You:
+  accepted as is.
+- **P3-R7 Calibration report detail** (built): each configuration's `calls_detail` lists, per
   call, postings sent, status, error (up to 1,500 characters for CLI errors), results
   returned, valid, rejected (with the first validation error), unknown and missing ids,
   tokens, cost, seconds, and backend extras: for the CLI, `num_turns`, `stop_reason` and
   `model_usage` (per-model tokens, which shows if the CLI ran other models); for the API,
   `stop_reason`. `calibrate` prints a line for every call that failed or came back short.
-  Originally proposed as: record each call's status, results
-  returned vs rejected, and the CLI's per-model usage, so a result like x40's 33 missing
-  scores or the x20 cost can be explained.
-- **P3-R8 Double-escaped HTML** (fixed, P3-B5): some
-  sources send descriptions as `&lt;p&gt;…`, and `html_to_text` decodes them only once,
-  so Claude gets literal `<div><p><strong>` tags. 10 of 39 realworkfromanywhere jobs and 3
-  of 99 remoteok jobs are affected.
-- **P3-R9 Default model:** decided, P3-U6. Original note: the comparison favors `claude-haiku-5-5` at the default
-  (medium) effort on the API: cheaper, faster, and it follows the location rules where 4.5
-  doesn't. The CLI path with 5.5 isn't usable until its failures are explained (P3-R7).
-- **P3-R10 CLI turns** (open): a `claude -p --json-schema` call takes 2–5 turns, each resending
+- **P3-R10 CLI turns:** a `claude -p --json-schema` call takes 2–5 turns, each resending
   the whole prompt, so a CLI call can use several times the tokens of a single request.
   Every call still succeeded, and the Pro plan counts usage, not dollars, but it eats into
   the 5-hour limit faster. This CLI version has no `--max-turns`. If the Pro limit becomes
-  a problem, options are smaller batches or the API backend.
+  a problem, options are smaller batches or the API backend. You: accepted as is.
 
 ---
 
@@ -592,18 +540,15 @@ groups and wrote a backlog report (6 unclear location, 24 below threshold). Then
 `run`s (5 CLI calls each): the first digest had 2 top + 21 unclear, all newly scored; the
 second had 2 top + 1 unclear, only jobs scored in that run. No job id appears in two
 reports. 13 Pro prompts in total; 1,380 groups still pending for the real backlog on the API.
-Email is built but off until your alias and token exist (P4-R4). 258 offline tests.
+Email went on after the test email arrived (P4-U10). 258 offline tests.
 
 ### P4 Your decisions
 
-- **P4-U1 Digest delivery (open decision #1): email, plus the HTML file on the home
-  server.** How email is sent is still to be agreed (P4-R1).
-- **P4-U2 Score threshold (#2): 50 for now,** to test. `digest.min_score: 50` in
-  settings.yaml (PLAN.md's default was 60).
-- **P4-U3 Daily run time (#4): 08:00 Guatemala time.** `schedule.daily_run_time: "08:00"`.
-- **P4-U4 CLI calls per daily run (#7): 5,** the default. For the real runs you'll likely
-  use the API backend too.
-- **P4-U5 Title filter (P2-R1):** don't drop titles whose role or level is ambiguous
+- **P4-U1 Digest delivery (open decision #1): email (P4-U7), plus the HTML file on the
+  home server.**
+- **P4-U5 Title filter:** about 20 of 1,148 title drops were possibly relevant ("Staff
+  Engineer", "Principal Engineer", "Senior Engineer (.NET)", "Forward Deployed Engineer",
+  "Senior Integration Engineer"). You: don't drop titles whose role or level is ambiguous
   ("Forward Deployed Engineer", "Staff Engineer"), and always keep "Senior … Engineer".
   filters.yaml (you approved the edit) now includes any title with "engineer(s)" or
   "developer(s)"; the exclude list still drops clear non-fits (sales/solutions/support
@@ -618,8 +563,8 @@ Email is built but off until your alias and token exist (P4-R4). 258 offline tes
 - **P4-U6 Crypto/Web3 boards (#3): stay skipped.** Crypto companies that post on the
   general boards (Coinbase etc.) keep coming through as before; nothing filters them.
 
-- **P4-U7 Email via Proton SMTP submission from a dedicated alias** (decides P4-R1): you're
-  creating an alias on your domain in Proton and a send-only SMTP token for it. The digest
+- **P4-U7 Email via Proton SMTP submission from a dedicated alias:** an alias on your
+  domain in Proton and a send-only SMTP token for it. The digest
   goes from the alias to your main address via `smtp.protonmail.ch:587` (STARTTLS);
   the token is read only from `JOB_SCOUT_SMTP_TOKEN`. Proton has no official sending API,
   and Bridge needs a desktop app, so SMTP submission it is. A token is send-only, works for
@@ -633,7 +578,7 @@ Email is built but off until your alias and token exist (P4-R4). 258 offline tes
 - **P4-U10 Email on; the recipient comes from the environment.** You enabled email with
   `from_address: job-scout@gadhi.one` in settings.yaml (test email received 2026-10-12).
   `to_address` stays null there and is set by `JOB_SCOUT_DIGEST__EMAIL__TO_ADDRESS` (in
-  `.env` locally, the server's env file later), so recipients change without editing
+  `.env`, on the laptop and the server), so recipients change without editing
   config. Several addresses work, comma-separated. Because the recipient may now be absent
   at load time, the config check only requires `from_address` when email is enabled; a
   missing recipient is an email failure at send time (like a missing token): the digest
@@ -661,8 +606,8 @@ Email is built but off until your alias and token exist (P4-R4). 258 offline tes
 - **P4-D4 Empty digests are still emailed** by default (`digest.send_when_empty: true`):
   the footer shows source and scoring health, so silence never hides a broken pipeline.
 - **P4-D5 Email settings:** `digest.email` (enabled, smtp_host `smtp.protonmail.ch`, port
-  587, from_address = SMTP username, to_address) replaces `digest.channel`. STARTTLS with
-  Python's default certificate checks; text + HTML parts. The token is read from
+  587, from_address = SMTP username; the recipient is P4-U10) replaces `digest.channel`.
+  STARTTLS with Python's default certificate checks; text + HTML parts. The token is read from
   `JOB_SCOUT_SMTP_TOKEN` only when sending, never stored in settings, and never in errors.
 - **P4-D6 `run`** = fetch (enabled sources) → filter → score (daily mode, configured
   backend) → digest. Every stage runs even if an earlier one failed, so a digest still goes
@@ -692,10 +637,9 @@ Email is built but off until your alias and token exist (P4-R4). 258 offline tes
 - **P4-D12 Live email test** (`tests/test_live_email.py`, `-m live`): sends one message;
   skipped until the token and addresses are set.
 
-- **P4-D13 4dayweek incremental window: at least 7 days** (was 2). Their OpenAPI spec says
-  `posted_after` means "posted within the last N days". A run on Monday night got 0 new
-  postings (nothing dated after Saturday), which is correct, but a job that appears on the
-  board with a posting date several days old would fall outside a 2-day window. The
+- **P4-D13 4dayweek incremental window: at least 7 days.** Their OpenAPI spec says
+  `posted_after` means "posted within the last N days", so a job that appears on the
+  board with a posting date several days old would fall outside a short window. The
   overlap costs about 4 extra requests and comes back as "seen". sources.yaml note updated.
 - **P4-D14 The `claude` subprocess gets `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`:** no
   auto-update (PLAN.md Phase 6 pins the CLI version), no telemetry or error reporting. The
@@ -726,37 +670,8 @@ Email is built but off until your alias and token exist (P4-R4). 258 offline tes
   takes the environment: `read_token()` wraps the token in Pydantic's `SecretStr`, which
   prints as `**********` in any repr, log line or traceback.
 
-### Answers to the Phase 1–3 review items
-
-- **P1-U3** User-Agent interpretation confirmed: keep `job-scout/0.1 (personal job
-  search)` without an email.
-- **P1-R1** Findwork: you'll create the account and set `FINDWORK_API_KEY` later (I'll
-  remind you).
-- **P1-R2** 4dayweek per-country copies: fine as is.
-- **P1-R3** Low-yield sources stay: after the first run, dedupe means only new postings
-  reach Claude; remove them later if they prove useless.
-- **P2-R2** (non-USD salaries left to Claude) and **P2-R4** (HN remote-mention mode):
-  fine as is.
-- **P2-R5** Spot check: you'll do it.
-- **P3-R3** (usage-limit wording), **P3-R10** (CLI turns), the HN title/location merge,
-  and the dry-run estimate for Haiku 5.5: accepted as is.
-
 ### P4 For you to review
 
-- **P4-R1 How email is sent:** decided, P4-U7.
-- **P4-R3 Live acceptance:** done with the small CLI test (see the top of this section). The
-  real backlog (about 1,380 groups left, est. $0.45–0.60 on the API with batches) is yours
-  to start: `job-scout backlog --backend api`.
-- **P4-R6 CLI structured-output failures:** 2 of 13 CLI calls today ended with
-  `error_max_structured_output_retries` (the CLI gave up producing valid JSON for 20
-  postings). The split-and-retry recovered every posting. If it gets frequent, smaller
-  CLI batches (`--postings-per-call 10`) are the lever; the API backend doesn't have it.
-- **P4-R4 Email:** my sandbox can't reach `smtp.protonmail.ch:587` (DNS fails: only proxied
-  HTTP(S) gets out), so the live email test must run on your side. Once the alias and its
-  token exist, set `digest.email.from_address`,
-  `to_address` and `enabled: true` (or the matching `JOB_SCOUT_DIGEST__EMAIL__*` env vars),
-  put the token in `.env` as `JOB_SCOUT_SMTP_TOKEN`, then run
-  `uv run --env-file .env pytest -m live tests/test_live_email.py` (one email).
 - **P4-R5 Look of the report:** checked by tests, not by eye; please skim the first real
   `backlog-latest.html` and tell me what to change.
 
@@ -770,23 +685,24 @@ covered with synthetic fixtures (301 tests; 41 new, with P5-U1). Live: the real 
 companies, 402 kept), and detection ran for the first 40 alphabetically: 10 boards found
 (Greenhouse 3, Lever 3, Workable 2, Ashby 2) plus Canonical from the watchlist, 30 unknown.
 Polling fetched **Canonical's 311 jobs via Greenhouse** and 173 from five other companies
-(453 new groups, 141 past the pre-filter). The other 361 companies need the full run on your
-machine (P5-R2): my sandbox only reaches hosts listed in advance, and it blocked every redirect
-to an unlisted host, so its hit rate understates the real one.
+(453 new groups, 141 past the pre-filter). The other 361 companies need the full run on
+your machine (P5-U2): my sandbox only reaches hosts listed in advance, and it blocked every
+redirect to an unlisted host, so its hit rate understates the real one.
 
 ### P5 Your decisions
 
-- **P5-U1 robots.txt follows RFC 9309** (decides P5-R1): a robots.txt answering any 4xx,
-  401 and 403 included, means "unavailable", so everything on that host is allowed (Google
-  does the same); 5xx and network errors still fail the request (the standard's "assume
-  disallow"). Real `Disallow` rules are respected as before. This replaces Python's
-  `urllib.robotparser` rule (401/403 = disallow all) from P1-D3. Effect: Ashby's posting API
-  is polled now; re-polling on 2026-10-13 fetched AirGarage (18) and Andela (15) with no
+- **P5-U1 robots.txt follows RFC 9309:** a robots.txt answering any 4xx, 401 and 403
+  included, means "unavailable", so everything on that host is allowed (Google does the
+  same); 5xx and network errors fail the request (the standard's "assume disallow"), and
+  the source fails for that run. Real `Disallow` rules are respected. Found on Ashby:
+  `api.ashbyhq.com/robots.txt` answers HTTP 401, and its posting API is a public API meant
+  for job boards; re-polling on 2026-10-13 fetched AirGarage (18) and Andela (15) with no
   board errors.
-- **P5-U2 You run the full `ats detect`** on your machine (decides P5-R2).
-- **P5-U3 Company-board postings all go to Claude** (decides P5-R3), office jobs at
-  remote-first companies included, so nothing is missed; about $1 extra on the backlog is
-  acceptable. No pre-filter change.
+- **P5-U2 You run the full `ats detect`** on your machine (361 companies were left: roughly
+  400 company sites plus the ATS probes, 15–30 minutes, safe to interrupt and re-run).
+- **P5-U3 Company-board postings all go to Claude**, office jobs at remote-first companies
+  included (Asana: Warsaw, Reykjavík; Greenhouse has no remote field), so nothing is
+  missed; about $1 extra on the backlog is acceptable. No pre-filter change.
 
 ### P5 Config fixes
 
@@ -869,24 +785,6 @@ to an unlisted host, so its hit rate understates the real one.
 
 ### P5 For you to review
 
-- **P5-R1 Ashby and robots.txt** (decided, P5-U1): `api.ashbyhq.com/robots.txt` answers
-  HTTP 401. Our client follows Python's `urllib.robotparser` rule and treats 401/403 as
-  "disallow everything", so Ashby boards are detected but never polled (2 so far:
-  AirGarage, Andela). The robots.txt standard (RFC 9309, section 2.3.1.3) treats any 4xx,
-  401/403 included, as "unavailable": crawlers may then access everything, which is also
-  how Google behaves. Ashby's posting API is a public API meant for job boards. Options:
-  follow RFC 9309 for all hosts (401/403 = no robots.txt), or keep the strict rule.
-- **P5-R2 Run the full detection on your machine** (P5-U2, yours): `uv run --env-file .env job-scout ats
-  detect` (361 companies left; it fetches roughly 400 company sites and probes the ATS
-  APIs, about 15–30 minutes at one request per second per host; safe to interrupt and
-  re-run). Then skim `data/reports/ats-unknown-*.csv`.
-- **P5-R3 Volume and office jobs** (decided, P5-U3: keep all): company boards list every role, including office jobs
-  at "remote-first" companies (Asana: Warsaw, Reykjavík), and Greenhouse has no
-  remote/on-site field, so those pass the pre-filter and Claude rejects them. The first 11
-  boards added 141 groups to score. Full detection may bring roughly 1,000–1,500 more for the
-  first backlog (about $1 on the API with Haiku 5.5), then a trickle daily. If that's too
-  much: keep only `fully-remote` seed companies, or require a remote mention in the title or
-  location for company-board postings.
 - **P5-R4 Redirects skip robots.txt checks:** the HTTP client follows redirects without
   checking the target host's robots.txt (e.g. a careers page that redirects to another
   domain). It mattered little for job boards; with ~400 company sites it's worth fixing if
@@ -896,9 +794,9 @@ to an unlisted host, so its hit rate understates the real one.
 
 ## Phase 6: Deploy on the home server (branch `phase-6-deploy`)
 
-**Acceptance:** built and checked here as far as the sandbox allows; the server steps are
-yours (P6-R1). Here: `hadolint` and `shellcheck` pass, `docker compose config` validates, the
-timer schedule resolves to 08:15 America/Guatemala (`systemd-analyze calendar`), and the
+**Acceptance:** built and checked here as far as the sandbox allows; the server steps
+(`deploy/README.md`) were yours, and the server runs. Here: `hadolint` and `shellcheck`
+pass, `docker compose config` validates, the timer schedule resolves to 08:15 America/Guatemala (`systemd-analyze calendar`), and the
 image's Python layer was simulated from the built wheel in a fresh virtualenv (migrations
 from `/app/alembic.ini`, templates, `status` and `digest --dry-run` with config from
 `JOB_SCOUT_CONFIG_DIR`). Not possible here: building the image (no access to the Docker
@@ -910,8 +808,8 @@ daemon) and `systemd-analyze verify` (read-only filesystem). 308 offline tests (
   server is also your DNS and DHCP, so you notice at once if it's down. The daily digest
   (sent even when empty) is the "it ran" signal, and a failed or hung run emails its log
   (P6-D4). Acceptance becomes "a deliberately failed run sends the failure email".
-- **P6-U2 Daily run at 08:15 Guatemala time** (was 08:00): the server boots at 08:00.
-  `Persistent=true` runs a missed run right after a late boot.
+- **P6-U2 Daily run at 08:15 Guatemala time** (`schedule.daily_run_time`): the server
+  boots at 08:00. `Persistent=true` runs a missed run right after a late boot.
 
 ### P6 Decisions (Claude)
 
@@ -919,17 +817,16 @@ daemon) and `systemd-analyze verify` (read-only filesystem). 308 offline tests (
   locked dependencies (`uv sync --frozen --no-dev`, project installed non-editable), plus the
   `claude` CLI pinned to 2.1.296. That npm package ships a native glibc binary per platform,
   so only the binary is copied into the final image; Node isn't needed at runtime. Runs as a
-  non-root user (UID/GID 1000 by default, build args); `HOME` is in `/var/lib/job-scout/home`.
-  `.dockerignore` keeps `.env`, `data/`, databases and `config/` out of the image.
+  non-root user (UID/GID 1000 by default, build args). `.dockerignore` keeps `.env`,
+  `data/`, databases and `config/` out of the image.
 - **P6-D2 Config and data are mounted** (`deploy/compose.yaml`): `config/` read-only at
-  `/app/config` (`JOB_SCOUT_CONFIG_DIR`), `/var/lib/job-scout` read-write (the paths
-  settings.yaml already uses). Secrets come from `/etc/job-scout/job-scout.env` (mode 600) via
-  `env_file`; the API key still never reaches the `claude` subprocess (its env allowlist).
+  `/app/config` (`JOB_SCOUT_CONFIG_DIR`); data and secrets as in P9-U15. The API key never
+  reaches the `claude` subprocess (its env allowlist).
 - **P6-D3 Migrations run automatically:** the entrypoint runs `alembic upgrade head` before
   every command, except `notify-failure`, which must work even when a migration is what
   failed.
 - **P6-D4 Failure email:** `job-scout.service` has `OnFailure=job-scout-failure.service`, which
-  pipes that run's journal (by `MONITOR_INVOCATION_ID`) into the new `job-scout
+  pipes that run's journal (how it's found: P9-D15) into the new `job-scout
   notify-failure` command. That command emails the result, exit status and last 120 log
   lines through the digest's Proton settings, and masks anything shaped like an Anthropic
   key or token, or `NAME=value` for our secret variables. If it can't send, it prints the
@@ -960,12 +857,6 @@ daemon) and `systemd-analyze verify` (read-only filesystem). 308 offline tests (
 
 ### P6 For you to review
 
-- **P6-R1 On the server** (`deploy/README.md`): clone to `/opt/job-scout`, create
-  `/var/lib/job-scout` (owned by 1000:1000) and `/etc/job-scout/job-scout.env`, set
-  `scoring.cli.token_created`, optionally copy your local database snapshot to keep history,
-  `docker compose build`, run `ats detect`, install and enable the timer, then the two checks:
-  a real run (`systemctl start job-scout.service`) and the failure email (`systemd-run …`).
-- **P6-R2 A git remote** is still needed to get the code onto the server (or copy it).
 - **P6-R3 CPU architecture:** the image builds for the server's own architecture (npm picks
   the matching `claude` binary). Building elsewhere for another architecture would need
   `docker buildx --platform`.
@@ -974,7 +865,7 @@ daemon) and `systemd-analyze verify` (read-only filesystem). 308 offline tests (
 
 ## Phase 7: Tier 2 scrapers (branch `phase-7-scrapers`)
 
-Built after Phase 12 (P8-U1 had skipped it), so `phase-7-scrapers` starts from
+Built after Phase 12 (P8-U1), so `phase-7-scrapers` starts from
 `phase-12-points-score`. Every site was checked live on 2026-10-19 (robots.txt, feeds,
 JSON-LD, job pages) before building.
 
@@ -986,8 +877,9 @@ JSON-LD, job pages) before building.
   `feed.xml` is a leftover template), Remote.io (a JavaScript app), Daily Remote and Remote
   Backend Jobs (aggregators: duplicates), DevOpsJobs (narrow), JobsByCulture (company
   culture, not jobs).
-- **P7-U2 The ngo profile's scraping sources, now** (deferred by P10-U25 until this
-  phase): unvacancies' job pages, the "unclear location" fixes, the HTML-only NGO boards.
+- **P7-U2 The ngo profile's scraping sources, in this phase:** unvacancies' job pages, the
+  "unclear location" fixes for feeds that lack the full posting, the HTML-only NGO boards
+  (Idealist, Impactpool).
 
 ### P7 Config fixes
 
@@ -1034,7 +926,9 @@ JSON-LD, job pages) before building.
   rules as before).
 - **P7-D7 Scraped jobs can't be refreshed** (`refresh` maps only feed and API payloads
   again). The stored card is enough to add that later.
-- **P7-D8 unvacancies reads each new job's page** (P10-R10). The pages carry no
+- **P7-D8 unvacancies reads each new job's page** (robots allows `/jobs/`): its feed items
+  carry only a one-line summary, so Claude scored them on little more than the title. The
+  pages carry no
   JobPosting, so the HTML is read by its `data-` attributes: the header's place ("Remote
   (linked to Dushanbe, Tajikistan)"), the decision strip (who can apply, contract,
   experience, languages; the closing date left out, worded "tomorrow"), the work mode and
@@ -1050,7 +944,7 @@ JSON-LD, job pages) before building.
   `company_boards`' 34 unclear have full postings that don't say.
 - **P7-D10 Idealist and Impactpool not built.** Their terms forbid bots without
   permission (P10-D4), and nothing about that changed; a scraper would break them whoever
-  asks. They need permission or an API agreement first (P10-R4 is back open as P7-R1).
+  asks. They need permission or an API agreement first (P7-R1).
   DevNetJobs stays skipped (your P10-U20). No other HTML-only NGO board was found
   scrapable (P10-D4: robots `Disallow: /`, bot walls, 403s).
 - **P7-D11 A job page is read once per run,** also when two feeds list the job
@@ -1081,12 +975,12 @@ database: a signed link opened the page (200, Claude's score shown, 👎 presele
 unsigned one got 403, Save stored the vote (303 back to the page, "Saved"), and
 `feedback report` listed it as a disagreement. Not yet seen: a real digest with links, the
 page on the server, and a scoring run with your judgments in the prompt (P8-R1, P8-R2).
-322 offline tests (14 new). Phase 7 (Tier 2 scrapers) is skipped for now (P8-U1).
+322 offline tests (14 new).
 
 ### P8 Your decisions
 
-- **P8-U1 Phase 7 skipped for now**, straight to the feedback loop. `phase-8-feedback`
-  starts from `phase-6-deploy`; there's no `phase-7-*` branch yet.
+- **P8-U1 Phase 8 before Phase 7:** straight to the feedback loop, so `phase-8-feedback`
+  starts from `phase-6-deploy`. Phase 7 (Tier 2 scrapers) was built after Phase 12.
 - **P8-U2 Feedback through a page on the home server**, linked from each digest item.
   LAN only; to reach it from outside later, a VPN into your network (Tailscale or
   WireGuard) and a different `feedback.base_url`. Proton VPN can't do it: it has no way
@@ -1135,7 +1029,7 @@ page on the server, and a scoring run with your judgments in the prompt (P8-R1, 
   (`command: feedback serve`, `restart: unless-stopped`, so it comes back with Docker at
   boot; `pull_policy: never`). It listens on 0.0.0.0:8765 in the container and publishes
   8765 on the server. The setting's default host is 127.0.0.1, so running it on a laptop
-  doesn't expose it. `JOB_SCOUT_FEEDBACK__BASE_URL` goes in the server's env file (it's
+  doesn't expose it. `JOB_SCOUT_FEEDBACK__BASE_URL` goes in the server's `.env` (it's
   that machine's address), not in `settings.yaml`.
 - **P8-D9 `feedback report`** counts the 2×2 of your vote against "Claude put it in the
   digest", the agreement rate, mean scores per vote, how many votes reacted to an older
@@ -1165,7 +1059,7 @@ page on the server, and a scoring run with your judgments in the prompt (P8-R1, 
 
 - **P8-R1 On the server:** generate `JOB_SCOUT_FEEDBACK_SECRET` (`openssl rand -hex 32`),
   give the server a name in your DNS (e.g. `jobscout.lan`), set
-  `JOB_SCOUT_FEEDBACK__BASE_URL` in `/etc/job-scout/job-scout.env`, then
+  `JOB_SCOUT_FEEDBACK__BASE_URL` in the server's `.env`, then
   `docker compose build` and `docker compose up -d feedback` (`deploy/README.md`, "Feedback
   page"). On your phone, Proton VPN's "Allow LAN connections" must be on at home.
 - **P8-R2 Look at the page** on your phone the first time and tell me if anything's off
@@ -1182,7 +1076,7 @@ page on the server, and a scoring run with your judgments in the prompt (P8-R1, 
 ## Phase 9: Questions and refactors (branch `phase-9-refactor`)
 
 **Scope:** your questions about the code and the refactors that come out of them. No new
-features planned; Phase 7 (Tier 2 scrapers) and the Findwork key are still open.
+features planned.
 
 ### P9 Your decisions
 
@@ -1289,11 +1183,8 @@ features planned; Phase 7 (Tier 2 scrapers) and the Findwork key are still open.
     annotated `Effort` in both backends (pyright widened it to `str`).
 
   Fixing these exposed 5 more, all fixed: Remote OK's fields and Working Nomads' tags
-  were untyped. Tests now use the enums for `Scoring.limits()`. Pyright on `tests/`
-  still reports 36 errors, all from before today: `Optional` values used inside asserts,
-  and test doubles that don't match the code's types. Left for you to decide (P9-R1).
-  `pyright src` is in CLAUDE.md's commands. Pyright isn't a project dependency; you
-  have it through Neovim (Mason).
+  were untyped. Tests now use the enums for `Scoring.limits()`. The tests' own errors are
+  P9-U7. Pyright isn't a project dependency; you have it through Neovim (Mason).
 
 ### P9 Bugs found and fixed (continued)
 
@@ -1306,15 +1197,11 @@ features planned; Phase 7 (Tier 2 scrapers) and the Findwork key are still open.
   reached the API and failed there). It's now checked against the allowed values when
   parsed, with a test.
 
-### P9 For you to review
-
-- ~~**P9-R1 The 36 pyright errors in `tests/`.**~~ Decided: fix them too (P9-U7).
-
 ### P9 Your decisions (continued)
 
-- **P9-U7 Type-check the tests too.** `pyright` now checks `src/` and `tests/`
-  (`include` in `pyproject.toml`'s `[tool.pyright]`, so a bare `pyright` does both):
-  0 errors.
+- **P9-U7 Type-check the tests too.** Pyright on `tests/` reported 36 errors, all older
+  than Phase 9. `pyright` now checks `src/` and `tests/` (`include` in `pyproject.toml`'s
+  `[tool.pyright]`, so a bare `pyright` does both): 0 errors.
 
 ### P9 Decisions (Claude, continued)
 
@@ -1342,29 +1229,21 @@ features planned; Phase 7 (Tier 2 scrapers) and the Findwork key are still open.
   1.1.413). If pyright is missing, the hook stops with a message instead of skipping.
   It checks the working tree rather than only the staged files, which is simpler and the
   same thing for normal commits. Tests aren't part of it (about 15 seconds); say if you
-  want them.
+  want them. It's on once per clone with `git config core.hooksPath .githooks` (CLAUDE.md);
+  `git commit --no-verify` skips it for one commit.
 
-### P9 For you to do
-
-- ~~**P9-R2 Turn the hook on**~~ Done on your machine. On another clone, run it once there:
-  `git config core.hooksPath .githooks`.
-  The sandbox can't write `.git/config`, so it isn't on yet. Skip it for one commit with
-  `git commit --no-verify`.
 - **P9-U9 No references to this log in comments.** Removed every "(DECISIONS.md P4-U5)"
   style reference from code, config, deploy files and tests (11 places). Where a reference
   carried the reason, the comment now says it directly. Example: `postings_per_call: 1`
   now says "the prompt is too short to cache". CLAUDE.md's working agreement now forbids
-  them. `config/filters.yaml` had one: it was made writable for that comment edit only,
-  then set back to read-only. The pre-filter fingerprint hashes the parsed rules, not
-  the file, so no verdicts went stale.
-- **P9-U10 `config/filters.yaml` is writable** (it's edited often). Its mode is back to
-  `rw-r--r--`, and CLAUDE.md no longer calls it read-only. `profile.md` stays read-only.
-  Git doesn't track the write bit, so nothing in the repo changes except the docs.
-- **P9-U11 No read-only config files.** `profile.md` is writable too, and the CLAUDE.md
-  rule about read-only files is gone. The general rule stays: ask before changing what
-  `config/` looks for. CLAUDE.md's scoring notes now say that any edit to `profile.md`,
-  even a comment, changes `profile_hash` and queues every eligible job again.
-- **P9-U12 Score each job once; editing `profile.md` re-scores nothing.** Only `rescore`
+  them. The pre-filter fingerprint hashes the parsed rules, not the file, so the comment
+  edit in `config/filters.yaml` left no verdict stale.
+- **P9-U11 No read-only config files.** `filters.yaml` (edited often) and `profile.md` are
+  writable (`rw-r--r--`), and the CLAUDE.md rule about read-only files is gone. Git doesn't
+  track the write bit. The general rule stays: ask before changing what `config/` looks
+  for.
+- **P9-U12 Score each job once; editing `profile.md` re-scores nothing**, not even when
+  it changes `profile_hash`. Only `rescore`
   queues a scored job again. You kept one automatic re-score: when a copy is linked to a
   scored job's group (e.g. the same job posted later for another country), it's queued
   again, because the combined locations can change where you're eligible.
@@ -1389,9 +1268,9 @@ features planned; Phase 7 (Tier 2 scrapers) and the Findwork key are still open.
   `settings.yaml`; it's set with `JOB_SCOUT_FEEDBACK__BASE_URL` because it differs per
   machine (`jobscout.lan` on the server, `127.0.0.1` locally), like the email recipient.
   The setting still exists in the model, so the env var keeps working. The same goes for
-  the token date: `JOB_SCOUT_SCORING__CLI__TOKEN_CREATED` is now in
-  `deploy/job-scout.env.example`. The deploy README sets it there instead of editing
-  `settings.yaml`, which keeps the server checkout clean for `git pull`.
+  the token date: `JOB_SCOUT_SCORING__CLI__TOKEN_CREATED` is in `.env.example`. The deploy
+  README sets it in `.env` instead of editing `settings.yaml`, which keeps the server
+  checkout clean for `git pull`.
 - **P9-U14 `.env.example` lists every env var.** It was missing `JOB_SCOUT_CONFIG_DIR`,
   `JOB_SCOUT_SCORING__EFFORT`, `JOB_SCOUT_SCORING__CLI__TOKEN_CREATED`,
   `JOB_SCOUT_FEEDBACK__HOST` and compose's `JOB_SCOUT_UID`, `JOB_SCOUT_GID` and
@@ -1427,9 +1306,9 @@ features planned; Phase 7 (Tier 2 scrapers) and the Findwork key are still open.
   - Docker itself stays rootful: your user needs the `docker` group. With rootless Docker
     the container's UID 1000 would map to another host UID and couldn't write `data/`.
   - `systemd-analyze verify` can't run in the sandbox; the README runs it on the server.
-- **P6-R1 and P6-R2 updated:** the server steps are now the ones in `deploy/README.md`
-  (clone to `~/job-scout`, `.env`, user units). The git remote exists
-  (`github.com/pablogadhi/job-scout`, private), so updates are `git pull` in `~/job-scout`.
+  - The server steps are in `deploy/README.md` (clone to `~/job-scout`, `.env`, user
+    units). The git remote is `github.com/pablogadhi/job-scout` (private), so updates are
+    `git pull` in `~/job-scout`.
 - **P9-B5 Tables were cut to 80 columns whenever the output wasn't a terminal**
   (`docker compose run -T`, a pipe, the journal): Rich assumes 80 columns there and squeezed
   `sources check` down to "ti…", "h…" and even an item count of 300 to "3…". The daily run's
@@ -1454,13 +1333,10 @@ features planned; Phase 7 (Tier 2 scrapers) and the Findwork key are still open.
   wrong in the digest, an escaped copy can't merge with the same job from another source,
   since the dedupe key is built from the names. `Posting` now decodes entities in `title`
   and `company` for every source. Rows already stored keep their text.
-- ~~**P9-R3 HN postings never merge with other sources.**~~ Decided: fix it (P9-U16). Our HN title is the comment's
-  header line (company | role | location …), on purpose, since Claude parses the rest. It
-  never equals a plain job title, so an HN job that's also on a board is scored twice. It's
-  rare now that Findwork's HN copies are skipped, but it can still happen with ATS boards
-  and Remotive. A fix would be to take the role from the header's second field for the
-  dedupe key only. Say if you want it.
-- **P9-U16 HN postings are matched on their role.** A new `Posting.dedupe_title` (not
+- **P9-U16 HN postings are matched on their role.** Our HN title is the comment's header
+  line (company | role | location …), on purpose, since Claude parses the rest. It never
+  equals a plain job title, so an HN job also on an ATS board or Remotive was scored
+  twice. A new `Posting.dedupe_title` (not
   stored) replaces the title when building `title_normalized`, so the dedupe key uses it.
   The HN mapper sets it to the header's role, and the title shown everywhere keeps the
   whole header.
@@ -1500,9 +1376,10 @@ features planned; Phase 7 (Tier 2 scrapers) and the Findwork key are still open.
   /api/*` and `Disallow: /*category=`, which cover both `/api/remote-jobs?category=…` and
   `/api/remote-jobs/categories`. `HttpClient` let them through because
   `urllib.robotparser` reads `*` literally (found during Phase 10's source research;
-  fixed in P9-B8).
+  fixed in P9-B8). Every other endpoint, the ATS APIs included, is allowed under RFC 9309.
 - **P9-U18 Remotive reads its documented RSS feed instead**
-  (github.com/remotive-com/remote-jobs-feed), which robots.txt allows. Done on this branch.
+  (github.com/remotive-com/remote-jobs-feed), which robots.txt allows. Done on this branch,
+  since it changes the running instance.
 - **P9-D19 How the Remotive feed is read:**
   - One request to `https://remotive.com/remote-jobs/feed`: the same 15 jobs the free API
     served (the category feeds are subsets of it, and the README's slugs are outdated:
@@ -1513,8 +1390,8 @@ features planned; Phase 7 (Tier 2 scrapers) and the Findwork key are still open.
     a salary is parsed only when the description labels it ("Salary: …"), otherwise it's
     left to Claude (1 of the 15 live items had one).
   - The first-run check of category slugs went with the API, and so did
-    `JsonFetcher.before`, which only it used. The budget (4 requests a day) and the 31s
-    spacing stay. A live fetch into a throwaway database stored 15 jobs with 1 request.
+    `JsonFetcher.before`, which only it used. Budget 4 requests a day, 31s spacing.
+    A live fetch into a throwaway database stored 15 jobs with 1 request.
 - **P9-B8 The robots.txt check ignored wildcards.** `urllib.robotparser` matches rule
   paths as literal prefixes, so RFC 9309 rules with `*` or `$` (`Disallow: /api/*`,
   `/*category=`, `/*/rss.xml`) never matched, and a byte-order mark at the start of the
@@ -1556,14 +1433,13 @@ features planned; Phase 7 (Tier 2 scrapers) and the Findwork key are still open.
   method. A temporary failure makes the detection inconclusive, so the company keeps its
   board and is retried next run. Costs one request per company found this way per
   detection, about 130 a month for your seed.
-- **P9-U21 Weaker watchlist jobs are collapsed.** Watchlist jobs scoring under 50 go in a
-  collapsed "Watchlist below 50 (N)" block under the watchlist section, so a watchlist
-  company posting many jobs at once doesn't swamp the digest. The cutoff is a setting,
+- **P9-U21 Weaker watchlist jobs are collapsed** into a "Watchlist below 50 (N)" block
+  under the watchlist section, so a watchlist company posting many jobs at once doesn't
+  swamp the digest (per company since P13-D5). The cutoff is a setting,
   `digest.watchlist_collapse_below: 50`. Jobs between `watchlist_min_score` (21) and 50
-  still appear and still count as reported; only their layout changes.
-- **P9-D24 In the plain-text email part they're one line each** ("[34] Title - Company
-  (job #N)"), since plain text can't collapse. The split happens in the templates, so the
-  digest's bookkeeping (`Sections.watchlist`, recorded job ids) is unchanged.
+  still appear and still count as reported; only their layout changes. The split happens
+  in the templates, so the digest's bookkeeping (`Sections.watchlist`, recorded job ids)
+  is unchanged.
 - **P9-U22 Travel is not a work-life-balance concern.** Claude listed "travel twice a
   year" under WLB concerns. The user is fine with up to about 6 trips a year, maybe more,
   to anywhere in the world. `profile.md` now says so next to the on-call rule.
@@ -1572,56 +1448,41 @@ features planned; Phase 7 (Tier 2 scrapers) and the Findwork key are still open.
   ("25%+", monthly or weekly trips) is a mild negative, never a disqualifier. Occasional
   travel never makes a role hybrid. Editing the profile re-scores nothing: jobs already
   scored keep their old travel flags.
-- **P9-U23 Descriptions are cut at 20,000 characters instead of 6,000.** Measured on the
+- **P9-U23 Descriptions are cut at 20,000 characters.** Measured on the
   local DB: 732 of 1,711 groups that passed the pre-filter were longer than 6,000, and in
   150 of them the salary, in 143 a location rule, appeared only in the part that was cut
   (one US-only security clearance among them). At 20,000 only the longest few are cut.
   Extra input is about 400k tokens for the whole backlog, ~$0.04 on Haiku 5.5.
-- **P9-D26 The CLI's call limits stay as they are.** A packing simulation of the 1,531
-  pending groups: per posting the median stays ~1,570 tokens, p90 goes from 1,660 to
-  2,420, the max from 2,000 to 5,500. Calls stay at 20 postings (77 calls either way);
-  the median call grows from 32k to 36k input tokens and the largest reaches 59k, so the
-  60k input budget splits just one call. One live CLI call (approved by the user) sent the
-  largest planned call, 11 long postings at ~59k estimated input tokens: all 11 results
-  came back in 63 seconds, well inside the 600-second timeout. Earlier 20-posting calls
-  took 47-178 seconds; the 2 of 11 that failed did so at the old cap too (exit code 1,
-  `error_max_structured_output_retries`) and were retried split in half.
+- **P9-D26 The 60k input budget per CLI call holds 20,000-character descriptions.** A
+  packing simulation of the 1,531 pending groups: per posting the median stays ~1,570
+  tokens, p90 goes from 1,660 to 2,420, the max from 2,000 to 5,500. The largest call
+  reaches 59k input tokens. One live CLI call (approved by the user) sent 11 long postings
+  at ~59k estimated input tokens: all 11 results came back in 63 seconds, well inside the
+  600-second timeout.
 - **P9-U24 Cost estimates assume real reply lengths.** The dry-run price, the spend guard
-  and a batch's stored estimate counted 450 output tokens per posting; real replies run
-  ~1,250-1,550 with Haiku 5.5's thinking (190 postings over 11 CLI calls averaged 1,256;
-  the live 11-posting call 1,530). They now use `COST_OUTPUT_TOKENS_PER_POSTING = 1_500`.
-  For a 1,500-job backlog on the Batches API that's about $0.80 more than before, closer
-  to what the user was billed.
+  and a batch's stored estimate use `COST_OUTPUT_TOKENS_PER_POSTING` (its value: P12-D30),
+  not the 450 output tokens per posting that call packing assumes: with Haiku 5.5's
+  thinking, real replies run several times longer.
 - **P9-D27 Call packing keeps the 450.** `max_output_tokens_per_call: 12000` is tuned
-  against it; raising it there would cut CLI calls from 20 postings to 7. API requests
-  are capped at 1,900 + 8,000 thinking headroom = 9,900 output tokens, ~6× a typical
+  against it; raising it there would cut the postings a CLI call can hold. API requests
+  are capped at 1,900 + 8,000 thinking headroom = 9,900 output tokens, ~5× a typical
   reply, so that cap stays too. The spend-guard test's budget went from $0.004 to $0.01
   so it still admits part of the batch.
-- **P9-D28 The cost estimate is 1,100 output tokens per posting, not 1,500.** The user ran
-  the check on the server: the API backlog averaged 1,115 output tokens per posting over
-  2,767 single-posting requests. That's the backend that bills, so it replaces the CLI
-  figure (CLI calls hold 20 postings and ran longer per posting).
-- **P9-U25 The user's settings changes:** `scoring.effort: medium`, daily CLI `max_calls:
-  10` (was 5) and the Batches API for daily API runs (`use_batches_api: true`). A daily
-  run on the API now waits up to `batch_max_wait_minutes` (120) for its batch; jobs whose
-  batch isn't back in time go into the next digest. The user's formatter also realigned
-  a few inline comments. Committed as the user made them.
+- **P9-U25 The user's settings changes:** `scoring.effort: medium` and the Batches API for
+  daily API runs (`use_batches_api: true`). A daily run on the API waits up to
+  `batch_max_wait_minutes` (120) for its batch; jobs whose batch isn't back in time go
+  into the next digest. Committed as the user made them.
 - **P9-U26 Tests no longer depend on `config/settings.yaml`.** The user: "it's pointless
   to have a settings file that can change at anytime if the tests are going to break".
-  Their `max_calls: 10` broke `test_limits_from_settings`.
-- **P9-D29 How:** tests load `tests/fixtures/config/`, a pinned `settings.yaml` (the
-  committed values before P9-U25, comments dropped) plus symlinks to the real
-  `sources.yaml`, `filters.yaml` and `profile.md`. `test_limits_from_settings` reads the
-  pinned settings, as it read the real ones before (the user: a test that builds its own
-  limits checks nothing). `test_repo_config_is_valid` still loads the real `config/` but no longer
-  asserts its backend and model. The deploy tests override `app_config` with the real
-  config, since the timer, ports and paths must match what gets deployed. Checked by
-  bumping every number and flipping every flag in a copy of `config/settings.yaml`: 15
-  tests failed before, now only the feedback-port deploy check does, as it should.
-- **P9-R5 Tests still read the real `sources.yaml`, `filters.yaml` and `profile.md`.** Some
-  assert their content (the watchlist's first entry is Canonical, Findwork's `max_pages`
-  is 5, the dedupe key). Not pinned yet, since the user asked about settings; left for
-  review. Resolved in Phase 12 (P12-D27).
+  Their `max_calls` edit broke `test_limits_from_settings`.
+- **P9-D29 How:** tests load `tests/fixtures/config/`, pinned copies of the config files
+  (P12-D27). `test_limits_from_settings` reads the pinned settings, as it read the real
+  ones before (the user: a test that builds its own limits checks nothing).
+  `test_repo_config_is_valid` still loads the real `config/` but no longer asserts its
+  backend and model. The deploy tests override `app_config` with the real config, since
+  the timer, ports and paths must match what gets deployed. Checked by bumping every
+  number and flipping every flag in a copy of `config/settings.yaml`: 15 tests failed
+  before, now only the feedback-port deploy check does, as it should.
 - **P9-U27 Findjobit reads every job, not only the Guatemala feed.** The user: "What if
   eventually some posts a remote job in another country though. Even if we don't find any
   right now, doesn't mean that there won't be any". A poster ticks the countries a job is
@@ -1655,36 +1516,25 @@ your approval between steps.
 - **P10-U5 A separate agent works on it** in its own git worktree
   (`~/Documents/Projects/job-scout-phase-10`), in a named session
   (`phase-10-second-profile`).
-- **P10-U6 Remotive switches to its documented RSS feed** (`/remote-jobs/feed`, allowed by
-  robots.txt, same 15 jobs, same job ids), on `phase-9-refactor` since it changes the
-  running instance (P9-U18, P9-D19). It reaches this branch when phase 9 is merged in.
-- **P10-U7 Fix the robots.txt check (P10-B1)** on `phase-9-refactor`. Done there with
-  `protego` (P9-B8, P9-D20); this branch gets it with the phase 9 merge.
-- **P10-U8 Sources to build:** ReliefWeb (API) and unvacancies.org first (Step 5), Workday
-  as the first new ATS platform (Step 7). Step 1 is done.
+- **P10-U8 Sources to build:** ReliefWeb (its feed, P10-U18) and unvacancies.org first
+  (Step 5), Workday as the first new ATS platform (Step 7). Step 1 is done.
 - **P10-U9 The second instance is `ngo`:** daily run at 08:30 (after yours at 08:15),
   feedback page on host port 8766.
-- **P10-U10 You request the ReliefWeb appname** (P10-R1).
-- **P10-U11 The duplicate P9 IDs stay as they are** (P10-R8).
-- **P10-U12 `skill_fit` and `seniority_fit` stay unchecked for 0–5** (P10-D17): no range
-  notation in profile.md.
-- **P10-U13 The profile skill is a project skill,** not one of your user skills (replaces
-  P10-D23).
+- **P10-U13 The profile skill is a project skill** at the standard path,
+  `.claude/skills/job-scout-profile/` (you moved it there), not one of your user skills.
 - **P10-U14 The skill asks one question at a time.**
-- **P10-U16 The skill lives at the standard path,** `.claude/skills/job-scout-profile/`
-  (you moved it; replaces the symlink in P10-D23).
 - **P10-U15 Two instances never run at once.** Of the three options for shared rate limits,
   only this one: no check that a capped source is enabled in one instance only, and no
   shared request log across instances.
 - **P10-U17 Feed before API, then robots.txt:** when researching a source, look for RSS
   first, then an API, then check robots.txt for each (now a convention in CLAUDE.md). You
   proposed ReliefWeb's job search feed
-  (`/jobs/rss.xml?advanced-search=(TY263)_(CC6867)&search=remote`); robots.txt denies it
-  (P10-R1).
-- **P10-U18 Read ReliefWeb's feed despite robots.txt:** the feed is linked from every search
-  page, so the `Disallow: /*/rss.xml` rule doesn't apply to it here. Settles the feed side
-  of P10-R1; the API stays open.
-- **P10-U19 Look up unvacancies.org's feed filters** (P10-R5).
+  (`/jobs/rss.xml?advanced-search=(TY263)_(CC6867)&search=remote`).
+- **P10-U18 Read ReliefWeb's feed despite robots.txt:** `reliefweb.int/robots.txt` has
+  `Disallow: /*/rss.xml` for every agent, but the feed is linked from every search page,
+  so you decided the rule doesn't apply to it here (`ignore_robots_txt`, P10-D30).
+- **P10-U19 Look up unvacancies.org's feed filters,** which aren't documented (found:
+  P10-D33).
 - **P10-U20 Skip DevNetJobs.** Its terms don't allow its listings to be "stored or made
   available … in electronic … media … without prior permission", and few would be lost
   (P10-D38). It's under `skipped:` with that reason.
@@ -1697,14 +1547,13 @@ your approval between steps.
 - **P10-U23 No feedback links for ngo.** Its votes won't be used, so its `.env` gets no
   `JOB_SCOUT_FEEDBACK_SECRET` or base URL: its digests carry no 👍/👎 links and its feedback
   service isn't started.
-- **P10-U24 No ReliefWeb API appname:** the feed is enough (closes P10-R1).
-- **P10-U25 Scrapers wait** until they're built for your profile (Phase 7's scrapers):
-  Step 6, unvacancies' job pages (P10-R10), the "unclear location" fixes for sources whose
-  feeds lack the full posting, and HTML-only boards such as Idealist and Impactpool (P10-R4).
-- **P10-U26 ngo's first digest looks right:** Step 5 is done (P10-R13). With Step 6
-  deferred (P10-U25) and Step 7 met (P10-D48), every step of the phase is done or deferred.
-- **P10-U27 The server setup waits** (P10-R7 stays open, for later).
-- **P10-U28 No Jobvite pagination watch** (closes P10-R12).
+- **P10-U24 No ReliefWeb API:** the feed is enough. The API needs a pre-approved
+  `appname`, and `api.reliefweb.int/robots.txt` disallows everything.
+- **P10-U26 ngo's first digest looks right**
+  (`instances/ngo/data/reports/digest-20261016T034412Z.html`): Step 5 is done. Step 6
+  (scrapers) moved to Phase 7 (P7-U2) and Step 7 is met (P10-D48).
+- **P10-U28 No Jobvite pagination watch:** only a board's first page is read (P10-D45),
+  and nothing watches for boards with more.
 
 ### P10 Decisions (Claude)
 
@@ -1712,10 +1561,10 @@ your approval between steps.
   request that needed our User-Agent went through job-scout's `HttpClient` from a scratch
   script outside the repo: at most 3–4 requests per site, robots.txt included, saved
   only under the gitignored `data/recordings/phase10/`. Robots verdicts come from an RFC 9309
-  matcher, not `urllib.robotparser` (P10-B1). The deliverable is
+  matcher, not `urllib.robotparser` (P9-B8). The deliverable is
   `docs/phase-10-research.md`, with counts and structure only, no posting text. No code,
   config or tests changed.
-- **P10-D2 Recommended first set: ReliefWeb (API) and unvacancies.org.** ReliefWeb is the
+- **P10-D2 Recommended first set: ReliefWeb and unvacancies.org.** ReliefWeb is the
   widest development and humanitarian board, with a remote/roster view and facets for
   consultancy, program management and experience. unvacancies.org indexes 43 UN-system
   portals plus World Vision, IRC, Save the Children and Oxfam, and invites feed reuse.
@@ -1782,23 +1631,16 @@ your approval between steps.
   of strings, and numbers and true/false keep their type. `role_category`'s values
   therefore come from the profile like any other field's. Nested objects and other examples
   fail at load. A profile can add any field without a code change.
-- **P10-D15 Core fields:** `disqualified`, `disqualify_reason`, `remote`,
-  `location_eligibility`, `salary`, `matched_skills`, `gaps`, `red_flags`,
-  `overall_score`, `summary`. The brief's list plus `disqualify_reason`, which the reports
-  show next to `disqualified`. A profile must declare them with the same values the code
-  types them with (`CoreResult`), or every command stops with a config error.
-  `role_category`, `skill_fit`, `seniority_fit` and `four_day_week`, required until now,
-  became your profile's own fields.
+- **P10-D15 Core fields** (the list is P12-D11): a profile must declare them with the
+  same values the code types them with (`CoreResult`), or every command stops with a
+  config error. `role_category` and the other engineering fields are your profile's own.
 - **P10-D16 Two models:** a strict one per profile for Claude's replies (built in the
   profile's order, job_id first, extra keys rejected, cached per profile hash), and
   `CoreResult` for reading any stored result: the core fields typed, every other field kept
   as it is. Reports, feedback and export read with `CoreResult`, so a score made under an
   older profile still reads. Stored results keep the profile's field order.
-- **P10-D17 Your profile's schema is unchanged, byte for byte** (key order included;
-  `tests/fixtures/score_schema_repo_profile.json` holds the old one, and a test compares).
-  One difference in validation: `skill_fit` and `seniority_fit` lost their 0–5 check. The
-  range is in profile.md's prose, which the code doesn't read, and the API already stripped
-  it from the schema, so what Claude sees is the same.
+- **P10-D17 Your profile's schema was unchanged, byte for byte** (key order included;
+  `tests/fixtures/score_schema_repo_profile.json` holds it, and a test compares).
 - **P10-D18 Reports show a profile's own fields generically.** The templates keep their
   rows for the fields they name (`NAMED_FIELDS`), now each guarded with `is defined`.
   Any other field becomes a "Label: value" row after the work-life rows, and a CSV column
@@ -1810,40 +1652,23 @@ your approval between steps.
   rows) are byte-identical before and after, rendered from a copy of your laptop database
   with a fixed clock and fixed feedback links.
 - **P10-D20 Working Nomads' categories are config:** `categories: [Development]` on the
-  source (empty keeps all). `JsonFetcher` got a `keep(ctx, item)` hook, run inside the
-  mapper so an item it can't read is skipped like any other.
+  source (empty keeps all), matched on its `category_name`. `JsonFetcher` got a
+  `keep(ctx, item)` hook, run inside the mapper so an item it can't read is skipped like
+  any other.
 - **P10-D21 Tested end to end with a synthetic nonprofit profile** (`tests/test_profile_fields.py`):
   own role categories, travel, contract length and donor fields, none of your profile's
   extras. Claude is asked for exactly its fields; a reply with an unknown travel value is
   rejected; the backlog report and the CSV show the new fields.
 
-### P10 Bugs found (not fixed: Step 1 changes no code)
-
-- **P10-B1 `HttpClient`'s robots.txt check ignores wildcards.** `urllib.robotparser`
-  compares rule paths as literal prefixes, so RFC 9309 rules like `Disallow: /api/*`,
-  `/*category=` or `/*/rss.xml` never match and the client fetches disallowed URLs. It also
-  doesn't strip a leading byte-order mark, which drops the first group's `User-agent` line.
-  Fix options in P10-R3.
-- **P10-B2 Remotive's robots.txt disallows both configured Remotive URLs** (`/api/*` and
-  `/*category=`). The `sources.yaml` note "robots.txt allows job-scout's UA" (2026-10-12)
-  comes from P10-B1. Every other existing endpoint, the ATS APIs included, is allowed
-  under RFC 9309.
-
 ### P10 Decisions (Claude, Step 4: the profile skill)
 
-- **P10-D22 The skill is instructions and references, no code:** `skills/job-scout-profile/`
-  with `SKILL.md` (the workflow: read the CV, draft, interview one question at a
-  time, write the three files, check, hand over) and `references/` (the questions,
+- **P10-D22 The skill is instructions and references, no code:**
+  `.claude/skills/job-scout-profile/` with `SKILL.md` (the workflow: read the CV, draft,
+  interview one question at a time, write the three files, check, hand over) and `references/` (the questions,
   each with where its answer goes; a profile.md template; a filters guide with a full
   example for program roles in English and Spanish). Ground rules in the skill: the CV and
   everything generated stay in `instances/<name>/`, no spending or email without a yes,
   network only through `job-scout fetch`, posting text is untrusted.
-- ~~**P10-D23 Installed by a chezmoi symlink** into `~/.claude/skills/`.~~ Replaced by
-  P10-U13: the files stay in `skills/job-scout-profile/` (the sandbox can't write under
-  `.claude/skills`, so that's where they can be edited and tested), and a committed relative
-  symlink, `.claude/skills/job-scout-profile` → `../../skills/job-scout-profile`, makes it a
-  project skill. Your session cleanup hook only removes empty read-only stub files directly
-  in `.claude/`, so it leaves the link alone.
 - **P10-D24 Proposed sources go into an instance's `sources.yaml` with `enabled: false`** and
   a note. The fetch runner skips a source without a fetcher ("no fetcher registered"), so
   they're harmless until Step 5 builds them.
@@ -1858,11 +1683,10 @@ your approval between steps.
   ten sample titles as intended). A throwaway instance built from the references passed
   `sources check`, and its filters ran over the 3,468 postings in a copy of your database
   (all tech boards): 6% passed, mostly program and lead titles. The throwaway instance and
-  the copy were deleted. Not done: a run with the real CV, which is yours (P10-R9).
+  the copy were deleted. The run with the real CV is P10-D36.
 
 - **P10-D29 With the skill in `.claude/skills/`:** Claude Code's Bash sandbox mounts that
-  directory read-only (it's one of the sandbox's protected paths; while it didn't exist, the
-  sandbox blocked the path entirely, which is what looked like "unreadable" before). So the
+  directory read-only (it's one of the sandbox's protected paths). So the
   skill's test reads it as before, in Claude's sessions too, and shell commands can't
   change it. The docs say no `allowWrite` entry or `Edit` rule exempts a protected path;
   only `filesystem.disabled` (every path, and not settable in a project's settings) turns it
@@ -1916,8 +1740,8 @@ your approval between steps.
 
 ### P10 Decisions (Claude, the ngo profile and more sources)
 
-- **P10-D36 The profile skill ran with the real CV** (P10-R9). The operator answered the
-  interview; the generated `profile.md`, `filters.yaml` and `sources.yaml` stay in the
+- **P10-D36 The profile skill ran with the real CV** (Step 4's "done when"). The operator
+  answered the interview; the generated `profile.md`, `filters.yaml` and `sources.yaml` stay in the
   gitignored instance. Findings that apply beyond it: filter rules match one field at a time,
   so a profile that accepts hybrid work in one country can't drop "hybrid" by regex (the
   remote field and the location field are matched separately); and the general remote
@@ -1943,7 +1767,7 @@ your approval between steps.
   Global Communities, DAI). 13 answered HTTP 403 to our client (TechnoServe, Root Capital,
   CRS, IDB, Chemonics among them); the rest list jobs on their own pages or load them with
   JavaScript. IDB's vacancies are on an Impactpool career site, whose terms forbid scraping
-  (P10-R4).
+  (P7-R1).
 
 ### P10 Decisions (Claude, Step 7: company boards, Workday)
 
@@ -2006,16 +1830,17 @@ your approval between steps.
   consultancy 60, an M&E consultancy roster 45 (location and pay unclear), a remote English
   tutoring job 22. Five per call disagreed on hard requirements (up to 22 points, rank
   agreement 0.81), so the instance stays at one posting per call. Before it, Workday's
-  explicit on-site jobs are dropped by a remote rule in ngo's filters.yaml (your yes to
-  P10-R11): 69 groups, 390 still pass.
+  explicit on-site jobs ("In Person", "Fully Present" in its work-mode field, which the ngo
+  profile disqualifies) are dropped by a remote rule in ngo's filters.yaml (your yes): 69
+  groups, 390 still pass.
 
 ### P10 Decisions (Claude, the first real run)
 
 - **P10-D48 What the run did:** 390 calls, one posting each (claude-haiku-5-5), $0.25
   estimated, 0 failures. The digest (2026-10-16 03:44 UTC) had 2 top matches and 40 with
   unclear location, and its source health lists `company_boards` with 886 items, which is
-  Step 7's "done when". Most unclear locations are unvacancies jobs: its feed gives only a
-  one-line summary, so eligibility can't be read (deferred, P10-U25).
+  Step 7's "done when". Most unclear locations were unvacancies jobs: its feed gives only a
+  one-line summary, so eligibility couldn't be read (fixed by its page step, P7-D8).
 - **P10-D49 Deploy docs: an instance's feedback page is optional** (`deploy/README.md`,
   step 4 and the update note), and ngo doesn't run one (P10-U23).
 
@@ -2046,54 +1871,6 @@ your approval between steps.
   tag. It now has its own environment with the defaults; the template itself is
   unchanged. Found while comparing Step 3's output; a test checks one field per line.
   HTML mail clients show the HTML part, which was never affected.
-
-### P10 For you to review
-
-- ~~**P10-R1 ReliefWeb access.**~~ The API needs a pre-approved `appname` (request form on
-  reliefweb.int; yours to submit), and `api.reliefweb.int/robots.txt` disallows everything
-  while the docs invite API use. Recommended: ask about the robots rule in the appname
-  request, and exempt that host from the robots check once approved. The RSS feeds are no
-  way around it: `reliefweb.int/robots.txt` has `Disallow: /*/rss.xml` for every agent
-  (checked again on 2026-10-15), so `HttpClient` refuses `/jobs/rss.xml`. Robots allows the
-  first page of a filtered `/jobs?...` listing (`&page=` is disallowed), which a scraper
-  could read. Feed side decided: read it anyway (P10-U18); the API part is still open.
-  Closed: no appname (P10-U24).
-- ~~**P10-R2 Remotive in the existing instance.**~~ Decided: read its RSS feed instead
-  (P10-U6).
-- ~~**P10-R3 The robots fix (P10-B1).**~~ Decided: fix it on `phase-9-refactor` (P10-U7).
-- ~~**P10-R4 Idealist and Impactpool:** ask either for permission or an API agreement, or
-  leave them out.~~ Deferred with the scrapers (P10-U25).
-- ~~**P10-R5 unvacancies.org's feed filters aren't documented.**~~ Decided (P10-U19);
-  found (P10-D33).
-- ~~**P10-R6 Choose the sources to build.**~~ Decided (P10-U8).
-- **P10-R7 On the server**, later (P10-U27) (`deploy/README.md`, "Another instance"):
-  copy `instances/ngo` over, `sources check` through compose, install `job-scout@.service`
-  and `job-scout@ngo.timer`, run `systemd-analyze --user verify` on them, and check
-  `list-timers` shows both runs. Rebuild the image first (protego, ReliefWeb, unvacancies,
-  Workday, Jobvite and iCIMS).
-- ~~**P10-R8 Five P9 IDs are defined twice** (P9-B7, B8, U18, D19, D20).~~ Decided: leave
-  them (P10-U11).
-- ~~**P10-R9 Run the profile skill with the real CV** (Step 4's "done when"): put the CV in
-  `instances/ngo/`, start a new Claude Code session in this worktree and ask for it
-  (`/job-scout-profile`). Then review the generated `profile.md`, `filters.yaml` and
-  `sources.yaml`.~~ Done (P10-D36).
-- ~~**P10-R11 Drop Workday's explicit on-site jobs in ngo?** 65 of the 294 board jobs that
-  pass say "In Person" or "Fully Present" in Workday's work-mode field, which the ngo
-  profile disqualifies. A remote rule matching that whole field
-  (`'^(in person|fully present|on-site)$'`) would drop them before scoring (about 65 calls
-  once, a few a day after). The profile skill tightens filters only on the operator's say-so.~~
-  Done (P10-D47).
-- ~~**P10-R12 Jobvite pagination:** only a board's first page is read (P10-D45). If the log
-  ever says a Jobvite board "has more pages", record that board and model its next pages.~~
-  Dropped (P10-U28).
-- ~~**P10-R10 unvacancies job pages:** feed items carry only a one-line summary, so Claude
-  scores them on little more than the title. Each job page has the full notice, work mode,
-  duty station and deadline (robots allows `/jobs/`). Reading them is one request per new
-  job (a few a day per feed): a small scraper, which needs your approval.~~ Deferred with
-  the scrapers (P10-U25).
-- ~~**P10-R13 Your verdict on ngo's first digest** (Step 5's "done when": "a real digest for
-  the second profile looks right to me"):
-  `instances/ngo/data/reports/digest-20261016T034412Z.html`.~~ It looks right (P10-U26).
 
 ## Phase 12: A points score computed by code (branch `phase-12-points-score`)
 
@@ -2271,9 +2048,6 @@ your approval between steps.
 - **P12-D20 The profile skill writes scoring.yaml too:** the template profile asks for
   facts, a new `references/scoring-template.yaml` holds the points with placeholders that
   match it, and `test_profile_skill.py` checks the two fit together.
-- **P12-R1 The ngo instance doesn't load until Step 4.** Its profile.md still declares
-  `overall_score` and it has no scoring.yaml; both are written with you in Step 4, before
-  anything of Phase 12 is deployed. Done in Step 4 (P12-D21): it loads.
 
 ### P12 Bugs found and fixed (Step 3)
 
@@ -2286,7 +2060,9 @@ your approval between steps.
 
 Its files are in the gitignored `instances/ngo/config/`; nothing personal is logged here.
 
-- **P12-D21 Converted, not re-interviewed.** profile.md keeps the person's facts and rules;
+- **P12-D21 Converted, not re-interviewed,** before anything of Phase 12 was deployed
+  (until then the instance didn't load: its profile.md declared `overall_score` and it
+  had no scoring.yaml). profile.md keeps the person's facts and rules;
   only what gave points changed: the rubric, `overall_score`, `disqualified`,
   `disqualify_reason`, `matched_skills` and `gaps` are gone, and "boost", "lower", "subtract
   15" and the ranges became fields and signals. The old file was kept outside the repo
@@ -2303,22 +2079,16 @@ Its files are in the gitignored `instances/ngo/config/`; nothing personal is log
   employer 4; caps at 45 for the wrong role or level and a missing main requirement, 49 for
   frequent travel. A strong full-time fit with nothing known about travel or hours scores
   about 80, a consultancy with little travel and fitting hours about 95.
-- **P12-U9 Heavier work-life negatives.** You said yes to −8 (from −5) for long hours,
-  on-call and emergency response: a consultancy with two of them went from 79 to 73.
-- **P12-U10 Working hours: only Asia-Pacific is a no-go.** You: "if it's remote it doesn't
-  matter much. Where it should be 49 is if it's Japan or new zeland hours, those should be
-  definitely a no no." `hours_fit` now splits `europe-africa` (0 points, against 5 for
-  hours that fit) from `asia-pacific` (−10 and a cap at 49). Claude's choice, for your
-  review: Middle Eastern and South Asian hours go with Europe and Africa; Australian and
-  East or Southeast Asian hours with Japan and New Zealand.
-- **P12-U11 Working hours regrouped.** New Zealand business time is 15:00–23:00 in
-  Guatemala, which overlaps her window more than Europe's (02:00–10:00). You: "Nvm about new
-  zealand then, let's uncap that timezon. Let's cap middle easy and south asia tho, those
-  are unacceptable." `hours_fit` is now `fits | outside | night | unknown`: `outside`
-  (Europe, Africa, New Zealand) is 0 points; `night` (Middle East, South Asia, East and
-  Southeast Asia including Japan, Australia) is −10 and capped at 49. Claude's choice, for
-  your review: Australia stays with `night` (Sydney's 9–5 is 17:00–01:00 in Guatemala,
-  16:00–00:00 in its summer; close to Japan's 18:00–03:00). This replaces P12-U10's split.
+- **P12-U9 Heavier work-life negatives.** You said yes to −8 for long hours, on-call and
+  emergency response: a consultancy with two of them scores 73.
+- **P12-U11 Working hours: only night hours are a no-go.** You: "if it's remote it doesn't
+  matter much", and Middle Eastern and South Asian hours "are unacceptable". New Zealand
+  business time is 15:00–23:00 in Guatemala, which overlaps her window more than Europe's
+  (02:00–10:00). `hours_fit` is `fits | outside | night | unknown`: `fits` is 5 points;
+  `outside` (Europe, Africa, New Zealand) 0; `night` (Middle East, South Asia, East and
+  Southeast Asia including Japan, Australia) −10 and capped at 49. Claude's choice, for
+  your review: Australia is `night` (Sydney's 9–5 is 17:00–01:00 in Guatemala,
+  16:00–00:00 in its summer; close to Japan's 18:00–03:00).
 
 ### P12 Paid checks (Step 5)
 
@@ -2331,20 +2101,15 @@ Its files are in the gitignored `instances/ngo/config/`; nothing personal is log
   20-posting calls of the old format: about 6.5 requirements and 0.3 signals per reply,
   1,950 characters of JSON. The scores read as intended (top 73, caps at 45 and 49, 7 of
   19 disqualified with the right reason).
-- **P12-U12 CLI calls carry 15 postings, not 20** (daily and backlog), after P12-D25. You
-  chose it; the comments in settings.yaml say why.
-- **P12-U13 The cost estimate assumes 1,750 output tokens per posting** (was 1,100): the
-  measured API figure times the 1.6 growth seen on the CLI, until API requests are measured
-  again. The legacy rescore's estimate went from $0.92 to $1.20.
 - **P12-U14 No rescore on the laptop.** You: "I'll do that with the server data, we only
   have a subset here". The laptop's 19 new-format scores are from P12-D25.
-- **P12-U15 The digest no longer lists "Language: english-or-spanish".** You chose it (it
+- **P12-U15 The digest doesn't list "Language: english-or-spanish".** You chose it (it
   showed on every job). `UNLISTED_FIELDS` in `report/data.py` keeps a field out of the
-  reports but in the CSV; `language` is its only member, since a required other language
-  already shows as the disqualify reason.
-- **P12-D27 All five test config files are pinned copies** (resolves P9-R5): `sources.yaml`,
-  `filters.yaml` and `profile.md` in `tests/fixtures/config/` were links to `config/`, now
-  copies with a header saying so. The tests asserting their content (the watchlist's first
+  reports but in the CSV: `language` and `posting_type` (P12-U19), whose only use is a
+  disqualify reason, which the reports already show.
+- **P12-D27 All five test config files are pinned copies:** `sources.yaml`, `filters.yaml`,
+  `profile.md`, `settings.yaml` and `scoring.yaml` in `tests/fixtures/config/`, each with a
+  header saying so. The tests asserting their content (the watchlist's first
   entry, tier-1 defaults, the dedupe key, a skipped reason) read the pinned copies, and so
   do the backend test's schema and the HTTP fixture generator (the regenerated fixtures
   came out identical). Only `test_repo_config_is_valid` (your files load and agree, as at
@@ -2381,9 +2146,11 @@ Its files are in the gitignored `instances/ngo/config/`; nothing personal is log
   hybrid with the office in Guatemala is still remote), and requirements are only those the
   posting states, with an empty list when it states none. The ngo files aren't in git;
   copy its `profile.md` to the server.
-- **P12-D30 The cost estimate assumes 2,100 output tokens per posting** (was 1,750, from
-  P12-U13). Your server's rescore of the main profile, one Batches API run: 2,920 postings,
-  6,137,039 output tokens (2,102 per posting, thinking included), $1.94.
+- **P12-D30 The cost estimate assumes 2,100 output tokens per posting**
+  (`COST_OUTPUT_TOKENS_PER_POSTING`, used by the dry-run price, the spend guard and a
+  batch's stored estimate). Measured on the API, the backend that bills: your server's
+  rescore of the main profile, one Batches API run, 2,920 postings, 6,137,039 output
+  tokens (2,102 per posting, thinking included), $1.94.
 - **P12-B3 `simulate`'s spread table counted disqualified jobs.** On your server data every
   group's lowest score was 20: a job disqualified by a rule on a field outside the grouping
   (`remote: no`, `language: other`) looked like spread among alike jobs. Disqualified jobs
@@ -2395,9 +2162,9 @@ Its files are in the gitignored `instances/ngo/config/`; nothing personal is log
   profile there: a country label alone is unclear. At min_score 50/55/60/65/70 the sections
   were top 82/82/72/62/51 and unclear 574/538/431/347/243 (one week of initial fetching,
   so totals, not daily volumes).
-- **P12-U18 `digest.min_score` is 60** (was 50 "while testing"); the location rule stays as
-  it is. You agreed with Claude's suggestion: the top list barely changes from 50, the
-  unclear list shrinks by a quarter. A separate, higher bar for unclear jobs is the next
+- **P12-U18 `digest.min_score` is 60;** the location rule stays as it is. You agreed with
+  Claude's suggestion: the top list barely changes from 50, the unclear list shrinks by a
+  quarter. A separate, higher bar for unclear jobs is the next
   step if that list stays too long.
 - **P12-U19 A post that isn't a job opening is disqualified.** An HN post by a candidate
   advertising themselves scored 56 (Claude called it full-stack, from the skills it
@@ -2423,12 +2190,6 @@ Its files are in the gitignored `instances/ngo/config/`; nothing personal is log
   that field, Claude added one exception: a request for proposals or expressions of
   interest from consultants is a job; a funding call inviting organizations to apply for
   grants is not. Copy the instance's `profile.md` and `scoring.yaml` to the server.
-- **P12-U22 CLI calls carry 10 postings, up to 20 calls a day** (daily mode; backlog mode
-  10 per call, still 25 calls). Your server, two days of manual runs: 32 CLI calls sent
-  515 postings and 31 jobs needed a retry (about 6%; all scored on the retry, none
-  failed). New jobs passing the filter run about 80–190 a day once the initial fetch is
-  done, above the old 150 (10 calls of 15). Replies shrink from about 30,000 tokens to
-  about 20,000, and 20 calls fit well inside the run's 2-hour limit.
 - **P12-B4 Two sources gave Claude only a summary.** You found three jobs in the digest's
   unclear section whose pages plainly rule them out (relocation to Warsaw; "must be in
   Germany"; hybrid in Ghent or Bucharest). typescriptjobs' feed (and its page's JobPosting
@@ -2493,8 +2254,8 @@ Its files are in the gitignored `instances/ngo/config/`; nothing personal is log
   $100k–$120k to score lower but stay in, and under $100k to be out. `salary` gains a
   `near` value: profile.md asks for `meets` (top of the range ≥ $120k), `near` ($100k up to
   $120k) or `below` (under $100k); scoring.yaml gives meets 10, unlisted 6, near 2, below 0,
-  and `below` still disqualifies. filters.yaml's pre-filter floor went from $120k to $100k,
-  so a stated $100k–$120k range now reaches Claude (every verdict is judged again once,
+  and `below` still disqualifies. filters.yaml's pre-filter floor is $100k, so a stated
+  $100k–$120k range reaches Claude (every verdict is judged again once,
   since filters.yaml changed; no spend).
 - **P12-D36 `near` is a core value a profile may leave out.** `salary` is a core field, so
   every profile had to declare exactly `meets | below | unlisted`; the code now accepts it
@@ -2504,8 +2265,8 @@ Its files are in the gitignored `instances/ngo/config/`; nothing personal is log
   before) and near's 2 points: a good fit scores about 72 instead of 80, still above the
   digest's 60; `simulate` can try other numbers.
 - **P12-D37 `rescore --where FIELD=VALUE`** queues every scored job whose stored result
-  has that value, checked against profile.md's output format. Jobs scored under the
-  $120k rule have `below` for a $100k–$120k range, so `rescore --where salary=below`
+  has that value, checked against profile.md's output format. Jobs scored before P12-U24
+  have `below` for a $100k–$120k range, so `rescore --where salary=below`
   re-extracts them (7 on the laptop). Changing the thresholds later needs the same, since
   Claude applies them; changing near's points doesn't.
 
@@ -2567,16 +2328,19 @@ three levels: sections, companies and jobs.
   the count and the planned calls, then leaves them as they were.
 
 - **P13-U6 A sender name.** You asked for a name instead of the bare address in the
-  inbox. `digest.email.from_name` (optional) goes in the `From` header as
-  `job-scout <job-scout@gadhi.one>`, for the digest and the failure email; the SMTP login
-  stays the address. Claude set `job-scout` in your settings.yaml and in ngo's (instance
-  file, not in git).
+  inbox. `digest.email.from_name` (optional) goes in the `From` header, for the digest and
+  the failure email; the SMTP login stays the address. Yours is `Gadhi's Job Scout`; ngo's
+  is `job-scout` (instance file, not in git).
 
-- **P13-U7 A higher daily cap.** You said daily runs hit `max_calls` often, so pending jobs
-  carried over. `scoring.modes.daily.cli.max_calls` went from 20 to 30 (10 postings a call,
-  about 300 a day). A 10-posting call takes about 50 s, so 30 calls are about 25 minutes
-  of scoring, well under the units' `TimeoutStartSec=2h`. ngo's cap (5 calls of 20) is
-  unchanged.
+- **P13-U7 CLI calls carry 10 postings, up to 30 calls a day** (daily mode; backlog mode 10
+  per call, 25 calls), so about 300 postings a day. You said daily runs hit `max_calls`
+  often, so pending jobs carried over. Why 10 a call: at 15, your server's two days of
+  manual runs had 31 of 515 jobs (about 6%) left out of a reply and retried (all scored on
+  the retry); at 20, calls ended with `error_max_structured_output_retries` (2 of 13 on
+  the first day); 40 lost 33 of 50 results and 60 hit the 600 s timeout (P3 calibration).
+  Smaller calls also mean smaller replies (about 20,000 output tokens instead of 30,000).
+  Why 30 calls: a 10-posting call takes about 50 s, so 30 are about 25 minutes of
+  scoring, well under the units' `TimeoutStartSec=2h`. ngo's cap is unchanged.
 
 ### P13 Bugs found and fixed
 

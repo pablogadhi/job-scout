@@ -11,6 +11,9 @@ Claude → daily digest. `PLAN.md` is the build brief (phases, data model, scori
 - **Log every decision in `DECISIONS.md`:** decisions Claude made alone, the user's
   decisions, config fixes, bugs found and fixed, and items left for review, under the
   current phase's section with an ID (`P2-D3`). Update it before each phase's commit.
+  A decision that changes an earlier one replaces it: the newest entry states what holds
+  now (with the reasons still true), and the earlier entry is removed or trimmed, with
+  references to it repointed. A review item goes once its outcome is logged.
   Code, config, docs and tests never cite it: a comment states the reason itself, or
   nothing.
 - **Test fixtures are always synthetic.** Never commit recorded responses or real posting
