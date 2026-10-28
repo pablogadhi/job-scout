@@ -2572,6 +2572,12 @@ three levels: sections, companies and jobs.
   stays the address. Claude set `job-scout` in your settings.yaml and in ngo's (instance
   file, not in git).
 
+- **P13-U7 A higher daily cap.** You said daily runs hit `max_calls` often, so pending jobs
+  carried over. `scoring.modes.daily.cli.max_calls` went from 20 to 30 (10 postings a call,
+  about 300 a day). A 10-posting call takes about 50 s, so 30 calls are about 25 minutes
+  of scoring, well under the units' `TimeoutStartSec=2h`. ngo's cap (5 calls of 20) is
+  unchanged.
+
 ### P13 Bugs found and fixed
 
 - **P13-B2 The systemd units couldn't find a snap's Docker.** A manual start of
