@@ -2374,8 +2374,10 @@ your votes and where you applied.
   a column, not a section. It has a 👍/👎 column you can click to add or change a vote, an
   "applied" checkbox saved as you check it, a search by title or company, each job's
   digest details when you expand its row, and a link column to the posting.
-- **P14-U2 It runs on the feedback service,** behind a signed link: the always-on page
-  already on your LAN, so each instance gets its own. No separate local-only command.
+- **P14-U2 It runs on the feedback service, at its root** (`JOB_SCOUT_FEEDBACK__BASE_URL`
+  itself): the always-on page already on your LAN, so each instance gets its own. No
+  separate local-only command. It first sat behind a tokened link (`/d?k=…`); you found
+  that annoying on a LAN page and asked for the root without one.
 - **P14-U3 The feedback cell's tooltip is your reason.**
 - **P14-U4 Below threshold starts collapsed** (182 of your 199 scored jobs); top and
   unclear location start open. A search never opens or closes a section: you found that it
@@ -2385,17 +2387,20 @@ your votes and where you applied.
   applied, including ones fetched later, and unchecking clears them all.
 - **P14-U6 The vote dialog reuses the feedback page:** its form markup and styles, and its
   endpoint `POST /f/<job_id>` with the same checks.
+- **P14-U7 Filters:** watchlist (on it / not), your vote (👍 / 👎 / none yet) and applied
+  (yes / no), combined with the search. The browser remembers them between reloads.
 
 ### P14 Decisions (Claude)
 
-- **P14-D1 The dashboard's link** is `/d?k=<token>`, an HMAC of a fixed message under
-  `JOB_SCOUT_FEEDBACK_SECRET`. The message differs from a job's, so neither can stand in
-  for the other. The token only opens the page: every write still carries that job's own
-  signature (embedded per row), as the digest's links do. `job-scout feedback dashboard-url`
-  prints it, and the digest's footer links to it when feedback links are on. `feedback
-  serve` doesn't print it, because the service's logs would keep it.
+- **P14-D1 The dashboard is `/`, unsigned** (P14-U2). Every write still carries that job's
+  own signature (embedded per row), as the digest's links do, so another site can't post
+  votes or applied marks into it. `/d` answers 308 to `/`, so the tokened links in digests
+  already sent still work. `feedback serve` prints the URL when `base_url` is set, and the
+  digest's footer links to it when feedback links are on; the `feedback dashboard-url`
+  command went with the token. The applied endpoint moved to `/applied/<job_id>` and the
+  script to `/dashboard.js`.
 - **P14-D2 One script, only on the dashboard.** Its Content-Security-Policy adds
-  `script-src 'self'; connect-src 'self'`, for `/d/dashboard.js`, never inline. Job text
+  `script-src 'self'; connect-src 'self'`, for `/dashboard.js`, never inline. Job text
   reaches it only through escaped `data-*` attributes and is set as `textContent`. The
   feedback page and the digest stay script-free.
 - **P14-D3 Shared templates instead of copies.**
@@ -2417,12 +2422,17 @@ your votes and where you applied.
   watchlist_section=False)`; the digest is unchanged.
 - **P14-D7 Details are rendered into the page,** hidden until expanded: 590 KB for your 199
   scored jobs, fine on a LAN; no per-row request.
+- **P14-D8 Filters are remembered in `localStorage`,** per browser and per instance (each
+  has its own port, so its own origin); the search is not. Without storage (a private
+  window) they just reset. A filter is reapplied after a vote or an applied change, so a
+  row you just marked can drop out of a "Not applied" view.
 - Checked on a copy of your database, served on 127.0.0.1:
-  - The sections were 4 / 13 / 182, and a request without the token got 403.
-  - A vote through `/f/232` was saved, and so was an applied mark through
-    `/d/applied/232` (Supabase).
+  - The sections were 4 / 13 / 182.
+  - A vote through `/f/232` was saved, and so was an applied mark (Supabase).
   - A bad signature got 403.
-  - Not checked in a browser: hover, dialog, checkbox, search, dark mode, phone width.
+  - After the token went: `/` and `/dashboard.js` answered 200, `/d?k=…` 308 to `/`.
+  - Not checked in a browser: hover, dialog, checkbox, search, filters and their memory,
+    dark mode, phone width.
 
 ### P14 Bugs found and fixed
 

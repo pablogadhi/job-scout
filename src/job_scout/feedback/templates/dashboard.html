@@ -1,7 +1,7 @@
 <!doctype html>
 {#- The dashboard: every scored job, one table per digest section. Job text is untrusted:
     autoescape is on, nothing is marked safe, and the script reads job text only from data-*
-    attributes (never from inline script). The only script is /d/dashboard.js. -#}
+    attributes (never from inline script). The only script is /dashboard.js. -#}
 {%- from "_vote_form.html" import vote_form %}
 {%- from "_job.html" import job_details %}
 <html lang="en">
@@ -18,6 +18,12 @@
   input[type="search"] { box-sizing: border-box; width: 100%; font: inherit; padding: 8px 10px;
                          margin: 12px 0 4px; background: var(--card); color: var(--fg);
                          border: 1px solid var(--line); border-radius: 8px; }
+  .filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px;
+             margin: 8px 0; font-size: 14px; color: var(--muted); }
+  .filters select { font: inherit; padding: 4px 6px; margin-left: 4px; background: var(--card);
+                    color: var(--fg); border: 1px solid var(--line); border-radius: 6px; }
+  .filters select.active { border-color: var(--accent); }
+  .filters button { width: auto; margin: 0; padding: 4px 8px; font-weight: 400; }
   details.section { margin: 20px 0; }
   details.section > summary { cursor: pointer; padding-bottom: 4px;
                               border-bottom: 1px solid var(--line); }
@@ -59,7 +65,7 @@
             --badge-bg: #2f2850; --badge-fg: #cfc4ff; }
   }
 </style>
-<script src="/d/dashboard.js" defer></script>
+<script src="/dashboard.js" defer></script>
 </head>
 <body>
 <div class="wrap">
@@ -68,6 +74,18 @@
   generated {{ generated_at }}. Click a row for its details.</p>
 <input type="search" id="search" placeholder="Search by title or company" autocomplete="off"
        aria-label="Search by title or company">
+<div class="filters">
+  <label>Watchlist<select data-filter="watchlist" autocomplete="off">
+    <option value="">Any</option><option value="yes">On the watchlist</option>
+    <option value="no">Not on it</option></select></label>
+  <label>Feedback<select data-filter="feedback" autocomplete="off">
+    <option value="">Any</option><option value="up">👍 Positive</option>
+    <option value="down">👎 Negative</option><option value="none">None yet</option></select></label>
+  <label>Applied<select data-filter="applied" autocomplete="off">
+    <option value="">Any</option><option value="yes">Applied</option>
+    <option value="no">Not applied</option></select></label>
+  <button type="button" class="secondary" id="clear-filters" hidden>Clear filters</button>
+</div>
 
 {%- for section in sections %}
 <details class="section"{% if section.open %} open{% endif %}>
@@ -84,7 +102,7 @@
 <tbody>
 {%- for row in section.rows %}
 {%- set item = row.item %}
-<tr class="job" data-search="{{ row.search_text }}">
+<tr class="job" data-search="{{ row.search_text }}" data-watchlist="{{ 1 if item.watchlist else 0 }}">
   <td class="num"><span class="score {% if item.overall >= 70 %}s-high{% elif item.overall >= 50 %}s-mid{% endif %}">{{ item.overall }}</span>
     {%- if item.disqualified %}<br><span class="flag" title="{{ item.disqualify_reason or 'disqualified' }}">dq</span>{% endif %}</td>
   <td><button type="button" class="expand" aria-expanded="false">{{ item.title }}</button>

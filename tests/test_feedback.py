@@ -35,9 +35,7 @@ from job_scout.feedback.links import (
     feedback_links,
     read_secret,
     sign,
-    sign_dashboard,
     verify,
-    verify_dashboard,
 )
 from job_scout.feedback.report import feedback_stats
 from job_scout.feedback.server import FeedbackApp, make_server
@@ -297,7 +295,7 @@ def test_page_rejects_bad_requests(
     assert page.handle("GET", f"/f/{job_id + 1}?s={s}").status == 403  # another job's link
     assert page.handle("POST", f"/f/{job_id}", "s=nope&vote=up").status == 403
     assert page.handle("POST", f"/f/{job_id}", f"s={s}&vote=maybe").status == 400
-    assert page.handle("GET", "/").status == 404
+    assert page.handle("GET", "/x").status == 404
     assert page.handle("GET", "/f/abc").status == 404
     missing = 999
     assert page.handle("GET", f"/f/{missing}?s={sign(SECRET, missing)}").status == 404
@@ -339,7 +337,7 @@ def test_server_over_a_socket(
 
 
 def dashboard(page: FeedbackApp) -> str:
-    response = page.handle("GET", f"/d?k={sign_dashboard(SECRET)}")
+    response = page.handle("GET", "/")
     assert response.status == 200
     return response.body
 
@@ -355,15 +353,16 @@ def section_ids(html: str) -> dict[str, list[int]]:
     return out
 
 
-def test_dashboard_token() -> None:
-    token = sign_dashboard(SECRET)
-    assert verify_dashboard(SECRET, token)
-    assert not verify_dashboard(SECRET, sign(SECRET, 1))  # a job's signature isn't the token
-    assert not verify(SECRET, 1, token)
-    assert not verify_dashboard(SECRET, "é")  # non-ASCII is a mismatch, not an error
-    assert not verify(SECRET, 1, "é")
+def test_dashboard_is_the_root(
+    app_config: AppConfig, session_factory: sessionmaker[Session]
+) -> None:
+    assert not verify(SECRET, 1, "é")  # non-ASCII is a mismatch, not an error
     links = FeedbackLinks("http://jobscout.lan:8765", SECRET)
-    assert links.dashboard_url() == f"http://jobscout.lan:8765/d?k={token}"
+    assert links.dashboard_url() == "http://jobscout.lan:8765/"
+    page = feedback_app(app_config, session_factory)
+    assert page.handle("GET", "/").status == 200  # no token
+    old = page.handle("GET", "/d?k=anything")  # the tokened link in earlier digests
+    assert old.status == 308 and old.headers["Location"] == "/"
 
 
 def test_dashboard_lists_every_scored_job_by_section(
@@ -388,6 +387,9 @@ def test_dashboard_lists_every_scored_job_by_section(
         "Below threshold": [low, watch, dq],  # by score, the disqualified one last
     }
     assert html.count('title="On your watchlist">★') == 1
+    assert html.count('data-watchlist="1"') == 1  # what the watchlist filter reads
+    for name in ("watchlist", "feedback", "applied"):
+        assert f'<select data-filter="{name}"' in html
     assert ">dq</span>" in html
     # Your vote, with its reason as the tooltip (escaped), and the form the dialog posts.
     assert 'data-vote="down"' in html and 'title="Agency &lt;b&gt;role&lt;/b&gt;">👎' in html
@@ -410,13 +412,13 @@ def test_dashboard_escapes_posting_text_and_allows_only_its_script(
         )
     add_score(session_factory, job_id, app_config.profile.sha256, 80)
     page = feedback_app(app_config, session_factory)
-    response = page.handle("GET", f"/d?k={sign_dashboard(SECRET)}")
+    response = page.handle("GET", "/")
     assert "<script>alert" not in response.body and "&lt;script&gt;" in response.body
     assert "javascript:" not in response.body
-    assert '<script src="/d/dashboard.js" defer></script>' in response.body
+    assert '<script src="/dashboard.js" defer></script>' in response.body
     csp = response.headers["Content-Security-Policy"]
     assert "script-src 'self'" in csp and "connect-src 'self'" in csp
-    script = page.handle("GET", "/d/dashboard.js")
+    script = page.handle("GET", "/dashboard.js")
     assert script.status == 200 and "text/javascript" in script.headers["Content-Type"]
     assert "Content-Security-Policy" not in page.handle("GET", f"/f/{job_id}").headers
 
@@ -427,19 +429,18 @@ def test_dashboard_rejects_bad_requests(
     (job_id,) = seed_jobs(session_factory, 1)
     page = feedback_app(app_config, session_factory)
     s = sign(SECRET, job_id)
-    assert page.handle("GET", "/d").status == 403
-    assert page.handle("GET", f"/d?k={s}").status == 403  # a job's signature
-    assert page.handle("GET", "/d?k=%C3%A9").status == 403
-    assert page.handle("POST", f"/d?k={sign_dashboard(SECRET)}").status == 405
-    assert page.handle("GET", "/d/other").status == 404
-    assert page.handle("GET", f"/d/applied/{job_id}").status == 405
-    applied = f"/d/applied/{job_id}"
+    assert page.handle("POST", "/").status == 405
+    assert page.handle("POST", "/dashboard.js").status == 405
+    assert page.handle("GET", "/other").status == 404
+    assert page.handle("GET", "/applied/x").status == 404
+    assert page.handle("GET", f"/applied/{job_id}").status == 405
+    applied = f"/applied/{job_id}"
     assert page.handle("POST", applied, "s=nope&applied=1").status == 403
     assert page.handle("POST", applied, f"s={sign(SECRET, job_id + 1)}&applied=1").status == 403
     assert page.handle("POST", applied, f"s={s}&applied=yes").status == 400
     missing = 999
     assert (
-        page.handle("POST", f"/d/applied/{missing}", f"s={sign(SECRET, missing)}&applied=1").status
+        page.handle("POST", f"/applied/{missing}", f"s={sign(SECRET, missing)}&applied=1").status
         == 404
     )
     with session_factory() as session:
@@ -465,7 +466,7 @@ def test_applied_marks_the_whole_company(
 
     def post(job_id: int, applied: str) -> dict[str, Any]:
         response = page.handle(
-            "POST", f"/d/applied/{job_id}", f"s={sign(SECRET, job_id)}&applied={applied}"
+            "POST", f"/applied/{job_id}", f"s={sign(SECRET, job_id)}&applied={applied}"
         )
         assert response.status == 200
         return json.loads(response.body)
@@ -490,21 +491,6 @@ def test_applied_marks_the_whole_company(
     assert "Applied to Acme" not in html and html.count(" checked>") == 1
 
 
-def test_dashboard_url_command(monkeypatch: pytest.MonkeyPatch) -> None:
-    def run(env: dict[str, str]) -> Any:
-        return CliRunner().invoke(
-            app, ["--config-dir", str(TEST_CONFIG), "feedback", "dashboard-url"], env=env
-        )
-
-    monkeypatch.delenv(SECRET_ENV, raising=False)
-    assert SECRET_ENV in run({}).output
-    no_url = run({SECRET_ENV: "s" * 40})
-    assert no_url.exit_code == 2 and "base_url" in no_url.output
-    ok = run({SECRET_ENV: "s" * 40, "JOB_SCOUT_FEEDBACK__BASE_URL": "http://jobscout.lan:8765"})
-    assert ok.exit_code == 0
-    assert ok.output.strip() == f"http://jobscout.lan:8765/d?k={sign_dashboard(SECRET)}"
-
-
 # --- digest links --------------------------------------------------------------------------
 
 
@@ -522,7 +508,7 @@ def test_digest_has_feedback_links_when_configured(
     (job_id,) = seed_jobs(session_factory, 1)
     add_score(session_factory, job_id, config.profile.sha256, 80)
     without = make_digest(config, session_factory, now=NOW, environ={}, dry_run=True)
-    assert "/f/" not in without.path.read_text() and "/d?k=" not in without.path.read_text()
+    assert "/f/" not in without.path.read_text() and "the dashboard" not in without.path.read_text()
 
     outcome = make_digest(
         config, session_factory, now=NOW, environ={SECRET_ENV: "s" * 40}, dry_run=True
@@ -530,7 +516,7 @@ def test_digest_has_feedback_links_when_configured(
     html = outcome.path.read_text()
     link = f"http://jobscout.lan:8765/f/{job_id}?v=up&amp;s={sign(SECRET, job_id)}"
     assert link in html and "👎 Not for me" in html
-    assert f"http://jobscout.lan:8765/d?k={sign_dashboard(SECRET)}" in html
+    assert '<a href="http://jobscout.lan:8765/">Open the dashboard</a>' in html
 
 
 # --- report ------------------------------------------------------------------------------

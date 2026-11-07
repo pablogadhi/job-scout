@@ -1,7 +1,6 @@
 """Signed feedback links. A link names one job; its signature proves the digest made it, so
-nobody can vote on other jobs by editing the number in the URL. The dashboard's link carries
-a token signed over a different message, so it can't stand in for a job's signature, nor the
-other way round.
+nobody can vote on other jobs by editing the number in the URL. The dashboard is the
+server's root, unsigned: it's a LAN page, and each of its rows carries its job's signature.
 
 The secret is read only from JOB_SCOUT_FEEDBACK_SECRET, never from a file in git.
 """
@@ -57,14 +56,6 @@ def verify(secret: SecretStr, job_id: int, signature: str) -> bool:
     return _matches(sign(secret, job_id), signature)
 
 
-def sign_dashboard(secret: SecretStr) -> str:
-    return _sign(secret, "job-scout dashboard")
-
-
-def verify_dashboard(secret: SecretStr, token: str) -> bool:
-    return _matches(sign_dashboard(secret), token)
-
-
 @dataclass(frozen=True)
 class FeedbackLinks:
     base_url: str
@@ -75,7 +66,7 @@ class FeedbackLinks:
         return f"{self.base_url}/f/{job_id}?{query}"
 
     def dashboard_url(self) -> str:
-        return f"{self.base_url}/d?" + urlencode({"k": sign_dashboard(self.secret)})
+        return f"{self.base_url}/"
 
 
 def feedback_links(settings: FeedbackSettings, environ: Mapping[str, str]) -> FeedbackLinks | None:

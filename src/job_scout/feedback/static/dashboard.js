@@ -1,5 +1,5 @@
-// The dashboard's behaviour: search, expandable rows, the vote dialog and the applied
-// checkboxes. Job text comes from data-* attributes and is only ever set as textContent.
+// The dashboard's behaviour: search and filters, expandable rows, the vote dialog and the
+// applied checkboxes. Job text comes from data-* attributes and is only ever set as textContent.
 "use strict";
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -21,23 +21,79 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 
-  // --- search ------------------------------------------------------------------------------
+  // --- search and filters -----------------------------------------------------------------
+  // The filters (not the search) are remembered in this browser between reloads.
+  const STORAGE_KEY = "job-scout:dashboard-filters";
   const search = document.getElementById("search");
-  search.addEventListener("input", () => {
+  const selects = [...document.querySelectorAll("select[data-filter]")];
+  const clear = document.getElementById("clear-filters");
+
+  const matches = (row, query, filter) => {
+    if (query && !row.dataset.search.includes(query)) return false;
+    if (filter.watchlist && (row.dataset.watchlist === "1") !== (filter.watchlist === "yes")) {
+      return false;
+    }
+    const vote = row.querySelector("button.vote").dataset.vote;
+    if (filter.feedback === "none" ? vote : filter.feedback && vote !== filter.feedback) {
+      return false;
+    }
+    const applied = row.querySelector('input[type="checkbox"][data-key]').checked;
+    return !filter.applied || applied === (filter.applied === "yes");
+  };
+
+  const refresh = () => {
     const query = search.value.trim().toLowerCase();
+    const filter = Object.fromEntries(selects.map((select) => [select.dataset.filter, select.value]));
+    selects.forEach((select) => select.classList.toggle("active", Boolean(select.value)));
+    clear.hidden = !selects.some((select) => select.value);
     document.querySelectorAll("details.section").forEach((section) => {
       let shown = 0;
       section.querySelectorAll("tr.job").forEach((row) => {
-        const match = !query || row.dataset.search.includes(query);
+        const match = matches(row, query, filter);
         row.hidden = !match;
         if (!match) setExpanded(row, false);
         if (match) shown += 1;
       });
       section.querySelector(".count").textContent = String(shown);
-      // A search leaves sections as you left them: its count says what a closed one holds.
+      // Filtering leaves sections as you left them: its count says what a closed one holds.
       section.querySelector(".empty").hidden = shown > 0;
     });
+  };
+
+  const saveFilters = () => {
+    const filter = Object.fromEntries(selects.map((select) => [select.dataset.filter, select.value]));
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(filter));
+    } catch {
+      // Storage blocked (a private window): the filters just aren't remembered.
+    }
+  };
+
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
+    selects.forEach((select) => {
+      const value = saved[select.dataset.filter];
+      if ([...select.options].some((option) => option.value === value)) select.value = value;
+    });
+  } catch {
+    // Nothing saved, or storage blocked: start with every filter on "Any".
+  }
+
+  search.addEventListener("input", refresh);
+  selects.forEach((select) =>
+    select.addEventListener("change", () => {
+      saveFilters();
+      refresh();
+    }),
+  );
+  clear.addEventListener("click", () => {
+    selects.forEach((select) => {
+      select.value = "";
+    });
+    saveFilters();
+    refresh();
   });
+  refresh();
 
   // --- the vote dialog (the feedback page's form, posted to /f/<job_id>) --------------------
   const dialog = document.getElementById("vote-dialog");
@@ -89,6 +145,7 @@ document.addEventListener("DOMContentLoaded", () => {
       current.textContent = emoji[vote];
       current.title = reason || "No reason given";
       dialog.close();
+      refresh(); // a feedback filter may now hide the row
       return;
     }
     let message = "Couldn't save: the server didn't answer.";
@@ -114,7 +171,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const applied = box.checked;
       const body = new URLSearchParams({ s: box.dataset.s, applied: applied ? "1" : "0" });
       try {
-        const response = await fetch(`/d/applied/${box.dataset.job}`, { method: "POST", body });
+        const response = await fetch(`/applied/${box.dataset.job}`, { method: "POST", body });
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
         document
@@ -125,6 +182,7 @@ document.addEventListener("DOMContentLoaded", () => {
             other.title = appliedTitle(other, data.applied ? data.date : null);
           });
         showStatus("");
+        refresh(); // an applied filter may now hide the company's rows
       } catch (error) {
         box.checked = !applied;
         showStatus(`Couldn't save "applied": ${error.message}`);

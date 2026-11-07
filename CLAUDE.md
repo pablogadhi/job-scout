@@ -38,7 +38,6 @@ uv run --env-file .env job-scout digest --dry-run   # reports/digest-preview.htm
 uv run --env-file .env job-scout export --sqlite    # CSV of every posting + DB snapshot
 uv run --env-file .env job-scout ats detect      # seed + watchlist -> company boards (resumable)
 uv run --env-file .env job-scout feedback serve  # the 👍/👎 page and the dashboard (needs JOB_SCOUT_FEEDBACK_SECRET)
-uv run --env-file .env job-scout feedback dashboard-url  # the dashboard's link (needs base_url too)
 uv run --env-file .env job-scout feedback report # the scores vs your votes
 uv run --env-file .env job-scout simulate --table candidate.yaml  # a scoring.yaml vs stored scores
 uv run --env-file .env job-scout rescore --legacy --dry-run  # re-extract jobs scored before points
@@ -142,15 +141,16 @@ instance; an instance's files never go into git.
   details, the `_job.html` macro the dashboard shares: no scripts, since the HTML is the
   email), `build.py` (digest and backlog report:
   write, email, record in `digests`), `mailer.py` (SMTP), `export.py` (CSV, SQLite snapshot).
-- `src/job_scout/feedback/`: your votes and the dashboard. `links.py` (signed per-job links
-  and the dashboard's token, secret from `JOB_SCOUT_FEEDBACK_SECRET`), `store.py` (one
+- `src/job_scout/feedback/`: your votes and the dashboard. `links.py` (signed per-job links,
+  secret from `JOB_SCOUT_FEEDBACK_SECRET`), `store.py` (one
   `feedback` row per canonical job, with the score you reacted to; one `applications` row
   per company you applied to), `examples.py` (which judgments go into the scoring prompt),
   `server.py` (the page and the dashboard: stdlib HTTP server, `FeedbackApp.handle` is
   socket-free for tests), `dashboard.py` (every scored job in the digest's sections, without
   the watchlist section), `templates/` (`_vote_form.html` and `_style.html` are shared by
   the page and the dashboard, which also imports the digest's `_job.html` details),
-  `static/dashboard.js` (the only script: search, rows, vote dialog, applied boxes),
+  `static/dashboard.js` (the only script: search, filters remembered in localStorage, rows,
+  vote dialog, applied boxes),
   `report.py` (agreement stats).
 - `Dockerfile` + `deploy/`: the server setup (`deploy/README.md`). One image (Python deps from
   `uv.lock`, the pinned native `claude` binary); `compose.yaml` mounts `config/` read-only and
@@ -215,11 +215,10 @@ instance; an instance's files never go into git.
 - **Feedback:** the digest links to `<feedback.base_url>/f/<job_id>?v=…&s=<signature>`;
   opening a link saves nothing, only the page's POST does. No links while
   `JOB_SCOUT_FEEDBACK__BASE_URL` (env only: it differs per machine) or
-  `JOB_SCOUT_FEEDBACK_SECRET` is unset. The dashboard (`/d?k=<token>`, a token signed over
-  a different message than a job's) lists every scored job; its vote dialog posts to
-  `/f/<job_id>` like the page, and its applied checkbox to `/d/applied/<job_id>`, each with
-  the job's own signature. Applied is per company (`company_normalized`; a job without a
-  company stands alone). Only the dashboard's CSP allows a script (`/d/dashboard.js`,
+  `JOB_SCOUT_FEEDBACK_SECRET` is unset. The dashboard (the server's root `/`, no token: it's
+  a LAN page) lists every scored job; its vote dialog posts to `/f/<job_id>` like the page,
+  and its applied checkbox to `/applied/<job_id>`, each with the job's own signature. Applied is per company (`company_normalized`; a job without a
+  company stands alone). Only the dashboard's CSP allows a script (`/dashboard.js`,
   never inline); job text reaches it through escaped `data-*` attributes. Judgments enter
   the system prompt as `<judgment>` elements (`scoring/prompt.py`); they never re-queue a
   scored job;

@@ -4,14 +4,14 @@ GET /f/<job_id>?v=up|down&s=<signature> shows the job, Claude's score, your vote
 and a box for a reason; nothing is saved until you press Save (mail apps sometimes open
 links on their own). POST /f/<job_id> saves and redirects back to the page.
 
-GET /d?k=<token> is the dashboard: every scored job (dashboard.py). Its vote dialog posts to
-POST /f/<job_id> like the page does; its applied checkbox posts to POST /d/applied/<job_id>.
-GET /d/dashboard.js is its script, the only script this server sends; the dashboard's
-Content-Security-Policy allows it, the feedback page's allows none.
+GET / is the dashboard: every scored job (dashboard.py). It needs no token: it's one
+person's LAN page. Its vote dialog posts to POST /f/<job_id> like the page does; its applied
+checkbox posts to POST /applied/<job_id>. GET /dashboard.js is its script, the only script
+this server sends; the dashboard's Content-Security-Policy allows it, the feedback page's
+allows none. GET /d (the dashboard's old, tokened address) redirects to /.
 
-Python's standard HTTP server, one request at a time: it's one person's LAN page. Every
-request must carry the job's signature, or the dashboard's token for the dashboard itself
-(links.py); anything else gets a 403 or 404.
+Python's standard HTTP server, one request at a time. Every write must carry the job's
+signature (links.py), as does the feedback page; anything else gets a 403 or 404.
 """
 
 from __future__ import annotations
@@ -37,7 +37,7 @@ from job_scout.db.groups import group_of
 from job_scout.db.models import Vote
 from job_scout.db.types import utcnow
 from job_scout.feedback.dashboard import dashboard_sections
-from job_scout.feedback.links import verify, verify_dashboard
+from job_scout.feedback.links import verify
 from job_scout.feedback.store import (
     MAX_REASON_CHARS,
     current_score,
@@ -55,7 +55,7 @@ log = logging.getLogger(__name__)
 MAX_BODY_BYTES = 16 * 1024
 REQUEST_TIMEOUT_SECONDS = 15
 _PATH = re.compile(r"/f/(\d{1,12})")
-_APPLIED_PATH = re.compile(r"/d/applied/(\d{1,12})")
+_APPLIED_PATH = re.compile(r"/applied/(\d{1,12})")
 _CSP = (
     "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; "
     "frame-ancestors 'none'; base-uri 'none'"
@@ -115,8 +115,8 @@ class FeedbackApp:
 
     def handle(self, method: str, target: str, body: str = "") -> Response:
         url = urlsplit(target)
-        if url.path == "/d" or url.path.startswith("/d/"):
-            return self._dashboard_request(method, url.path, url.query, body)
+        if url.path in ("/", "/dashboard.js", "/d") or url.path.startswith("/applied/"):
+            return self._dashboard_request(method, url.path, body)
         match = _PATH.fullmatch(url.path)
         if match is None:
             return self._error(404, "Not found.")
@@ -191,17 +191,15 @@ class FeedbackApp:
 
     # --- the dashboard ---------------------------------------------------------------------
 
-    def _dashboard_request(self, method: str, path: str, query: str, body: str) -> Response:
-        if path == "/d/dashboard.js":
-            if method != "GET":
-                return self._error(405, "Method not allowed.")
+    def _dashboard_request(self, method: str, path: str, body: str) -> Response:
+        if path in ("/", "/dashboard.js", "/d") and method != "GET":
+            return self._error(405, "Method not allowed.")
+        if path == "/dashboard.js":
             script = files("job_scout.feedback").joinpath("static/dashboard.js").read_text()
             return Response(200, script, {"Content-Type": "text/javascript; charset=utf-8"})
-        if path == "/d":
-            if method != "GET":
-                return self._error(405, "Method not allowed.")
-            if not verify_dashboard(self.secret, _first(parse_qs(query), "k")):
-                return self._error(403, "This link isn't valid. Use the dashboard link.")
+        if path == "/d":  # earlier digests link to /d?k=<token>
+            return Response(308, "", {"Location": "/"})
+        if path == "/":
             return self._dashboard()
         match = _APPLIED_PATH.fullmatch(path)
         if match is None:
