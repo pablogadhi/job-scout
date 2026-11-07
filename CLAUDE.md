@@ -147,10 +147,10 @@ instance; an instance's files never go into git.
   per company you applied to), `examples.py` (which judgments go into the scoring prompt),
   `server.py` (the page and the dashboard: stdlib HTTP server, `FeedbackApp.handle` is
   socket-free for tests), `dashboard.py` (every scored job in the digest's sections, without
-  the watchlist section), `templates/` (`_vote_form.html` and `_style.html` are shared by
+  the watchlist section; filters from a cookie, applied by the server), `templates/` (`_vote_form.html` and `_style.html` are shared by
   the page and the dashboard, which also imports the digest's `_job.html` details),
-  `static/dashboard.js` (the only script: search, filters remembered in localStorage, rows,
-  vote dialog, applied boxes),
+  `static/dashboard.js` (the only script: search, filters saved to their cookie, rows whose
+  details it fetches, vote dialog, applied boxes),
   `report.py` (agreement stats).
 - `Dockerfile` + `deploy/`: the server setup (`deploy/README.md`). One image (Python deps from
   `uv.lock`, the pinned native `claude` binary); `compose.yaml` mounts `config/` read-only and
@@ -216,8 +216,9 @@ instance; an instance's files never go into git.
   opening a link saves nothing, only the page's POST does. No links while
   `JOB_SCOUT_FEEDBACK__BASE_URL` (env only: it differs per machine) or
   `JOB_SCOUT_FEEDBACK_SECRET` is unset. The dashboard (the server's root `/`, no token: it's
-  a LAN page) lists every scored job; its vote dialog posts to `/f/<job_id>` like the page,
-  and its applied checkbox to `/applied/<job_id>`, each with the job's own signature. Applied is per company (`company_normalized`; a job without a
+  a LAN page) lists every scored job; a row's details load from `/details/<job_id>` when
+  opened. Its vote dialog posts to `/f/<job_id>` like the page, and its applied checkbox to
+  `/applied/<job_id>`, each with the job's own signature. Applied is per company (`company_normalized`; a job without a
   company stands alone). Only the dashboard's CSP allows a script (`/dashboard.js`,
   never inline); job text reaches it through escaped `data-*` attributes. Judgments enter
   the system prompt as `<judgment>` elements (`scoring/prompt.py`); they never re-queue a

@@ -1,5 +1,6 @@
 """Feedback: signed links, the page, votes, examples in the scoring prompt, the report."""
 
+import gzip
 import http.client
 import json
 import socket
@@ -8,7 +9,7 @@ import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, quote, urlsplit
 
 import pytest
 from pydantic import SecretStr, ValidationError
@@ -29,6 +30,7 @@ from job_scout.db.models import (
     ScoringMode,
     Vote,
 )
+from job_scout.feedback.dashboard import filters_cookie
 from job_scout.feedback.examples import Example, pick_examples, select_examples
 from job_scout.feedback.links import (
     SECRET_ENV,
@@ -330,6 +332,13 @@ def test_server_over_a_socket(
         posted = request("POST", f"/f/{job_id}", f"s={sign(SECRET, job_id)}&vote=up")
         assert posted.status == 303
         assert request("POST", f"/f/{job_id}", "x" * 20_000).status == 413
+        # Big pages go gzipped to a browser that accepts it.
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        conn.request("GET", "/dashboard.js", headers={"Accept-Encoding": "gzip, deflate"})
+        zipped = conn.getresponse()
+        assert zipped.getheader("Content-Encoding") == "gzip"
+        assert b"use strict" in gzip.decompress(zipped.read())
+        assert request("GET", "/dashboard.js").getheader("Content-Encoding") is None
         # A browser's speculative connection, opened and left silent, doesn't hold up others.
         with socket.create_connection(("127.0.0.1", port)):
             started = time.monotonic()
@@ -355,7 +364,7 @@ def section_ids(html: str) -> dict[str, list[int]]:
     for part in html.split('<details class="section"')[1:]:
         title = part.split("<h2>", 1)[1].split(" (", 1)[0]
         out[title] = [
-            int(chunk.split('"', 1)[0]) for chunk in part.split('class="vote" data-job="')[1:]
+            int(chunk.split('"', 1)[0]) for chunk in part.split('<tr class="job" data-job="')[1:]
         ]
     return out
 
@@ -401,10 +410,52 @@ def test_dashboard_lists_every_scored_job_by_section(
     # Your vote, with its reason as the tooltip (escaped), and the form the dialog posts.
     assert 'data-vote="down"' in html and 'title="Agency &lt;b&gt;role&lt;/b&gt;">👎' in html
     assert '<form method="post" action="">' in html and 'name="reason"' in html
-    # The link column and the digest's details under each row.
+    # The link column; the digest's details come with a row's first opening, not the page.
     assert 'href="https://board.example/board/1" target="_blank" rel="noreferrer"' in html
-    assert "Synthetic posting that fits." in html and '<tr class="details" hidden>' in html
+    assert "Synthetic posting that fits." not in html
+    details = page.handle("GET", f"/details/{top}")
+    assert details.status == 200 and "Synthetic posting that fits." in details.body
+    assert "<script" not in details.body and "Open the posting" in details.body
+    assert page.handle("GET", f"/details/{_unscored}").status == 404
+    assert page.handle("GET", "/details/999").status == 404
+    assert page.handle("POST", f"/details/{top}").status == 405
     assert '<details class="section">\n<summary><h2>Below threshold' in html  # collapsed
+
+
+def test_dashboard_arrives_filtered_by_its_cookie(
+    app_config: AppConfig, session_factory: sessionmaker[Session]
+) -> None:
+    liked, disliked, unvoted, watched = seed_jobs(session_factory, 4)
+    with session_factory.begin() as session:  # on the pinned watchlist
+        session.execute(update(Job).where(Job.id == watched).values(company_normalized="canonical"))
+    for job_id, score in ((liked, 90), (disliked, 85), (unvoted, 80), (watched, 75)):
+        add_score(session_factory, job_id, app_config.profile.sha256, score)
+    vote(session_factory, liked, Vote.UP, None)
+    vote(session_factory, disliked, Vote.DOWN, None)
+    page = feedback_app(app_config, session_factory)
+    name = filters_cookie(app_config.settings.feedback.base_url)
+    assert name != filters_cookie("http://jobscout.lan:8766")  # one per instance
+
+    def shown(cookie: str) -> list[int]:
+        html = page.handle("GET", "/", cookies=cookie).body
+        rows = html.split('<tr class="job" data-job="')[1:]
+        return [int(r.split('"', 1)[0]) for r in rows if not r.split(">", 1)[0].endswith(" hidden")]
+
+    assert shown("") == [liked, disliked, unvoted, watched]
+    assert shown(f"other=1; {name}={quote('feedback=none')}") == [unvoted, watched]
+    assert shown(f"{name}={quote('feedback=up')}") == [liked]
+    assert shown(f"{name}={quote('watchlist=yes&feedback=none')}") == [watched]
+    assert shown(f"{name}={quote('watchlist=no&applied=no')}") == [liked, disliked, unvoted]
+    assert shown(f"{name}={quote('feedback=maybe&applied=')}") == [
+        liked,
+        disliked,
+        unvoted,
+        watched,
+    ]
+    html = page.handle("GET", "/", cookies=f"{name}={quote('feedback=down')}").body
+    assert '<option value="down" selected>' in html and 'data-filter="feedback"' in html
+    assert '<span class="count">1</span>' in html and "Clear filters" in html
+    assert f'data-filters-cookie="{name}"' in html
 
 
 def test_dashboard_escapes_posting_text_and_allows_only_its_script(

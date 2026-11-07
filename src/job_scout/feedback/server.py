@@ -5,10 +5,11 @@ and a box for a reason; nothing is saved until you press Save (mail apps sometim
 links on their own). POST /f/<job_id> saves and redirects back to the page.
 
 GET / is the dashboard: every scored job (dashboard.py). It needs no token: it's one
-person's LAN page. Its vote dialog posts to POST /f/<job_id> like the page does; its applied
-checkbox posts to POST /applied/<job_id>. GET /dashboard.js is its script, the only script
-this server sends; the dashboard's Content-Security-Policy allows it, the feedback page's
-allows none. GET /d (the dashboard's old, tokened address) redirects to /.
+person's LAN page. GET /details/<job_id> is a job's details, which it loads when you open a
+row. Its vote dialog posts to POST /f/<job_id> like the page does; its applied checkbox posts
+to POST /applied/<job_id>. GET /dashboard.js is its script, the only script this server
+sends; the dashboard's Content-Security-Policy allows it, the feedback page's allows none.
+GET /d (the dashboard's old, tokened address) redirects to /.
 
 Python's standard HTTP server, a thread per connection: browsers open connections ahead of
 time and may send nothing on them, which would hold up a one-at-a-time server until the
@@ -18,6 +19,7 @@ anything else gets a 403 or 404.
 
 from __future__ import annotations
 
+import gzip
 import json
 import logging
 import re
@@ -38,7 +40,12 @@ from job_scout.config import AppConfig
 from job_scout.db.groups import group_of
 from job_scout.db.models import Vote
 from job_scout.db.types import utcnow
-from job_scout.feedback.dashboard import dashboard_sections
+from job_scout.feedback.dashboard import (
+    FILTER_VALUES,
+    Filters,
+    dashboard_sections,
+    filters_cookie,
+)
 from job_scout.feedback.links import verify
 from job_scout.feedback.store import (
     MAX_REASON_CHARS,
@@ -47,7 +54,7 @@ from job_scout.feedback.store import (
     record_vote,
     set_applied,
 )
-from job_scout.report.data import item_mark
+from job_scout.report.data import item_mark, scored_item, watchlist_names
 from job_scout.report.render import http_url
 from job_scout.scoring.points import Breakdown
 from job_scout.scoring.schema import CoreResult
@@ -58,6 +65,9 @@ MAX_BODY_BYTES = 16 * 1024
 REQUEST_TIMEOUT_SECONDS = 15
 _PATH = re.compile(r"/f/(\d{1,12})")
 _APPLIED_PATH = re.compile(r"/applied/(\d{1,12})")
+_DETAILS_PATH = re.compile(r"/details/(\d{1,12})")
+_DASHBOARD_PREFIXES = ("/applied/", "/details/")
+_GZIP_MIN_BYTES = 1024
 _CSP = (
     "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; "
     "frame-ancestors 'none'; base-uri 'none'"
@@ -115,10 +125,10 @@ class FeedbackApp:
         self.secret = secret
         self.clock = clock
 
-    def handle(self, method: str, target: str, body: str = "") -> Response:
+    def handle(self, method: str, target: str, body: str = "", cookies: str = "") -> Response:
         url = urlsplit(target)
-        if url.path in ("/", "/dashboard.js", "/d") or url.path.startswith("/applied/"):
-            return self._dashboard_request(method, url.path, body)
+        if url.path in ("/", "/dashboard.js", "/d") or url.path.startswith(_DASHBOARD_PREFIXES):
+            return self._dashboard_request(method, url.path, body, cookies)
         match = _PATH.fullmatch(url.path)
         if match is None:
             return self._error(404, "Not found.")
@@ -193,16 +203,19 @@ class FeedbackApp:
 
     # --- the dashboard ---------------------------------------------------------------------
 
-    def _dashboard_request(self, method: str, path: str, body: str) -> Response:
-        if path in ("/", "/dashboard.js", "/d") and method != "GET":
+    def _dashboard_request(self, method: str, path: str, body: str, cookies: str) -> Response:
+        details = _DETAILS_PATH.fullmatch(path)
+        if (path in ("/", "/dashboard.js", "/d") or details) and method != "GET":
             return self._error(405, "Method not allowed.")
+        if details:
+            return self._details(int(details.group(1)))
         if path == "/dashboard.js":
             script = files("job_scout.feedback").joinpath("static/dashboard.js").read_text()
             return Response(200, script, {"Content-Type": "text/javascript; charset=utf-8"})
         if path == "/d":  # earlier digests link to /d?k=<token>
             return Response(308, "", {"Location": "/"})
         if path == "/":
-            return self._dashboard()
+            return self._dashboard(cookies)
         match = _APPLIED_PATH.fullmatch(path)
         if match is None:
             return self._error(404, "Not found.")
@@ -217,14 +230,19 @@ class FeedbackApp:
             return _json(400, {"error": "applied must be 0 or 1."})
         return self._set_applied(job_id, applied == "1")
 
-    def _dashboard(self) -> Response:
+    def _dashboard(self, cookies: str) -> Response:
         tz = self._tz()
+        cookie = filters_cookie(self.config.settings.feedback.base_url)
+        filters = Filters.from_cookies(cookies, cookie)
         with self.sf() as session:
-            sections = dashboard_sections(session, self.config, self.secret)
+            sections = dashboard_sections(session, self.config, self.secret, filters)
             context: dict[str, Any] = {
                 "title": "job-scout dashboard",
                 "sections": sections,
                 "total": sum(len(s.rows) for s in sections),
+                "filters": filters,
+                "filter_values": FILTER_VALUES,
+                "filters_cookie": cookie,
                 "settings": self.config.settings.digest,
                 "generated_at": self.clock().astimezone(tz).strftime("%Y-%m-%d %H:%M %Z"),
                 "max_reason": MAX_REASON_CHARS,
@@ -234,6 +252,14 @@ class FeedbackApp:
         return Response(
             200, html, {"Content-Type": _HTML, "Content-Security-Policy": _DASHBOARD_CSP}
         )
+
+    def _details(self, job_id: int) -> Response:
+        with self.sf() as session:
+            item = scored_item(session, job_id, watchlist_names(self.config))
+            if item is None:
+                return self._error(404, "That job isn't scored.")
+            html = _ENV.get_template("details.html").render(item=item)
+        return Response(200, html, {"Content-Type": _HTML})
 
     def _set_applied(self, job_id: int, applied: bool) -> Response:
         now = self.clock()
@@ -261,7 +287,7 @@ class _Handler(BaseHTTPRequestHandler):
     sys_version = ""
 
     def do_GET(self) -> None:
-        self._send(self.app.handle("GET", self.path))
+        self._send(self.app.handle("GET", self.path, cookies=self.headers.get("Cookie") or ""))
 
     def do_POST(self) -> None:
         try:
@@ -276,8 +302,13 @@ class _Handler(BaseHTTPRequestHandler):
 
     def _send(self, response: Response) -> None:
         data = response.body.encode("utf-8")
+        headers = {**_HEADERS, **response.headers}
+        # The dashboard is megabytes of repetitive HTML: gzip makes it a tenth of that.
+        if len(data) >= _GZIP_MIN_BYTES and "gzip" in (self.headers.get("Accept-Encoding") or ""):
+            data = gzip.compress(data, compresslevel=5)
+            headers |= {"Content-Encoding": "gzip", "Vary": "Accept-Encoding"}
         self.send_response(response.status)
-        for name, value in {**_HEADERS, **response.headers}.items():
+        for name, value in headers.items():
             self.send_header(name, value)
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()

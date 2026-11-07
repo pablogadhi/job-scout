@@ -2389,6 +2389,8 @@ your votes and where you applied.
   endpoint `POST /f/<job_id>` with the same checks.
 - **P14-U7 Filters:** watchlist (on it / not), your vote (👍 / 👎 / none yet) and applied
   (yes / no), combined with the search. The browser remembers them between reloads.
+- **P14-U8 The dashboard must load fast with your server's 4,550 scored jobs** (it was a
+  15 MB page, slow to build, showing every row before your filters applied).
 
 ### P14 Decisions (Claude)
 
@@ -2420,12 +2422,23 @@ your votes and where you applied.
   that the digest would show (at or above `watchlist_min_score`) but that is below
   `min_score` sits in Below threshold, with its ★. This is `build_sections(...,
   watchlist_section=False)`; the digest is unchanged.
-- **P14-D7 Details are rendered into the page,** hidden until expanded: 590 KB for your 199
-  scored jobs, fine on a LAN; no per-row request.
-- **P14-D8 Filters are remembered in `localStorage`,** per browser and per instance (each
-  has its own port, so its own origin); the search is not. Without storage (a private
-  window) they just reset. A filter is reapplied after a vote or an applied change, so a
-  row you just marked can drop out of a "Not applied" view.
+- **P14-D7 A row's details load when you first open it** (`GET /details/<job_id>`, the
+  digest's `_job.html` macro), not with the page: they were 9.9 of the server's 15 MB.
+  Read-only and unsigned, like the page.
+- **P14-D8 Filters live in a cookie, and the server applies them,** so the page arrives
+  filtered; filtered by the script, the server's page showed every row until the script
+  ran. The cookie's name carries a hash of `base_url`: cookies ignore the port, so two
+  instances on one host would share one. The search isn't remembered. A filter is
+  reapplied after a vote or an applied change, so a row you just marked can drop out of a
+  "Not applied" view. (The first version kept them in `localStorage`.)
+- **P14-D9 Responses over 1 KB are gzipped** when the browser accepts it (nginx in front of
+  your server doesn't compress): the page for 4,577 jobs is 4.3 MB, 165 KB gzipped.
+- **P14-D10 Reports and the dashboard don't load a job's raw payload or description**
+  (`load_groups` defers both; scoring still loads descriptions). Decoding the payloads was
+  most of the dashboard's database time.
+- Measured on a copy of your laptop's database grown to 4,577 scored jobs: building the
+  page went from 1,315 ms to 696 ms, of which 455 ms is loading the scored jobs. Your
+  server runs about 1.9 times slower than the laptop.
 - Checked on a copy of your database, served on 127.0.0.1:
   - The sections were 4 / 13 / 182.
   - A vote through `/f/232` was saved, and so was an applied mark (Supabase).

@@ -12,7 +12,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 
 from sqlalchemy import or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, defer
 
 from job_scout.db.models import Job
 
@@ -40,17 +40,26 @@ class Group:
         return list(seen)
 
 
-def load_groups(session: Session, canonical_ids: Iterable[int]) -> list[Group]:
-    """Groups for the given canonical job ids, in the order given."""
+def load_groups(
+    session: Session, canonical_ids: Iterable[int], *, descriptions: bool = True
+) -> list[Group]:
+    """Groups for the given canonical job ids, in the order given.
+
+    A job's raw payload is loaded only if read: nothing judging or reporting a group reads
+    it, and decoding thousands of them is most of the cost. Without `descriptions` (reports,
+    the dashboard), descriptions are deferred too.
+    """
     ids = list(dict.fromkeys(canonical_ids))
     if not ids:
         return []
+    options = [defer(Job.raw)] if descriptions else [defer(Job.raw), defer(Job.description_text)]
     rows: list[Job] = []
     for start in range(0, len(ids), _CHUNK):
         part = ids[start : start + _CHUNK]
         rows.extend(
             session.scalars(
                 select(Job)
+                .options(*options)
                 .where(or_(Job.id.in_(part), Job.duplicate_of.in_(part)))
                 .order_by(Job.id)
             )

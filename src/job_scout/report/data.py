@@ -281,22 +281,38 @@ def scored_items(
         for s in session.scalars(select(Score).where(Score.status == ScoreStatus.SCORED))
         if s.job_id not in skip and s.result is not None
     ]
-    groups = {g.canonical.id: g for g in load_groups(session, [s.job_id for s in scores])}
-    items = []
-    for score in scores:
-        group = groups.get(score.job_id)
-        if group is None:  # defensive: the scored job is gone or no longer canonical
-            continue
-        items.append(
-            ReportItem(
-                group=group,
-                score=score,
-                result=CoreResult.model_validate(score.result),
-                watchlist=any(j.company_normalized in watchlist for j in group.jobs),
-            )
-        )
+    groups = {
+        g.canonical.id: g
+        for g in load_groups(session, [s.job_id for s in scores], descriptions=False)
+    }
+    items = [
+        _report_item(group, score, watchlist)
+        for score in scores
+        # defensive: the scored job is gone or no longer canonical
+        if (group := groups.get(score.job_id)) is not None
+    ]
     items.sort(key=lambda i: (-i.overall, -(i.posted_at.timestamp() if i.posted_at else 0)))
     return items
+
+
+def scored_item(session: Session, job_id: int, watchlist: set[str]) -> ReportItem | None:
+    """One canonical job as `scored_items` has it, or None if it isn't a scored one."""
+    score = session.scalar(
+        select(Score).where(Score.job_id == job_id, Score.status == ScoreStatus.SCORED)
+    )
+    if score is None or score.result is None:
+        return None
+    groups = load_groups(session, [job_id], descriptions=False)
+    return _report_item(groups[0], score, watchlist) if groups else None
+
+
+def _report_item(group: Group, score: Score, watchlist: set[str]) -> ReportItem:
+    return ReportItem(
+        group=group,
+        score=score,
+        result=CoreResult.model_validate(score.result),
+        watchlist=any(j.company_normalized in watchlist for j in group.jobs),
+    )
 
 
 def build_sections(

@@ -1,5 +1,7 @@
 // The dashboard's behaviour: search and filters, expandable rows, the vote dialog and the
-// applied checkboxes. Job text comes from data-* attributes and is only ever set as textContent.
+// applied checkboxes. Job text comes from the page's cells and data-* attributes and is only
+// ever set as textContent; a row's details come from /details/<job_id>, HTML this server
+// escaped like the page itself.
 "use strict";
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -8,25 +10,61 @@ document.addEventListener("DOMContentLoaded", () => {
     status.textContent = message;
     status.hidden = !message;
   };
+  const jobRow = (element) => element.closest("tr.job");
 
-  // --- expandable rows ---------------------------------------------------------------------
-  const setExpanded = (row, open) => {
-    row.nextElementSibling.hidden = !open;
-    row.querySelector(".expand").setAttribute("aria-expanded", String(open));
+  // --- expandable rows: details are fetched the first time a row opens -------------------
+  const detailsOf = (row) => {
+    const next = row.nextElementSibling;
+    return next && next.classList.contains("details") ? next : null;
   };
-  document.querySelectorAll("tr.job").forEach((row) => {
-    row.addEventListener("click", (event) => {
-      if (event.target.closest("a, input, button.vote")) return;
-      setExpanded(row, row.nextElementSibling.hidden);
-    });
+
+  const loadDetails = async (row, details) => {
+    const cell = details.cells[0];
+    try {
+      const response = await fetch(`/details/${row.dataset.job}`);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      cell.innerHTML = await response.text();
+    } catch (error) {
+      cell.textContent = `Couldn't load the details: ${error.message}`;
+      details.dataset.failed = "1"; // opened again: try again
+    }
+  };
+
+  const setExpanded = (row, open) => {
+    row.querySelector(".expand").setAttribute("aria-expanded", String(open));
+    let details = detailsOf(row);
+    if (details && open && details.dataset.failed) {
+      details.remove();
+      details = null;
+    }
+    if (!details) {
+      if (!open) return;
+      details = document.createElement("tr");
+      details.className = "details";
+      const cell = details.insertCell();
+      cell.colSpan = row.cells.length;
+      cell.textContent = "Loading…";
+      row.after(details);
+      loadDetails(row, details);
+    }
+    details.hidden = !open;
+  };
+
+  document.addEventListener("click", (event) => {
+    const row = jobRow(event.target);
+    if (!row || event.target.closest("a, input, button.vote")) return;
+    setExpanded(row, row.querySelector(".expand").getAttribute("aria-expanded") !== "true");
   });
 
   // --- search and filters -----------------------------------------------------------------
-  // The filters (not the search) are remembered in this browser between reloads.
-  const STORAGE_KEY = "job-scout:dashboard-filters";
+  // The server renders the page with the filters in this cookie already applied, so it never
+  // shows every row first; the search isn't remembered.
+  const cookieName = document.body.dataset.filtersCookie;
   const search = document.getElementById("search");
   const selects = [...document.querySelectorAll("select[data-filter]")];
   const clear = document.getElementById("clear-filters");
+  const currentFilters = () =>
+    Object.fromEntries(selects.map((select) => [select.dataset.filter, select.value]));
 
   const matches = (row, query, filter) => {
     if (query && !row.dataset.search.includes(query)) return false;
@@ -43,15 +81,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const refresh = () => {
     const query = search.value.trim().toLowerCase();
-    const filter = Object.fromEntries(selects.map((select) => [select.dataset.filter, select.value]));
+    const filter = currentFilters();
     selects.forEach((select) => select.classList.toggle("active", Boolean(select.value)));
     clear.hidden = !selects.some((select) => select.value);
     document.querySelectorAll("details.section").forEach((section) => {
       let shown = 0;
       section.querySelectorAll("tr.job").forEach((row) => {
         const match = matches(row, query, filter);
+        if (!match && !row.hidden) setExpanded(row, false);
         row.hidden = !match;
-        if (!match) setExpanded(row, false);
         if (match) shown += 1;
       });
       section.querySelector(".count").textContent = String(shown);
@@ -61,23 +99,9 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
   const saveFilters = () => {
-    const filter = Object.fromEntries(selects.map((select) => [select.dataset.filter, select.value]));
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(filter));
-    } catch {
-      // Storage blocked (a private window): the filters just aren't remembered.
-    }
+    const value = encodeURIComponent(new URLSearchParams(currentFilters()).toString());
+    document.cookie = `${cookieName}=${value}; Max-Age=31536000; Path=/; SameSite=Strict`;
   };
-
-  try {
-    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
-    selects.forEach((select) => {
-      const value = saved[select.dataset.filter];
-      if ([...select.options].some((option) => option.value === value)) select.value = value;
-    });
-  } catch {
-    // Nothing saved, or storage blocked: start with every filter on "Any".
-  }
 
   search.addEventListener("input", refresh);
   selects.forEach((select) =>
@@ -93,7 +117,6 @@ document.addEventListener("DOMContentLoaded", () => {
     saveFilters();
     refresh();
   });
-  refresh();
 
   // --- the vote dialog (the feedback page's form, posted to /f/<job_id>) --------------------
   const dialog = document.getElementById("vote-dialog");
@@ -102,27 +125,26 @@ document.addEventListener("DOMContentLoaded", () => {
   const emoji = { up: "👍", down: "👎" };
   let current = null; // the clicked vote button
 
-  const ratedLine = (button) =>
-    button.dataset.vote
-      ? `You rated this ${emoji[button.dataset.vote]} on ${button.dataset.rated}.`
-      : "";
-
-  document.querySelectorAll("button.vote").forEach((button) => {
-    button.addEventListener("click", () => {
-      current = button;
-      form.action = `/f/${button.dataset.job}`;
-      form.elements.s.value = button.dataset.s;
-      form.querySelectorAll('input[name="vote"]').forEach((radio) => {
-        radio.checked = radio.value === button.dataset.vote;
-      });
-      form.elements.reason.value = button.dataset.reason;
-      field("title").textContent = button.dataset.title;
-      field("company").textContent = button.dataset.company;
-      field("rated").textContent = ratedLine(button);
-      field("rated").hidden = !button.dataset.vote;
-      field("error").hidden = true;
-      dialog.showModal();
+  document.addEventListener("click", (event) => {
+    const button = event.target.closest("button.vote");
+    if (!button) return;
+    const row = jobRow(button);
+    current = button;
+    form.action = `/f/${row.dataset.job}`;
+    form.elements.s.value = row.dataset.s;
+    const vote = button.dataset.vote;
+    form.querySelectorAll('input[name="vote"]').forEach((radio) => {
+      radio.checked = radio.value === vote;
     });
+    form.elements.reason.value = button.dataset.reason || "";
+    field("title").textContent = row.querySelector(".expand").textContent;
+    field("company").textContent = row.querySelector(".company").textContent;
+    field("rated").textContent = vote
+      ? `You rated this ${emoji[vote]} on ${button.dataset.rated}.`
+      : "";
+    field("rated").hidden = !vote;
+    field("error").hidden = true;
+    dialog.showModal();
   });
   dialog.querySelector("[data-close]").addEventListener("click", () => dialog.close());
 
@@ -166,27 +188,26 @@ document.addEventListener("DOMContentLoaded", () => {
     return company ? `Marks every ${company} job` : "Marks this job";
   };
 
-  document.querySelectorAll('input[type="checkbox"][data-key]').forEach((box) => {
-    box.addEventListener("change", async () => {
-      const applied = box.checked;
-      const body = new URLSearchParams({ s: box.dataset.s, applied: applied ? "1" : "0" });
-      try {
-        const response = await fetch(`/applied/${box.dataset.job}`, { method: "POST", body });
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
-        document
-          .querySelectorAll('input[type="checkbox"][data-key]')
-          .forEach((other) => {
-            if (other.dataset.key !== data.key) return;
-            other.checked = data.applied;
-            other.title = appliedTitle(other, data.applied ? data.date : null);
-          });
-        showStatus("");
-        refresh(); // an applied filter may now hide the company's rows
-      } catch (error) {
-        box.checked = !applied;
-        showStatus(`Couldn't save "applied": ${error.message}`);
-      }
-    });
+  document.addEventListener("change", async (event) => {
+    const box = event.target;
+    if (!box.matches('input[type="checkbox"][data-key]')) return;
+    const row = jobRow(box);
+    const applied = box.checked;
+    const body = new URLSearchParams({ s: row.dataset.s, applied: applied ? "1" : "0" });
+    try {
+      const response = await fetch(`/applied/${row.dataset.job}`, { method: "POST", body });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+      document.querySelectorAll('input[type="checkbox"][data-key]').forEach((other) => {
+        if (other.dataset.key !== data.key) return;
+        other.checked = data.applied;
+        other.title = appliedTitle(other, data.applied ? data.date : null);
+      });
+      showStatus("");
+      refresh(); // an applied filter may now hide the company's rows
+    } catch (error) {
+      box.checked = !applied;
+      showStatus(`Couldn't save "applied": ${error.message}`);
+    }
   });
 });

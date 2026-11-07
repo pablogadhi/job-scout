@@ -1,0 +1,4 @@
+{#- One job's details for the dashboard, fetched when its row is opened: the digest's own
+    macro. -#}
+{%- from "_job.html" import job_details %}
+{{ job_details(item) }}
