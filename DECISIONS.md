@@ -2378,7 +2378,9 @@ your votes and where you applied.
   already on your LAN, so each instance gets its own. No separate local-only command.
 - **P14-U3 The feedback cell's tooltip is your reason.**
 - **P14-U4 Below threshold starts collapsed** (182 of your 199 scored jobs); top and
-  unclear location start open. A search with matches opens a collapsed section.
+  unclear location start open. A search never opens or closes a section: you found that it
+  opened Below threshold and left it open, and asked that only you open it. Each section's
+  count shows how many of its jobs match.
 - **P14-U5 "Applied" marks the company,** not one job: every job of that company shows as
   applied, including ones fetched later, and unchecking clears them all.
 - **P14-U6 The vote dialog reuses the feedback page:** its form markup and styles, and its

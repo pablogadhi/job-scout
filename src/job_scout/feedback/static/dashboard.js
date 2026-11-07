@@ -34,8 +34,8 @@ document.addEventListener("DOMContentLoaded", () => {
         if (match) shown += 1;
       });
       section.querySelector(".count").textContent = String(shown);
+      // A search leaves sections as you left them: its count says what a closed one holds.
       section.querySelector(".empty").hidden = shown > 0;
-      if (query && shown > 0) section.open = true;
     });
   });
 
