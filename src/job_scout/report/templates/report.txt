@@ -74,6 +74,10 @@ Nothing new at or above {{ settings.min_score }}.
 == Unclear location: worth a manual look ==
 {{- companies(sections.unclear | by_company) }}
 {%- endif %}
+{%- if feedback %}
+
+Dashboard (every scored job, your votes and where you applied): {{ feedback.dashboard_url() }}
+{%- endif %}
 
 == Pipeline health ==
 {{ status.pending }} job groups waiting to be scored{% if status.failed %}

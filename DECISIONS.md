@@ -2360,3 +2360,71 @@ three levels: sections, companies and jobs.
   unchanged (checked). `backlog --dry-run` writes no report, so a preview of the full
   layout is `make_backlog_report` called directly on a copied database, or `digest
   --dry-run`.
+
+## Phase 14: A dashboard of every scored job (branch `phase-14-dashboard`)
+
+Started on 2026-11-07 from `main` (phase 13 plus its two follow-up commits). The feedback
+service also serves a dashboard: every scored job in one table per digest section, with
+your votes and where you applied.
+
+### P14 Your decisions
+
+- **P14-U1 The dashboard.** You asked for a table of every scored job in the digest's
+  sections (top, unclear location, below threshold), best first. It shows the watchlist as
+  a column, not a section. It has a 👍/👎 column you can click to add or change a vote, an
+  "applied" checkbox saved as you check it, a search by title or company, each job's
+  digest details when you expand its row, and a link column to the posting.
+- **P14-U2 It runs on the feedback service,** behind a signed link: the always-on page
+  already on your LAN, so each instance gets its own. No separate local-only command.
+- **P14-U3 The feedback cell's tooltip is your reason.**
+- **P14-U4 Below threshold starts collapsed** (182 of your 199 scored jobs); top and
+  unclear location start open. A search with matches opens a collapsed section.
+- **P14-U5 "Applied" marks the company,** not one job: every job of that company shows as
+  applied, including ones fetched later, and unchecking clears them all.
+- **P14-U6 The vote dialog reuses the feedback page:** its form markup and styles, and its
+  endpoint `POST /f/<job_id>` with the same checks.
+
+### P14 Decisions (Claude)
+
+- **P14-D1 The dashboard's link** is `/d?k=<token>`, an HMAC of a fixed message under
+  `JOB_SCOUT_FEEDBACK_SECRET`. The message differs from a job's, so neither can stand in
+  for the other. The token only opens the page: every write still carries that job's own
+  signature (embedded per row), as the digest's links do. `job-scout feedback dashboard-url`
+  prints it, and the digest's footer links to it when feedback links are on. `feedback
+  serve` doesn't print it, because the service's logs would keep it.
+- **P14-D2 One script, only on the dashboard.** Its Content-Security-Policy adds
+  `script-src 'self'; connect-src 'self'`, for `/d/dashboard.js`, never inline. Job text
+  reaches it only through escaped `data-*` attributes and is set as `textContent`. The
+  feedback page and the digest stay script-free.
+- **P14-D3 Shared templates instead of copies.**
+  - The digest's job body moved into `report/templates/_job.html`.
+  - The feedback page's form and styles moved into `_vote_form.html` and `_style.html`.
+  - The digest, backlog report and feedback page render byte for byte as before, checked
+    by diffing renders taken before and after the move. The digest only gains the
+    dashboard link.
+- **P14-D4 The vote dialog posts with `fetch(..., {redirect: "manual"})`.** The endpoint's
+  303 counts as saved; an error shows the page's own message. Without the script, the form
+  still posts to the feedback page.
+- **P14-D5 An `applications` table**, keyed by `company_normalized` (the same key as the
+  digest's company grouping), or by `job_id` for a job without a company. It also keeps the
+  display name, the title of the job you checked and the date. Unchecking deletes the row;
+  checking again keeps the first date.
+- **P14-D6 Watchlist jobs follow `digest.min_score` on the dashboard.** A watchlist job
+  that the digest would show (at or above `watchlist_min_score`) but that is below
+  `min_score` sits in Below threshold, with its ★. This is `build_sections(...,
+  watchlist_section=False)`; the digest is unchanged.
+- **P14-D7 Details are rendered into the page,** hidden until expanded: 590 KB for your 199
+  scored jobs, fine on a LAN; no per-row request.
+- Checked on a copy of your database, served on 127.0.0.1:
+  - The sections were 4 / 13 / 182, and a request without the token got 403.
+  - A vote through `/f/232` was saved, and so was an applied mark through
+    `/d/applied/232` (Supabase).
+  - A bad signature got 403.
+  - Not checked in a browser: hover, dialog, checkbox, search, dark mode, phone width.
+
+### P14 Bugs found and fixed
+
+- **P14-B1 A signature with a non-ASCII character crashed the request.**
+  `hmac.compare_digest` raises `TypeError` on such strings, so `/f/1?s=%C3%A9` raised
+  instead of answering 403; the server logged it and dropped the connection. Signatures
+  and the token are now compared as bytes.

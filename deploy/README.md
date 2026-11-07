@@ -95,7 +95,17 @@ curl -s -o /dev/null -w '%{http_code}\n' http://jobscout.lan:8765/f/1   # 403: n
   into your network (Tailscale or WireGuard; Proton VPN can't reach your LAN), then point
   `JOB_SCOUT_FEEDBACK__BASE_URL` at the address you'd use there.
 - If your phone runs Proton VPN at home, turn on its "Allow LAN connections" setting.
-- Changing the secret invalidates the links in earlier digests.
+- Changing the secret invalidates the links in earlier digests, and the dashboard's link.
+
+The same service serves the **dashboard**: every scored job in a table per digest section
+(top, unclear location, below threshold), best first, with a search box, each job's
+details on a click, your 👍/👎 (click to add or change it) and an "applied" checkbox that
+marks every job of that company. Its link carries its own token; the digest's footer links
+to it, or print it:
+
+```sh
+docker compose run --rm -T job-scout feedback dashboard-url   # http://jobscout.lan:8765/d?k=…
+```
 
 ## Another instance
 

@@ -1,6 +1,7 @@
 """Feedback: signed links, the page, votes, examples in the scoring prompt, the report."""
 
 import http.client
+import json
 import threading
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -9,14 +10,23 @@ from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from pydantic import SecretStr, ValidationError
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session, sessionmaker
 from typer.testing import CliRunner
 
 from job_scout.cli import app
 from job_scout.config import AppConfig, load_config
 from job_scout.config.settings import Feedback as FeedbackSettings
-from job_scout.db.models import Feedback, Job, Score, ScoreStatus, ScoringCall, ScoringMode, Vote
+from job_scout.db.models import (
+    Application,
+    Feedback,
+    Job,
+    Score,
+    ScoreStatus,
+    ScoringCall,
+    ScoringMode,
+    Vote,
+)
 from job_scout.feedback.examples import Example, pick_examples, select_examples
 from job_scout.feedback.links import (
     SECRET_ENV,
@@ -25,7 +35,9 @@ from job_scout.feedback.links import (
     feedback_links,
     read_secret,
     sign,
+    sign_dashboard,
     verify,
+    verify_dashboard,
 )
 from job_scout.feedback.report import feedback_stats
 from job_scout.feedback.server import FeedbackApp, make_server
@@ -323,6 +335,176 @@ def test_server_over_a_socket(
         server.server_close()
 
 
+# --- the dashboard ---------------------------------------------------------------------------
+
+
+def dashboard(page: FeedbackApp) -> str:
+    response = page.handle("GET", f"/d?k={sign_dashboard(SECRET)}")
+    assert response.status == 200
+    return response.body
+
+
+def section_ids(html: str) -> dict[str, list[int]]:
+    """Section title -> the job ids of its rows, in order."""
+    out: dict[str, list[int]] = {}
+    for part in html.split('<details class="section"')[1:]:
+        title = part.split("<h2>", 1)[1].split(" (", 1)[0]
+        out[title] = [
+            int(chunk.split('"', 1)[0]) for chunk in part.split('class="vote" data-job="')[1:]
+        ]
+    return out
+
+
+def test_dashboard_token() -> None:
+    token = sign_dashboard(SECRET)
+    assert verify_dashboard(SECRET, token)
+    assert not verify_dashboard(SECRET, sign(SECRET, 1))  # a job's signature isn't the token
+    assert not verify(SECRET, 1, token)
+    assert not verify_dashboard(SECRET, "é")  # non-ASCII is a mismatch, not an error
+    assert not verify(SECRET, 1, "é")
+    links = FeedbackLinks("http://jobscout.lan:8765", SECRET)
+    assert links.dashboard_url() == f"http://jobscout.lan:8765/d?k={token}"
+
+
+def test_dashboard_lists_every_scored_job_by_section(
+    app_config: AppConfig, session_factory: sessionmaker[Session]
+) -> None:
+    top, watch, unclear, low, dq, _unscored = seed_jobs(session_factory, 6)
+    with session_factory.begin() as session:  # on the pinned watchlist
+        session.execute(update(Job).where(Job.id == watch).values(company_normalized="canonical"))
+    current = app_config.profile.sha256
+    add_score(session_factory, top, current, 80)
+    add_score(session_factory, watch, current, 30)  # watchlist, below min_score: below
+    add_score(session_factory, unclear, current, 90, location_eligibility="unclear")
+    add_score(session_factory, low, current, 40)
+    add_score(session_factory, dq, current, 75, location_eligibility="fail")
+    vote(session_factory, top, Vote.DOWN, "Agency <b>role</b>")
+    page = feedback_app(app_config, session_factory)
+
+    html = dashboard(page)
+    assert section_ids(html) == {
+        "Top matches": [top],
+        "Unclear location": [unclear],
+        "Below threshold": [low, watch, dq],  # by score, the disqualified one last
+    }
+    assert html.count('title="On your watchlist">★') == 1
+    assert ">dq</span>" in html
+    # Your vote, with its reason as the tooltip (escaped), and the form the dialog posts.
+    assert 'data-vote="down"' in html and 'title="Agency &lt;b&gt;role&lt;/b&gt;">👎' in html
+    assert '<form method="post" action="">' in html and 'name="reason"' in html
+    # The link column and the digest's details under each row.
+    assert 'href="https://board.example/board/1" target="_blank" rel="noreferrer"' in html
+    assert "Synthetic posting that fits." in html and '<tr class="details" hidden>' in html
+    assert '<details class="section">\n<summary><h2>Below threshold' in html  # collapsed
+
+
+def test_dashboard_escapes_posting_text_and_allows_only_its_script(
+    app_config: AppConfig, session_factory: sessionmaker[Session]
+) -> None:
+    (job_id,) = seed_jobs(session_factory, 1)
+    with session_factory.begin() as session:
+        session.execute(
+            update(Job)
+            .where(Job.id == job_id)
+            .values(title="<script>alert(1)</script>", apply_url="javascript:alert(1)")
+        )
+    add_score(session_factory, job_id, app_config.profile.sha256, 80)
+    page = feedback_app(app_config, session_factory)
+    response = page.handle("GET", f"/d?k={sign_dashboard(SECRET)}")
+    assert "<script>alert" not in response.body and "&lt;script&gt;" in response.body
+    assert "javascript:" not in response.body
+    assert '<script src="/d/dashboard.js" defer></script>' in response.body
+    csp = response.headers["Content-Security-Policy"]
+    assert "script-src 'self'" in csp and "connect-src 'self'" in csp
+    script = page.handle("GET", "/d/dashboard.js")
+    assert script.status == 200 and "text/javascript" in script.headers["Content-Type"]
+    assert "Content-Security-Policy" not in page.handle("GET", f"/f/{job_id}").headers
+
+
+def test_dashboard_rejects_bad_requests(
+    app_config: AppConfig, session_factory: sessionmaker[Session]
+) -> None:
+    (job_id,) = seed_jobs(session_factory, 1)
+    page = feedback_app(app_config, session_factory)
+    s = sign(SECRET, job_id)
+    assert page.handle("GET", "/d").status == 403
+    assert page.handle("GET", f"/d?k={s}").status == 403  # a job's signature
+    assert page.handle("GET", "/d?k=%C3%A9").status == 403
+    assert page.handle("POST", f"/d?k={sign_dashboard(SECRET)}").status == 405
+    assert page.handle("GET", "/d/other").status == 404
+    assert page.handle("GET", f"/d/applied/{job_id}").status == 405
+    applied = f"/d/applied/{job_id}"
+    assert page.handle("POST", applied, "s=nope&applied=1").status == 403
+    assert page.handle("POST", applied, f"s={sign(SECRET, job_id + 1)}&applied=1").status == 403
+    assert page.handle("POST", applied, f"s={s}&applied=yes").status == 400
+    missing = 999
+    assert (
+        page.handle("POST", f"/d/applied/{missing}", f"s={sign(SECRET, missing)}&applied=1").status
+        == 404
+    )
+    with session_factory() as session:
+        assert session.scalars(select(Application)).first() is None
+
+
+def test_applied_marks_the_whole_company(
+    app_config: AppConfig, session_factory: sessionmaker[Session]
+) -> None:
+    first, second, other, nameless = seed_jobs(session_factory, 4)
+    with session_factory.begin() as session:
+        session.execute(
+            update(Job)
+            .where(Job.id.in_([first, second]))
+            .values(company="Acme", company_normalized="acme")
+        )
+        session.execute(
+            update(Job).where(Job.id == nameless).values(company=None, company_normalized=None)
+        )
+    for job_id in (first, second, other, nameless):
+        add_score(session_factory, job_id, app_config.profile.sha256, 70)
+    page = feedback_app(app_config, session_factory)
+
+    def post(job_id: int, applied: str) -> dict[str, Any]:
+        response = page.handle(
+            "POST", f"/d/applied/{job_id}", f"s={sign(SECRET, job_id)}&applied={applied}"
+        )
+        assert response.status == 200
+        return json.loads(response.body)
+
+    assert post(second, "1") == {"applied": True, "key": "c:acme", "date": "2026-10-13"}
+    assert post(second, "1")["applied"]  # again: still one row
+    html = dashboard(page)
+    assert html.count("Applied to Acme on 2026-10-13") == 2  # both Acme jobs
+    assert html.count(" checked>") == 2
+    assert 'title="Marks every Company 3 job">' in html and 'title="Marks this job">' in html
+
+    assert post(nameless, "1")["key"] == f"j:{nameless}"  # no company: just this job
+    with session_factory() as session:
+        rows = session.scalars(select(Application).order_by(Application.id)).all()
+        assert [(r.company_normalized, r.job_id, r.job_title) for r in rows] == [
+            ("acme", None, f"Senior Backend Engineer {second}"),
+            (None, nameless, f"Senior Backend Engineer {nameless}"),
+        ]
+
+    assert post(first, "0") == {"applied": False, "key": "c:acme", "date": "2026-10-13"}
+    html = dashboard(page)
+    assert "Applied to Acme" not in html and html.count(" checked>") == 1
+
+
+def test_dashboard_url_command(monkeypatch: pytest.MonkeyPatch) -> None:
+    def run(env: dict[str, str]) -> Any:
+        return CliRunner().invoke(
+            app, ["--config-dir", str(TEST_CONFIG), "feedback", "dashboard-url"], env=env
+        )
+
+    monkeypatch.delenv(SECRET_ENV, raising=False)
+    assert SECRET_ENV in run({}).output
+    no_url = run({SECRET_ENV: "s" * 40})
+    assert no_url.exit_code == 2 and "base_url" in no_url.output
+    ok = run({SECRET_ENV: "s" * 40, "JOB_SCOUT_FEEDBACK__BASE_URL": "http://jobscout.lan:8765"})
+    assert ok.exit_code == 0
+    assert ok.output.strip() == f"http://jobscout.lan:8765/d?k={sign_dashboard(SECRET)}"
+
+
 # --- digest links --------------------------------------------------------------------------
 
 
@@ -340,7 +522,7 @@ def test_digest_has_feedback_links_when_configured(
     (job_id,) = seed_jobs(session_factory, 1)
     add_score(session_factory, job_id, config.profile.sha256, 80)
     without = make_digest(config, session_factory, now=NOW, environ={}, dry_run=True)
-    assert "/f/" not in without.path.read_text()
+    assert "/f/" not in without.path.read_text() and "/d?k=" not in without.path.read_text()
 
     outcome = make_digest(
         config, session_factory, now=NOW, environ={SECRET_ENV: "s" * 40}, dry_run=True
@@ -348,6 +530,7 @@ def test_digest_has_feedback_links_when_configured(
     html = outcome.path.read_text()
     link = f"http://jobscout.lan:8765/f/{job_id}?v=up&amp;s={sign(SECRET, job_id)}"
     assert link in html and "👎 Not for me" in html
+    assert f"http://jobscout.lan:8765/d?k={sign_dashboard(SECRET)}" in html
 
 
 # --- report ------------------------------------------------------------------------------

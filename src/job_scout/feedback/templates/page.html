@@ -1,6 +1,7 @@
 <!doctype html>
 {#- The feedback page. Job text is untrusted: autoescape is on and nothing is marked safe.
     No scripts and no external assets; the Content-Security-Policy header forbids them. -#}
+{%- from "_vote_form.html" import vote_form %}
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -8,32 +9,7 @@
 <meta name="referrer" content="no-referrer">
 <title>{{ title }}</title>
 <style>
-  :root { --bg: #f6f7f9; --card: #fff; --fg: #1d2330; --muted: #5b6473; --line: #d9dde3;
-          --accent: #1d5bd8; --ok-bg: #d5f2dc; --ok-fg: #135c26; --err: #9b1c1c; }
-  @media (prefers-color-scheme: dark) {
-    :root { --bg: #15181e; --card: #1e232b; --fg: #e6e9ef; --muted: #9aa3b2; --line: #333a45;
-            --accent: #7aa7ff; --ok-bg: #1f3d29; --ok-fg: #a6e3b5; --err: #ff9b9b; }
-  }
-  body { margin: 0; padding: 16px; background: var(--bg); color: var(--fg);
-         font: 16px/1.5 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-  .wrap { max-width: 560px; margin: 0 auto; }
-  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px;
-          padding: 16px; }
-  h1 { font-size: 19px; margin: 0 0 4px; overflow-wrap: anywhere; }
-  .muted { color: var(--muted); font-size: 14px; }
-  .notice { background: var(--ok-bg); color: var(--ok-fg); border-radius: 8px;
-            padding: 8px 12px; margin: 0 0 12px; }
-  .error { color: var(--err); }
-  a { color: var(--accent); }
-  fieldset { border: 0; padding: 0; margin: 16px 0 8px; display: flex; gap: 8px; }
-  fieldset label { flex: 1; border: 1px solid var(--line); border-radius: 8px; padding: 10px;
-                   text-align: center; cursor: pointer; font-size: 17px; }
-  fieldset input { margin-right: 6px; }
-  textarea { box-sizing: border-box; width: 100%; min-height: 96px; font: inherit;
-             background: var(--card); color: var(--fg); border: 1px solid var(--line);
-             border-radius: 8px; padding: 8px; }
-  button { margin-top: 12px; width: 100%; font: inherit; font-weight: 600; padding: 10px;
-           border: 0; border-radius: 8px; background: var(--accent); color: #fff; cursor: pointer; }
+{% include "_style.html" +%}
 </style>
 </head>
 <body>
@@ -56,16 +32,7 @@
   {%- if previous %}
   <p class="muted">You rated this {{ "👍" if previous.vote == "up" else "👎" }} on {{ previous.updated_at.strftime("%Y-%m-%d") }}.</p>
   {%- endif %}
-  <form method="post" action="/f/{{ job_id }}">
-    <input type="hidden" name="s" value="{{ signature }}">
-    <fieldset>
-      <label><input type="radio" name="vote" value="up"{% if vote == "up" %} checked{% endif %} required>👍 Good fit</label>
-      <label><input type="radio" name="vote" value="down"{% if vote == "down" %} checked{% endif %}>👎 Not for me</label>
-    </fieldset>
-    <label for="reason" class="muted">Why? (optional, helps the scoring)</label>
-    <textarea id="reason" name="reason" maxlength="{{ max_reason }}">{{ reason }}</textarea>
-    <button type="submit">Save</button>
-  </form>
+{{ vote_form("/f/" ~ job_id, signature, vote, reason, max_reason) }}
 </div>
 {%- endif %}
 </div>

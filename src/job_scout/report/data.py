@@ -300,13 +300,20 @@ def scored_items(
 
 
 def build_sections(
-    items: Sequence[ReportItem], settings: DigestSettings, *, include_below: bool
+    items: Sequence[ReportItem],
+    settings: DigestSettings,
+    *,
+    include_below: bool,
+    watchlist_section: bool = True,
 ) -> Sections:
+    """Without `watchlist_section` (the dashboard, which shows the watchlist as a column),
+    watchlist jobs are sorted like any other job."""
     sections = Sections()
     for item in items:
         result = item.result
         if (
-            item.watchlist
+            watchlist_section
+            and item.watchlist
             and not item.disqualified
             and item.overall >= settings.watchlist_min_score
         ):

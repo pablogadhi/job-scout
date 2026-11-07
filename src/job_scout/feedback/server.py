@@ -1,25 +1,34 @@
-"""The page the digest's 👍/👎 links open (`job-scout feedback serve`).
+"""The page the digest's 👍/👎 links open, and the dashboard (`job-scout feedback serve`).
 
 GET /f/<job_id>?v=up|down&s=<signature> shows the job, Claude's score, your vote preselected
 and a box for a reason; nothing is saved until you press Save (mail apps sometimes open
 links on their own). POST /f/<job_id> saves and redirects back to the page.
 
+GET /d?k=<token> is the dashboard: every scored job (dashboard.py). Its vote dialog posts to
+POST /f/<job_id> like the page does; its applied checkbox posts to POST /d/applied/<job_id>.
+GET /d/dashboard.js is its script, the only script this server sends; the dashboard's
+Content-Security-Policy allows it, the feedback page's allows none.
+
 Python's standard HTTP server, one request at a time: it's one person's LAN page. Every
-request must carry the job's signature (links.py); anything else gets a 403 or 404.
+request must carry the job's signature, or the dashboard's token for the dashboard itself
+(links.py); anything else gets a 403 or 404.
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from importlib.resources import files
 from typing import Any
 from urllib.parse import parse_qs, urlencode, urlsplit
+from zoneinfo import ZoneInfo
 
-from jinja2 import Environment, PackageLoader, StrictUndefined, select_autoescape
+from jinja2 import ChoiceLoader, Environment, PackageLoader, StrictUndefined, select_autoescape
 from pydantic import SecretStr
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -27,8 +36,16 @@ from job_scout.config import AppConfig
 from job_scout.db.groups import group_of
 from job_scout.db.models import Vote
 from job_scout.db.types import utcnow
-from job_scout.feedback.links import verify
-from job_scout.feedback.store import MAX_REASON_CHARS, current_score, get_vote, record_vote
+from job_scout.feedback.dashboard import dashboard_sections
+from job_scout.feedback.links import verify, verify_dashboard
+from job_scout.feedback.store import (
+    MAX_REASON_CHARS,
+    current_score,
+    get_vote,
+    record_vote,
+    set_applied,
+)
+from job_scout.report.data import item_mark
 from job_scout.report.render import http_url
 from job_scout.scoring.points import Breakdown
 from job_scout.scoring.schema import CoreResult
@@ -38,24 +55,36 @@ log = logging.getLogger(__name__)
 MAX_BODY_BYTES = 16 * 1024
 REQUEST_TIMEOUT_SECONDS = 15
 _PATH = re.compile(r"/f/(\d{1,12})")
+_APPLIED_PATH = re.compile(r"/d/applied/(\d{1,12})")
+_CSP = (
+    "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; "
+    "frame-ancestors 'none'; base-uri 'none'"
+)
+# The dashboard runs its own script (served from this origin, never inline) and posts with it.
+_DASHBOARD_CSP = f"{_CSP}; script-src 'self'; connect-src 'self'"
+_HTML = "text/html; charset=utf-8"
 _HEADERS = {
-    "Content-Security-Policy": (
-        "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; "
-        "frame-ancestors 'none'; base-uri 'none'"
-    ),
+    "Content-Security-Policy": _CSP,
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "no-referrer",
     "Cache-Control": "no-store",
 }
 
 _ENV = Environment(
-    loader=PackageLoader("job_scout.feedback", "templates"),
+    # The report's templates too: the dashboard shows a job's details as the digest does.
+    loader=ChoiceLoader(
+        [
+            PackageLoader("job_scout.feedback", "templates"),
+            PackageLoader("job_scout.report", "templates"),
+        ]
+    ),
     autoescape=select_autoescape(enabled_extensions=("html",), default_for_string=True),
     undefined=StrictUndefined,
     trim_blocks=True,
     lstrip_blocks=True,
 )
 _ENV.filters["http_url"] = http_url
+_ENV.filters["mark"] = item_mark
 
 
 @dataclass
@@ -86,6 +115,8 @@ class FeedbackApp:
 
     def handle(self, method: str, target: str, body: str = "") -> Response:
         url = urlsplit(target)
+        if url.path == "/d" or url.path.startswith("/d/"):
+            return self._dashboard_request(method, url.path, url.query, body)
         match = _PATH.fullmatch(url.path)
         if match is None:
             return self._error(404, "Not found.")
@@ -140,7 +171,7 @@ class FeedbackApp:
                 "max_reason": MAX_REASON_CHARS,
             }
             html = _ENV.get_template("page.html").render(context)
-        return Response(200, html, {"Content-Type": "text/html; charset=utf-8"})
+        return Response(200, html, {"Content-Type": _HTML})
 
     def _save(self, job_id: int, signature: str, vote: Vote, reason: str) -> Response:
         with self.sf.begin() as session:
@@ -156,7 +187,71 @@ class FeedbackApp:
     def _error(self, status: int, message: str) -> Response:
         context = {"title": "job-scout feedback", "error": message}
         html = _ENV.get_template("page.html").render(context)
-        return Response(status, html, {"Content-Type": "text/html; charset=utf-8"})
+        return Response(status, html, {"Content-Type": _HTML})
+
+    # --- the dashboard ---------------------------------------------------------------------
+
+    def _dashboard_request(self, method: str, path: str, query: str, body: str) -> Response:
+        if path == "/d/dashboard.js":
+            if method != "GET":
+                return self._error(405, "Method not allowed.")
+            script = files("job_scout.feedback").joinpath("static/dashboard.js").read_text()
+            return Response(200, script, {"Content-Type": "text/javascript; charset=utf-8"})
+        if path == "/d":
+            if method != "GET":
+                return self._error(405, "Method not allowed.")
+            if not verify_dashboard(self.secret, _first(parse_qs(query), "k")):
+                return self._error(403, "This link isn't valid. Use the dashboard link.")
+            return self._dashboard()
+        match = _APPLIED_PATH.fullmatch(path)
+        if match is None:
+            return self._error(404, "Not found.")
+        if method != "POST":
+            return self._error(405, "Method not allowed.")
+        job_id = int(match.group(1))
+        form = parse_qs(body, keep_blank_values=True)
+        if not verify(self.secret, job_id, _first(form, "s")):
+            return _json(403, {"error": "This job's signature isn't valid."})
+        applied = _first(form, "applied")
+        if applied not in ("0", "1"):
+            return _json(400, {"error": "applied must be 0 or 1."})
+        return self._set_applied(job_id, applied == "1")
+
+    def _dashboard(self) -> Response:
+        tz = self._tz()
+        with self.sf() as session:
+            sections = dashboard_sections(session, self.config, self.secret)
+            context: dict[str, Any] = {
+                "title": "job-scout dashboard",
+                "sections": sections,
+                "total": sum(len(s.rows) for s in sections),
+                "settings": self.config.settings.digest,
+                "generated_at": self.clock().astimezone(tz).strftime("%Y-%m-%d %H:%M %Z"),
+                "max_reason": MAX_REASON_CHARS,
+                "local_date": lambda when: f"{when.astimezone(tz):%Y-%m-%d}",
+            }
+            html = _ENV.get_template("dashboard.html").render(context)
+        return Response(
+            200, html, {"Content-Type": _HTML, "Content-Security-Policy": _DASHBOARD_CSP}
+        )
+
+    def _set_applied(self, job_id: int, applied: bool) -> Response:
+        now = self.clock()
+        with self.sf.begin() as session:
+            group = group_of(session, job_id)
+            if group is None or group.canonical.id != job_id:
+                return _json(404, {"error": "That job isn't in the database."})
+            key = set_applied(session, group, applied, now)
+        log.info("applied: job %s %s", job_id, "checked" if applied else "unchecked")
+        date = f"{now.astimezone(self._tz()):%Y-%m-%d}"
+        return _json(200, {"applied": applied, "key": key.text, "date": date})
+
+    def _tz(self) -> ZoneInfo:
+        return ZoneInfo(self.config.settings.schedule.timezone)
+
+
+def _json(status: int, data: dict[str, Any]) -> Response:
+    return Response(status, json.dumps(data), {"Content-Type": "application/json"})
 
 
 class _Handler(BaseHTTPRequestHandler):

@@ -20,7 +20,9 @@ from job_scout.config import DEFAULT_CONFIG_DIR
 app = typer.Typer(no_args_is_help=True, add_completion=False, help=__doc__)
 sources_app = typer.Typer(no_args_is_help=True, help="Inspect job sources.")
 ats_app = typer.Typer(no_args_is_help=True, help="ATS company seed (remoteintech + watchlist).")
-feedback_app = typer.Typer(no_args_is_help=True, help="Thumbs up/down from the digest.")
+feedback_app = typer.Typer(
+    no_args_is_help=True, help="Thumbs up/down from the digest, and the dashboard."
+)
 app.add_typer(sources_app, name="sources")
 app.add_typer(ats_app, name="ats")
 app.add_typer(feedback_app, name="feedback")
@@ -57,4 +59,5 @@ app.command()(jobs.explain)
 sources_app.command("check")(sources.check)
 ats_app.command("detect")(ats.detect)
 feedback_app.command("serve")(feedback.serve)
+feedback_app.command("dashboard-url")(feedback.dashboard_url)
 feedback_app.command("report")(feedback.report)

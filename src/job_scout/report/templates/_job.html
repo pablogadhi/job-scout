@@ -1,0 +1,59 @@
+{#- A job's details, the body under its one-line headline: shared by the digest, the
+    backlog report and the dashboard. Posting text is untrusted: nothing here marks a value
+    safe. Needs the http_url and mark filters. -#}
+{%- macro job_details(item) %}
+{%- set r = item.result %}
+  <div class="row"><a href="{{ item.apply_url | http_url }}">Open the posting</a></div>
+  <div class="row">{{ r.summary }}</div>
+  {%- if item.breakdown %}
+  <div class="row muted"><span class="label">Score:</span> {{ item.breakdown.line() }}</div>
+  {%- else %}
+  <div class="row muted">Old scoring: Claude's own 0&ndash;100, before points.</div>
+  {%- endif %}
+  {%- if item.disqualified %}
+  <div class="row flag"><span class="label">Disqualified:</span> {{ item.disqualify_reason or "yes" }}</div>
+  {%- endif %}
+  <div class="row"><span class="label">Location ({{ r.location_eligibility }}):</span>{% if r.location_notes is defined %} {{ r.location_notes }}{% endif %}</div>
+  <div class="row"><span class="label">Salary ({{ r.salary }}):</span>
+    {{ item.salary or "not stated" }}
+    {%- if r.salary_usd_range is defined and r.salary_usd_range %} &middot; ~{{ r.salary_usd_range }} USD{% endif %}
+    {%- if r.salary_notes is defined and r.salary_notes %} &middot; {{ r.salary_notes }}{% endif %}</div>
+  {% if r.role_category is defined and r.seniority is defined and r.skill_fit is defined
+         and r.seniority_fit is defined and r.employment_type is defined %}
+  <div class="row"><span class="label">Role:</span> {{ r.role_category }}, {{ r.seniority }}
+    &middot; skill fit {{ r.skill_fit }}/5, seniority fit {{ r.seniority_fit }}/5
+    &middot; remote: {{ r.remote }} &middot; {{ r.employment_type }}</div>
+  {%- else %}
+  <div class="row"><span class="label">Role:</span> {{ item.role_parts | join(" · ") }}</div>
+  {%- endif %}
+  {%- for part in item.requirement_parts %}
+  <div class="row"><span class="label">{{ part.label | capitalize }}:</span>
+    {%- for i in part.items %} {{ i | mark }} {{ i.text }} ({{ i.note }}){% if not loop.last %} &middot;{% endif %}{% endfor %}</div>
+  {%- endfor %}
+  {%- for part in item.signal_parts %}
+  <div class="row"><span class="label">{{ part.label | capitalize }}:</span>
+    {%- for i in part.items %} <span{% if i.points < 0 %} class="flag"{% endif %}>{{ "%+d" | format(i.points) }} {{ i.text }}</span>{% if i.evidence %} <span class="muted">&ldquo;{{ i.evidence }}&rdquo;</span>{% endif %}{% if not loop.last %} &middot;{% endif %}{% endfor %}</div>
+  {%- endfor %}
+  {%- if r.matched_skills is defined and r.matched_skills %}
+  <div class="row"><span class="label">Matched:</span> {{ r.matched_skills | join(", ") }}</div>
+  {%- endif %}
+  {%- if r.gaps is defined and r.gaps %}<div class="row"><span class="label">Gaps:</span> {{ r.gaps | join(", ") }}</div>{% endif %}
+  {%- if r.wlb_positive is defined and r.wlb_positive %}
+  <div class="row"><span class="label">Work-life balance:</span> {{ r.wlb_positive | join(", ") }}</div>
+  {%- endif %}
+  {%- if r.wlb_negative is defined and r.wlb_negative %}
+  <div class="row flag"><span class="label">WLB concerns:</span> {{ r.wlb_negative | join(", ") }}</div>
+  {%- endif %}
+  {%- for label, value in item.other_fields %}
+  <div class="row"><span class="label">{{ label }}:</span> {{ value }}</div>
+  {%- endfor %}
+  {%- if r.red_flags %}
+  <div class="row flag"><span class="label">Red flags:</span> {{ r.red_flags | join(", ") }}</div>
+  {%- endif %}
+  <div class="row muted">
+    {%- for listing in item.listings %}
+    <a href="{{ listing.url | http_url }}">{{ listing.source_id }}</a>{% if listing.location %} ({{ listing.location }}){% endif %}{% if not loop.last %} &middot; {% endif %}
+    {%- endfor %}
+    &middot; posted {{ item.posted_at.date() if item.posted_at else "?" }} &middot; job #{{ item.job_id }}
+  </div>
+{%- endmacro %}

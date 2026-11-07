@@ -1,13 +1,19 @@
-"""Save and read votes. One row per canonical job; a new vote replaces the old one."""
+"""Save and read votes and applications.
+
+Votes: one row per canonical job; a new vote replaces the old one. Applications: one row per
+company you applied to (a job without a company stands for itself).
+"""
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from job_scout.db.models import Feedback, Score, ScoreStatus, Vote
+from job_scout.db.groups import Group
+from job_scout.db.models import Application, Feedback, Job, Score, ScoreStatus, Vote
 from job_scout.scoring.schema import CoreResult
 
 MAX_REASON_CHARS = 1000
@@ -49,3 +55,61 @@ def record_vote(
 
 def get_vote(session: Session, job_id: int) -> Feedback | None:
     return session.scalars(select(Feedback).where(Feedback.job_id == job_id)).one_or_none()
+
+
+def votes(session: Session) -> dict[int, Feedback]:
+    """Every vote, by canonical job id."""
+    return {row.job_id: row for row in session.scalars(select(Feedback))}
+
+
+@dataclass(frozen=True)
+class ApplicationKey:
+    """What an application is stored under: the company's normalized name, or the job
+    itself when it has no company."""
+
+    company_normalized: str | None
+    job_id: int | None
+
+    @classmethod
+    def of(cls, job: Job) -> ApplicationKey:
+        if job.company_normalized:
+            return cls(job.company_normalized, None)
+        return cls(None, job.id)
+
+    @property
+    def text(self) -> str:
+        """A stable string form, for the page's markup."""
+        return f"c:{self.company_normalized}" if self.company_normalized else f"j:{self.job_id}"
+
+
+def applications(session: Session) -> dict[ApplicationKey, Application]:
+    return {
+        ApplicationKey(row.company_normalized, row.job_id): row
+        for row in session.scalars(select(Application))
+    }
+
+
+def set_applied(session: Session, group: Group, applied: bool, now: datetime) -> ApplicationKey:
+    """Mark (or unmark) the group's company as applied to; a job without a company is marked
+    on its own. Marking again keeps the first date."""
+    job = group.canonical
+    key = ApplicationKey.of(job)
+    where = (
+        Application.company_normalized == key.company_normalized
+        if key.company_normalized
+        else Application.job_id == key.job_id
+    )
+    if not applied:
+        session.execute(delete(Application).where(where))
+    elif session.scalars(select(Application).where(where)).one_or_none() is None:
+        session.add(
+            Application(
+                company_normalized=key.company_normalized,
+                company=job.company,
+                job_id=key.job_id,
+                job_title=job.title,
+                applied_at=now,
+            )
+        )
+    session.flush()
+    return key

@@ -352,3 +352,21 @@ class Feedback(Base):
     summary: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(default=utcnow, index=True)
+
+
+class Application(Base):
+    """A company you applied to, checked on the dashboard. One row per company (by its
+    normalized name), so every job of that company shows as applied, including ones fetched
+    later; a job without a company gets a row of its own (`job_id`). Exactly one of the two
+    keys is set. Unchecking deletes the row."""
+
+    __tablename__ = "applications"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_normalized: Mapped[str | None] = mapped_column(String(255), unique=True)
+    company: Mapped[str | None] = mapped_column(String(255))
+    job_id: Mapped[int | None] = mapped_column(
+        ForeignKey("jobs.id", ondelete="CASCADE"), unique=True
+    )
+    job_title: Mapped[str] = mapped_column(String(500))  # the job you checked
+    applied_at: Mapped[datetime] = mapped_column(default=utcnow)

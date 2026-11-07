@@ -1,4 +1,4 @@
-"""`feedback serve` and `feedback report`: your thumbs up/down."""
+"""`feedback serve`, `dashboard-url` and `report`: your thumbs up/down and the dashboard."""
 
 from __future__ import annotations
 
@@ -14,13 +14,14 @@ from rich.table import Table
 from job_scout.cli.common import console, err_console, fail, load, open_db
 from job_scout.db.models import Vote
 from job_scout.feedback.examples import Example
-from job_scout.feedback.links import SecretError, read_secret
+from job_scout.feedback.links import SecretError, feedback_links, read_secret
 from job_scout.feedback.report import feedback_stats
 from job_scout.feedback.server import FeedbackApp, make_server
 
 
 def serve(ctx: typer.Context) -> None:
-    """Serve the page the digest's thumbs up/down links open (the compose `feedback` service).
+    """Serve the page the digest's thumbs up/down links open, and the dashboard (the compose
+    `feedback` service).
 
     Listens on feedback.host:feedback.port; needs JOB_SCOUT_FEEDBACK_SECRET.
     """
@@ -36,12 +37,33 @@ def serve(ctx: typer.Context) -> None:
         )
     server = make_server(FeedbackApp(config, open_db(config), secret), settings.host, settings.port)
     console.print(f"feedback page listening on http://{settings.host}:{settings.port}")
+    # Not the dashboard's URL: it carries a token, and the service's logs would keep it.
+    console.print("dashboard: `job-scout feedback dashboard-url` prints its link")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         pass
     finally:
         server.server_close()
+
+
+def dashboard_url(ctx: typer.Context) -> None:
+    """Print the dashboard's link: every scored job, your votes and where you applied.
+
+    Needs JOB_SCOUT_FEEDBACK__BASE_URL and JOB_SCOUT_FEEDBACK_SECRET, as the digest's links do.
+    """
+    config = load(ctx)
+    try:
+        read_secret(os.environ)
+    except SecretError as exc:
+        raise fail(str(exc)) from exc
+    links = feedback_links(config.settings.feedback, os.environ)
+    if links is None:
+        raise fail(
+            "feedback.base_url is not set (JOB_SCOUT_FEEDBACK__BASE_URL): it's the page's "
+            "address as seen from where you open it, e.g. http://jobscout.lan:8765"
+        )
+    console.print(links.dashboard_url(), soft_wrap=True, highlight=False)
 
 
 def report(

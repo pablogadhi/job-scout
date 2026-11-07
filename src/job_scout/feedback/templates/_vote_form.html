@@ -1,0 +1,15 @@
+{#- The vote form: the feedback page shows it for one job, and the dashboard's dialog
+    reuses it, filling in the action, signature, vote and reason with its script. Both post
+    to /f/<job_id>. -#}
+{%- macro vote_form(action, signature, vote, reason, max_reason) %}
+  <form method="post" action="{{ action }}">
+    <input type="hidden" name="s" value="{{ signature }}">
+    <fieldset>
+      <label><input type="radio" name="vote" value="up"{% if vote == "up" %} checked{% endif %} required>👍 Good fit</label>
+      <label><input type="radio" name="vote" value="down"{% if vote == "down" %} checked{% endif %}>👎 Not for me</label>
+    </fieldset>
+    <label for="reason" class="muted">Why? (optional, helps the scoring)</label>
+    <textarea id="reason" name="reason" maxlength="{{ max_reason }}">{{ reason }}</textarea>
+    <button type="submit">Save</button>
+  </form>
+{%- endmacro %}

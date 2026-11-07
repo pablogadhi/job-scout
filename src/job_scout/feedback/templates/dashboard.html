@@ -1,0 +1,132 @@
+<!doctype html>
+{#- The dashboard: every scored job, one table per digest section. Job text is untrusted:
+    autoescape is on, nothing is marked safe, and the script reads job text only from data-*
+    attributes (never from inline script). The only script is /d/dashboard.js. -#}
+{%- from "_vote_form.html" import vote_form %}
+{%- from "_job.html" import job_details %}
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>{{ title }}</title>
+<style>
+{% include "_style.html" +%}
+  .wrap { max-width: 1180px; }
+  h1 { font-size: 22px; }
+  h2 { display: inline; font-size: 18px; margin: 0; }
+  input[type="search"] { box-sizing: border-box; width: 100%; font: inherit; padding: 8px 10px;
+                         margin: 12px 0 4px; background: var(--card); color: var(--fg);
+                         border: 1px solid var(--line); border-radius: 8px; }
+  details.section { margin: 20px 0; }
+  details.section > summary { cursor: pointer; padding-bottom: 4px;
+                              border-bottom: 1px solid var(--line); }
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; background: var(--card); }
+  th, td { padding: 6px 8px; border-bottom: 1px solid var(--line); text-align: left;
+           vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; white-space: nowrap; }
+  td.num, th.num { text-align: right; }
+  td.center, th.center { text-align: center; }
+  tr.job { cursor: pointer; }
+  tr.job:hover { background: var(--bg); }
+  tr.details > td { background: var(--bg); cursor: auto; }
+  tr.details .row { margin: 4px 0; }
+  tr.details .label { color: var(--muted); }
+  .flag { color: var(--err); }
+  .expand { background: none; border: 0; padding: 0; margin: 0; width: auto; color: var(--fg);
+            font: inherit; font-weight: 600; text-align: left; cursor: pointer; }
+  .score { display: inline-block; min-width: 30px; text-align: center; font-weight: 700;
+           border-radius: 6px; padding: 0 6px; background: var(--s-low-bg); color: var(--s-low-fg); }
+  .s-high { background: var(--ok-bg); color: var(--ok-fg); }
+  .s-mid { background: var(--s-mid-bg); color: var(--s-mid-fg); }
+  .badge { display: inline-block; font-size: 12px; border-radius: 10px; padding: 0 8px;
+           margin-left: 4px; background: var(--badge-bg); color: var(--badge-fg);
+           font-weight: 400; }
+  .vote { background: none; border: 1px solid var(--line); border-radius: 8px; width: auto;
+          margin: 0; padding: 2px 10px; color: var(--fg); font: inherit; cursor: pointer; }
+  input[type="checkbox"] { width: 18px; height: 18px; cursor: pointer; }
+  dialog { border: 0; padding: 0; background: transparent; width: min(560px, 100% - 32px); }
+  dialog::backdrop { background: rgb(0 0 0 / 45%); }
+  dialog .card { color: var(--fg); }
+  button.secondary { background: none; color: var(--accent); margin-top: 4px; }
+  #status { position: sticky; bottom: 8px; background: var(--card); border: 1px solid var(--line);
+            border-radius: 8px; padding: 8px 12px; }
+  :root { --s-mid-bg: #fff1cc; --s-mid-fg: #6b4e00; --s-low-bg: #f1f2f4; --s-low-fg: #5b6473;
+          --badge-bg: #e8e3fb; --badge-fg: #3d2a8a; }
+  @media (prefers-color-scheme: dark) {
+    :root { --s-mid-bg: #4a3b10; --s-mid-fg: #ffe08a; --s-low-bg: #2a303a; --s-low-fg: #9aa3b2;
+            --badge-bg: #2f2850; --badge-fg: #cfc4ff; }
+  }
+</style>
+<script src="/d/dashboard.js" defer></script>
+</head>
+<body>
+<div class="wrap">
+<h1>{{ title }}</h1>
+<p class="muted">{{ total }} scored jobs &middot; threshold {{ settings.min_score }} &middot;
+  generated {{ generated_at }}. Click a row for its details.</p>
+<input type="search" id="search" placeholder="Search by title or company" autocomplete="off"
+       aria-label="Search by title or company">
+
+{%- for section in sections %}
+<details class="section"{% if section.open %} open{% endif %}>
+<summary><h2>{{ section.title }} (<span class="count">{{ section.rows | length }}</span>)</h2>
+  {%- if section.note %} <span class="muted">{{ section.note }}</span>{% endif %}</summary>
+{%- if section.rows %}
+<div class="table-wrap">
+<table>
+<thead><tr>
+  <th class="num">Score</th><th>Title</th><th>Company</th><th class="center">Watchlist</th>
+  <th>Posted</th><th class="center">Link</th><th class="center">Feedback</th>
+  <th class="center">Applied</th>
+</tr></thead>
+<tbody>
+{%- for row in section.rows %}
+{%- set item = row.item %}
+<tr class="job" data-search="{{ row.search_text }}">
+  <td class="num"><span class="score {% if item.overall >= 70 %}s-high{% elif item.overall >= 50 %}s-mid{% endif %}">{{ item.overall }}</span>
+    {%- if item.disqualified %}<br><span class="flag" title="{{ item.disqualify_reason or 'disqualified' }}">dq</span>{% endif %}</td>
+  <td><button type="button" class="expand" aria-expanded="false">{{ item.title }}</button>
+    {%- for badge in item.badges %}<span class="badge">{{ badge }}</span>{% endfor %}</td>
+  <td>{{ item.company }}</td>
+  <td class="center">{% if item.watchlist %}<span title="On your watchlist">★</span>{% endif %}</td>
+  <td>{{ item.posted_at.strftime("%Y-%m-%d") if item.posted_at else "?" }}</td>
+  <td class="center"><a href="{{ item.apply_url | http_url }}" target="_blank" rel="noreferrer" title="Open the posting">↗</a></td>
+  <td class="center"><button type="button" class="vote" data-job="{{ item.job_id }}" data-s="{{ row.signature }}"
+      data-title="{{ item.title }}" data-company="{{ item.company }}"
+      data-vote="{{ row.vote.vote if row.vote else '' }}" data-reason="{{ row.vote.reason or '' if row.vote else '' }}"
+      data-rated="{{ local_date(row.vote.updated_at) if row.vote else '' }}"
+      title="{{ (row.vote.reason or 'No reason given') if row.vote else 'Add feedback' }}">
+      {{- {"up": "👍", "down": "👎"}[row.vote.vote] if row.vote else "–" }}</button></td>
+  <td class="center"><input type="checkbox" aria-label="Applied" data-job="{{ item.job_id }}" data-s="{{ row.signature }}"
+      data-key="{{ row.application_key.text }}" data-company="{{ item.group.canonical.company or '' }}"
+      title="{% if row.application %}Applied to {{ item.company }} on {{ local_date(row.application.applied_at) }}{% elif row.application_key.company_normalized %}Marks every {{ item.company }} job{% else %}Marks this job{% endif %}"
+      {%- if row.application %} checked{% endif %}></td>
+</tr>
+<tr class="details" hidden><td colspan="8">
+{{ job_details(item) }}
+</td></tr>
+{%- endfor %}
+</tbody>
+</table>
+</div>
+{%- endif %}
+<p class="muted empty"{% if section.rows %} hidden{% endif %}>No jobs here.</p>
+</details>
+{%- endfor %}
+<p id="status" class="error" role="status" hidden></p>
+</div>
+
+<dialog id="vote-dialog">
+<div class="card">
+  <h1 data-field="title"></h1>
+  <div class="muted" data-field="company"></div>
+  <p class="muted" data-field="rated" hidden></p>
+{{ vote_form("", "", "", "", max_reason) }}
+  <p class="error" data-field="error" hidden></p>
+  <button type="button" class="secondary" data-close>Cancel</button>
+</div>
+</dialog>
+</body>
+</html>
