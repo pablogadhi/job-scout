@@ -2,7 +2,9 @@
 
 import http.client
 import json
+import socket
 import threading
+import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -328,6 +330,11 @@ def test_server_over_a_socket(
         posted = request("POST", f"/f/{job_id}", f"s={sign(SECRET, job_id)}&vote=up")
         assert posted.status == 303
         assert request("POST", f"/f/{job_id}", "x" * 20_000).status == 413
+        # A browser's speculative connection, opened and left silent, doesn't hold up others.
+        with socket.create_connection(("127.0.0.1", port)):
+            started = time.monotonic()
+            assert request("GET", "/dashboard.js").status == 200
+            assert time.monotonic() - started < 2
     finally:
         server.shutdown()
         server.server_close()

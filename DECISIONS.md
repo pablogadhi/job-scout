@@ -2440,3 +2440,10 @@ your votes and where you applied.
   `hmac.compare_digest` raises `TypeError` on such strings, so `/f/1?s=%C3%A9` raised
   instead of answering 403; the server logged it and dropped the connection. Signatures
   and the token are now compared as bytes.
+- **P14-B2 The dashboard showed every row for seconds before your filters applied.** The
+  server took one connection at a time. A browser opens connections ahead of time and may
+  send nothing on them, so the server waited on one for up to its 15 s timeout before
+  sending `/dashboard.js`, which applies the filters. Measured: 15.1 s with one idle
+  connection open. It's now a `ThreadingHTTPServer` (a thread per connection; SQLite's
+  `busy_timeout` covers two writes at once): 0.15 s for the page and script with three idle
+  connections open. A test holds an idle connection open while requesting the script.

@@ -10,8 +10,10 @@ checkbox posts to POST /applied/<job_id>. GET /dashboard.js is its script, the o
 this server sends; the dashboard's Content-Security-Policy allows it, the feedback page's
 allows none. GET /d (the dashboard's old, tokened address) redirects to /.
 
-Python's standard HTTP server, one request at a time. Every write must carry the job's
-signature (links.py), as does the feedback page; anything else gets a 403 or 404.
+Python's standard HTTP server, a thread per connection: browsers open connections ahead of
+time and may send nothing on them, which would hold up a one-at-a-time server until the
+timeout. Every write must carry the job's signature (links.py), as does the feedback page;
+anything else gets a 403 or 404.
 """
 
 from __future__ import annotations
@@ -22,7 +24,7 @@ import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.resources import files
 from typing import Any
 from urllib.parse import parse_qs, urlencode, urlsplit
@@ -286,6 +288,8 @@ class _Handler(BaseHTTPRequestHandler):
         log.debug("%s %s %s", self.command, urlsplit(self.path).path, args[1] if args else "")
 
 
-def make_server(app: FeedbackApp, host: str, port: int) -> HTTPServer:
+def make_server(app: FeedbackApp, host: str, port: int) -> ThreadingHTTPServer:
     handler = type("FeedbackHandler", (_Handler,), {"app": app})
-    return HTTPServer((host, port), handler)
+    server = ThreadingHTTPServer((host, port), handler)
+    server.daemon_threads = True  # an idle connection never holds up shutdown
+    return server
