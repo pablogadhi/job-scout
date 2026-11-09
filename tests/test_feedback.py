@@ -416,6 +416,7 @@ def test_dashboard_lists_every_scored_job_by_section(
     details = page.handle("GET", f"/details/{top}")
     assert details.status == 200 and "Synthetic posting that fits." in details.body
     assert "<script" not in details.body and "Open the posting" in details.body
+    assert 'target="_blank" rel="noreferrer">Open the posting' in details.body
     assert page.handle("GET", f"/details/{_unscored}").status == 404
     assert page.handle("GET", "/details/999").status == 404
     assert page.handle("POST", f"/details/{top}").status == 405

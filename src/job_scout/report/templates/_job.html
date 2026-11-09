@@ -3,7 +3,7 @@
     safe. Needs the http_url and mark filters. -#}
 {%- macro job_details(item) %}
 {%- set r = item.result %}
-  <div class="row"><a href="{{ item.apply_url | http_url }}">Open the posting</a></div>
+  <div class="row"><a href="{{ item.apply_url | http_url }}" target="_blank" rel="noreferrer">Open the posting</a></div>
   <div class="row">{{ r.summary }}</div>
   {%- if item.breakdown %}
   <div class="row muted"><span class="label">Score:</span> {{ item.breakdown.line() }}</div>
