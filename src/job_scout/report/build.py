@@ -96,7 +96,7 @@ def make_digest(
             session,
             watchlist_names(config),
             exclude=reported_job_ids(session),
-            include_unavailable=False,
+            include_hidden=False,
         )
         cutoff = now - timedelta(days=settings.rescored_max_age_days)
         since = previous.sent_at if previous else None
@@ -178,7 +178,7 @@ def make_backlog_report(
     what's new.
     """
     with session_factory() as session:
-        items = scored_items(session, watchlist_names(config), include_unavailable=False)
+        items = scored_items(session, watchlist_names(config), include_hidden=False)
         sections = build_sections(items, config.settings.digest, include_below=True)
         rendered = _render(
             config,

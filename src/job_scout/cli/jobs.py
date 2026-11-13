@@ -117,6 +117,11 @@ def explain(ctx: typer.Context, job_id: int) -> None:
                 f"  [yellow]no longer available since {canonical.unavailable_at:%Y-%m-%d %H:%M}"
                 " UTC (marked on the dashboard): out of the digest and scoring[/yellow]"
             )
+        if canonical.dismissed_at:
+            console.print(
+                f"  [yellow]not interested since {canonical.dismissed_at:%Y-%m-%d %H:%M}"
+                " UTC (marked on the dashboard): out of the digest and scoring[/yellow]"
+            )
 
         if len(group.jobs) > 1:
             console.print(f"\n[bold]Duplicate group[/bold] ({len(group.jobs)} postings)")

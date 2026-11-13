@@ -1,5 +1,5 @@
 // The dashboard's behaviour: search, filters and sorting, expandable rows, the vote dialog,
-// and the applied and "no longer available" checkboxes. Job text comes from the page's cells and data-* attributes and is only
+// and the applied, "no longer available" and "not interested" checkboxes. Job text comes from the page's cells and data-* attributes and is only
 // ever set as textContent; a row's details come from /details/<job_id>, HTML this server
 // escaped like the page itself.
 "use strict";
@@ -67,6 +67,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const currentFilters = () =>
     Object.fromEntries(selects.map((select) => [select.dataset.filter, select.value]));
   const unavailableBox = (row) => row.querySelector("input[data-unavailable]");
+  const dismissedBox = (row) => row.querySelector("input[data-dismissed]");
 
   const matches = (row, query, filter) => {
     if (query && !row.dataset.search.includes(query)) return false;
@@ -79,6 +80,8 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     const gone = unavailableBox(row).checked;
     if (filter.available && gone === (filter.available === "yes")) return false;
+    const dismissed = dismissedBox(row).checked;
+    if (filter.interest && dismissed === (filter.interest === "yes")) return false;
     const applied = row.querySelector('input[type="checkbox"][data-key]').checked;
     return !filter.applied || applied === (filter.applied === "yes");
   };
@@ -282,6 +285,30 @@ document.addEventListener("DOMContentLoaded", () => {
     } catch (error) {
       box.checked = !gone;
       showStatus(`Couldn't save "no longer available": ${error.message}`);
+    }
+  });
+
+  // --- not interested: hides the job and every copy of it, now and later -----------------------
+  document.addEventListener("change", async (event) => {
+    const box = event.target;
+    if (!box.matches("input[data-dismissed]")) return;
+    const row = jobRow(box);
+    const dismissed = box.checked;
+    const body = new URLSearchParams({ s: row.dataset.s, dismissed: dismissed ? "1" : "0" });
+    try {
+      const response = await fetch(`/dismissed/${row.dataset.job}`, { method: "POST", body });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+      box.checked = data.dismissed;
+      box.title = data.dismissed
+        ? `Not interested since ${data.date}`
+        : "Mark as not interested (hides this job and its copies)";
+      row.classList.toggle("dismissed", data.dismissed);
+      showStatus("");
+      refresh(); // the interest filter may now hide the row
+    } catch (error) {
+      box.checked = !dismissed;
+      showStatus(`Couldn't save "not interested": ${error.message}`);
     }
   });
 });

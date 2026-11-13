@@ -146,14 +146,16 @@ instance; an instance's files never go into git.
   secret from `JOB_SCOUT_FEEDBACK_SECRET`), `store.py` (one
   `feedback` row per canonical job, with the score you reacted to; one `applications` row
   per company you applied to; the "no longer available" mark, `jobs.unavailable_at` on every
-  job of the group), `examples.py` (which judgments go into the scoring prompt),
+  job of the group; the "not interested" mark, `jobs.dismissed_at` on the canonical job
+  only, so later copies are covered), `examples.py` (which judgments go into the scoring prompt),
   `server.py` (the page and the dashboard: stdlib HTTP server, `FeedbackApp.handle` is
   socket-free for tests), `dashboard.py` (every scored job in the digest's sections, without
   the watchlist section; filters and each section's sort from a cookie, applied by the
-  server; the availability filter defaults to available), `templates/` (`_vote_form.html` and `_style.html` are shared by
+  server; the availability and interest filters default to hiding marked jobs), `templates/` (`_vote_form.html` and `_style.html` are shared by
   the page and the dashboard, which also imports the digest's `_job.html` details),
   `static/dashboard.js` (the only script: search, filters and sorts saved to their cookie,
-  rows whose details it fetches, vote dialog, applied and "no longer available" boxes),
+  rows whose details it fetches, vote dialog, applied, "no longer available" and "not
+  interested" boxes),
   `report.py` (agreement stats).
 - `Dockerfile` + `deploy/`: the server setup (`deploy/README.md`). One image (Python deps from
   `uv.lock`, the pinned native `claude` binary); `compose.yaml` mounts `config/` read-only and
@@ -195,8 +197,8 @@ instance; an instance's files never go into git.
 - **Digest bookkeeping:** a `digests` row (kind `digest` or `backlog`) records the canonical
   job ids it reported; a digest never repeats them. A digest whose email failed is not
   recorded, so its jobs carry over. The below-threshold list is never recorded. Jobs marked
-  no longer available (dashboard) are left out of the digest, the backlog report and the
-  scoring queue.
+  no longer available or not interested (dashboard) are left out of the digest, the backlog
+  report and the scoring queue.
 - **A profile's own output fields** (beyond the core ones and those the templates name,
   `NAMED_FIELDS` in `report/data.py`) are listed generically in the digest and backlog
   report ("Travel required: frequent") and get a CSV column each; `UNLISTED_FIELDS` only
@@ -223,8 +225,9 @@ instance; an instance's files never go into git.
   `JOB_SCOUT_FEEDBACK_SECRET` is unset. The dashboard (the server's root `/`, no token: it's
   a LAN page) lists every scored job; a row's details load from `/details/<job_id>` when
   opened. Its vote dialog posts to `/f/<job_id>` like the page, its applied checkbox to
-  `/applied/<job_id>` and its "no longer available" checkbox (the whole group) to
-  `/unavailable/<job_id>`, each with the job's own signature. Applied is per company (`company_normalized`; a job without a
+  `/applied/<job_id>`, its "no longer available" checkbox (the whole group) to
+  `/unavailable/<job_id>` and its "not interested" checkbox (the whole group) to
+  `/dismissed/<job_id>`, each with the job's own signature. Applied is per company (`company_normalized`; a job without a
   company stands alone). Only the dashboard's CSP allows a script (`/dashboard.js`,
   never inline); job text reaches it through escaped `data-*` attributes. Judgments enter
   the system prompt as `<judgment>` elements (`scoring/prompt.py`); they never re-queue a
@@ -315,7 +318,8 @@ instance; an instance's files never go into git.
 - **Dedupe:** the same (source, source_job_id) is never stored twice (`last_seen_at` is bumped).
   A new posting whose `dedupe.key` matches an earlier job is stored with `duplicate_of` set to
   the first copy. Postings missing a key field (e.g. no company) never merge. A group marked
-  no longer available takes no new copies: a matching posting starts a group of its own. A
+  no longer available takes no new copies: a matching posting starts a group of its own
+  (one marked not interested keeps taking them, so a repost stays hidden). A
   mapper whose
   title carries more than the role sets `Posting.dedupe_title` (HN: the header's role), which
   only shapes `title_normalized`; the stored title stays whole.

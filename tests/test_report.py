@@ -281,6 +281,28 @@ def test_jobs_marked_no_longer_available_stay_out_of_digest_and_backlog(
     assert len(backlog.sections) == 0 and backlog.sections.below == []
 
 
+def test_jobs_marked_not_interested_stay_out_of_digest_and_backlog(
+    tmp_path: Path, session_factory: sessionmaker[Session]
+) -> None:
+    config = config_with(tmp_path, min_score=50)
+    dismissed, kept, dismissed_low = seed_jobs(session_factory, 3)
+    score_jobs(
+        session_factory,
+        config,
+        {dismissed: {"score": 90}, kept: {"score": 70}, dismissed_low: {"score": 20}},
+    )
+    with session_factory.begin() as session:
+        session.execute(
+            update(Job).where(Job.id.in_([dismissed, dismissed_low])).values(dismissed_at=NOW)
+        )
+    digest = make_digest(config, session_factory, now=NOW, environ={})
+    assert [i.job_id for i in digest.sections.top] == [kept]
+    with session_factory.begin() as session:
+        session.execute(update(Job).values(dismissed_at=NOW))
+    backlog = make_backlog_report(config, session_factory, now=NOW, environ={})
+    assert len(backlog.sections) == 0 and backlog.sections.below == []
+
+
 def test_digest_email(tmp_path: Path, session_factory: sessionmaker[Session]) -> None:
     config = config_with(tmp_path, min_score=50, email=EMAIL)
     (job,) = seed_jobs(session_factory, 1)
@@ -420,15 +442,18 @@ def test_export_csv_and_snapshot(
     tmp_path: Path, db_url: str, session_factory: sessionmaker[Session]
 ) -> None:
     config = config_with(tmp_path)
-    first, second = seed_jobs(session_factory, 2)
+    first, second, copy = seed_jobs(session_factory, 3)
     with session_factory.begin() as session:
         session.execute(
             update(Job).where(Job.id == second).values(title="=HYPERLINK(1)", unavailable_at=NOW)
         )
+        # Not interested is set on the canonical job; its copy shares the date.
+        session.execute(update(Job).where(Job.id == first).values(dismissed_at=NOW))
+        session.execute(update(Job).where(Job.id == copy).values(duplicate_of=first))
     score_jobs(session_factory, config, {first: {"score": 77}})
     path = tmp_path / "out" / "jobs.csv"
     with session_factory() as session:
-        assert export_csv(session, path, extra_output_fields(config.profile)) == 2
+        assert export_csv(session, path, extra_output_fields(config.profile)) == 3
     rows = list(csv.DictReader(path.open()))
     assert rows[0]["score"] == "77" and rows[0]["prefilter"] == "passed"
     assert rows[0]["language"] == "english-or-spanish"  # left out of the reports, kept here
@@ -436,10 +461,11 @@ def test_export_csv_and_snapshot(
     assert rows[0]["summary"] == "Synthetic posting that fits."
     assert rows[1]["title"] == "'=HYPERLINK(1)" and rows[1]["score"] == ""
     assert rows[0]["unavailable_at"] == "" and rows[1]["unavailable_at"] == NOW.isoformat()
+    assert [r["dismissed_at"] for r in rows] == [NOW.isoformat(), "", NOW.isoformat()]
 
     snapshot = snapshot_sqlite(db_url, tmp_path / "out" / "snap.db")
     with sqlite3.connect(snapshot) as conn:
-        assert conn.execute("select count(*) from jobs").fetchone() == (2,)
+        assert conn.execute("select count(*) from jobs").fetchone() == (3,)
     with pytest.raises(ValueError, match="SQLite"):
         snapshot_sqlite("postgresql+psycopg://h/db", tmp_path / "x.db")
 

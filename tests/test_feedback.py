@@ -600,6 +600,53 @@ def test_no_longer_available_marks_the_whole_group(
     assert row_ids(dashboard(page), shown_only=True) == [other, gone]
 
 
+def test_not_interested_marks_the_canonical_job(
+    app_config: AppConfig, session_factory: sessionmaker[Session]
+) -> None:
+    dismissed, copy, other = seed_jobs(session_factory, 3)
+    with session_factory.begin() as session:  # the same job on another board
+        session.execute(update(Job).where(Job.id == copy).values(duplicate_of=dismissed))
+    for job_id in (dismissed, other):
+        add_score(session_factory, job_id, app_config.profile.sha256, 70)
+    page = feedback_app(app_config, session_factory)
+    name = filters_cookie(app_config.settings.feedback.base_url)
+
+    def post(job_id: int, value: str, signature: str | None = None) -> Any:
+        s = signature or sign(SECRET, job_id)
+        return page.handle("POST", f"/dismissed/{job_id}", f"s={s}&dismissed={value}")
+
+    def marks() -> dict[int, datetime | None]:
+        with session_factory() as session:
+            return {j.id: j.dismissed_at for j in session.scalars(select(Job))}
+
+    assert post(dismissed, "1", "nope").status == 403
+    assert post(dismissed, "yes").status == 400
+    assert post(copy, "1").status == 404  # a copy isn't a dashboard row
+    assert page.handle("GET", f"/dismissed/{dismissed}").status == 405
+    assert set(marks().values()) == {None}
+
+    response = post(dismissed, "1")
+    assert response.status == 200
+    assert json.loads(response.body) == {"dismissed": True, "date": "2026-10-13"}
+    assert marks() == {dismissed: NOW, copy: None, other: None}  # copies follow the canonical
+    assert post(dismissed, "1").status == 200 and marks()[dismissed] == NOW  # keeps the date
+
+    # Hidden by default; the filter shows it, muted and checked.
+    html = dashboard(page)
+    assert row_ids(html, shown_only=True) == [other]
+    assert 'data-filter="interest" data-default="yes"' in html
+    html = page.handle("GET", "/", cookies=f"{name}={quote('interest=no')}").body
+    assert row_ids(html, shown_only=True) == [dismissed]
+    assert f'<tr class="job dismissed" data-job="{dismissed}"' in html
+    assert 'title="Not interested since 2026-10-13" checked>' in html
+    every = page.handle("GET", "/", cookies=f"{name}={quote('interest=')}").body
+    assert row_ids(every, shown_only=True) == [other, dismissed]
+
+    assert json.loads(post(dismissed, "0").body) == {"dismissed": False, "date": None}
+    assert set(marks().values()) == {None}
+    assert row_ids(dashboard(page), shown_only=True) == [other, dismissed]
+
+
 def test_dashboard_filters_default_to_available(
     app_config: AppConfig, session_factory: sessionmaker[Session]
 ) -> None:

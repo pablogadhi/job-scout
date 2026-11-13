@@ -2579,3 +2579,45 @@ than you have no longer scores like any senior role.
   `years_required`.** An instance doesn't need it: a table without a number component
   scores as before. Add it there if new instances should get it. The skill's directory is
   read-only in the sandbox, so the edit would need your approval.
+
+## Phase 17: Not interested (branch `phase-17-not-interested`)
+
+Started on 2026-11-12 from `main` (phase 16 plus its follow-up commit). The dashboard can
+hide a job you've ruled out, without saying it's gone and without a 👎.
+
+### P17 Your decisions
+
+- **P17-U1 A "not interested" mark of its own, not the "no longer available" one.** That
+  mark stops a group from taking new copies, so a repost comes back as a new group, is
+  scored again and can reach a digest. A job you aren't interested in should stay hidden
+  when it's posted again, and stay recorded as still open. It's not a 👎 either: votes go
+  into the scoring prompt, and a reason like "I already interviewed there" says nothing
+  about the job's fit.
+- **P17-U2 The mark covers the job's group,** the job and every copy of it, including
+  copies that join later. Other jobs at the same company still show.
+- **P17-U3 A job marked not interested also leaves the digest, the backlog report and the
+  scoring queue.** It stays in the database, the CSV export and the dashboard (under a
+  filter).
+
+### P17 Decisions (Claude)
+
+- **P17-D1 A date column on `jobs` (`dismissed_at`), set on the canonical job only.**
+  Everything that reads it goes through the group's canonical job, so a copy that joins
+  later is covered without being written. Dedupe never looks at it, so grouping is the
+  same as for an unmarked job. Marking again keeps the first date. The CSV export gives
+  every copy its group's date. Migration `7c4a2e9b1d63`.
+- **P17-D2 Dashboard:** a "Hide" column (checkbox, `POST /dismissed/<job_id>`, checked like
+  the other marks: signature 403, value 0/1 400, canonical job 404, POST only 405). Marked
+  rows are muted, not struck through, since the job is still open. A new filter, Interest
+  (Interested / Not interested / Any), starts at Interested. A cookie saved before it
+  existed gets that default, as with Availability.
+- **P17-D3 A score already pending when you mark the job stays pending,** as with "no
+  longer available": `scoring/queue.py` skips marked jobs, so nothing is sent while the
+  mark is on, and unmarking puts it back in the queue. `scored_items` takes
+  `include_hidden` (was `include_unavailable`), which leaves out both marks.
+- Checked on a copy of your laptop's database (199 scored jobs):
+  - Marking #881 (2 postings) stored the date on #881 only.
+  - The default dashboard went from 199 rows to 198, and `interest=no` showed only #881.
+  - `explain 881` printed the mark, and the digest's pool left it out (198 of 199).
+  - Not checked in a browser: the checkbox round trip, the filter dropdown, the muted row
+    style, dark mode.

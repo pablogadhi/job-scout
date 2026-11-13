@@ -193,6 +193,11 @@ class ReportItem:
         return self.group.canonical.unavailable_at
 
     @property
+    def dismissed_at(self) -> datetime | None:
+        """When you marked it not interested (the mark covers the whole group)."""
+        return self.group.canonical.dismissed_at
+
+    @property
     def other_fields(self) -> list[tuple[str, str]]:
         """(label, text) for the result's fields the templates don't name, in its order."""
         extra = self.result.model_extra or {}
@@ -281,10 +286,10 @@ def scored_items(
     watchlist: set[str],
     exclude: Iterable[int] = (),
     *,
-    include_unavailable: bool = True,
+    include_hidden: bool = True,
 ) -> list[ReportItem]:
     """Every scored group, best first (ties: newest posting first). Without
-    `include_unavailable`, groups marked no longer available are left out."""
+    `include_hidden`, groups marked no longer available or not interested are left out."""
     skip = set(exclude)
     scores = [
         s
@@ -300,10 +305,16 @@ def scored_items(
         for score in scores
         # defensive: the scored job is gone or no longer canonical
         if (group := groups.get(score.job_id)) is not None
-        and (include_unavailable or group.canonical.unavailable_at is None)
+        and (include_hidden or not _hidden(group))
     ]
     items.sort(key=lambda i: (-i.overall, -(i.posted_at.timestamp() if i.posted_at else 0)))
     return items
+
+
+def _hidden(group: Group) -> bool:
+    """Marked no longer available or not interested on the dashboard."""
+    canonical = group.canonical
+    return canonical.unavailable_at is not None or canonical.dismissed_at is not None
 
 
 def scored_item(session: Session, job_id: int, watchlist: set[str]) -> ReportItem | None:

@@ -7,7 +7,8 @@ links on their own). POST /f/<job_id> saves and redirects back to the page.
 GET / is the dashboard: every scored job (dashboard.py). It needs no token: it's one
 person's LAN page. GET /details/<job_id> is a job's details, which it loads when you open a
 row. Its vote dialog posts to POST /f/<job_id> like the page does; its applied checkbox posts
-to POST /applied/<job_id>, its "no longer available" checkbox to POST /unavailable/<job_id>.
+to POST /applied/<job_id>, its "no longer available" checkbox to POST /unavailable/<job_id>
+and its "not interested" checkbox to POST /dismissed/<job_id>.
 GET /dashboard.js is its script, the only script this server sends; the dashboard's
 Content-Security-Policy allows it, the feedback page's allows none.
 GET /d (the dashboard's old, tokened address) redirects to /.
@@ -57,6 +58,7 @@ from job_scout.feedback.store import (
     get_vote,
     record_vote,
     set_applied,
+    set_dismissed,
     set_unavailable,
 )
 from job_scout.report.data import item_mark, scored_item, watchlist_names
@@ -69,9 +71,9 @@ log = logging.getLogger(__name__)
 MAX_BODY_BYTES = 16 * 1024
 REQUEST_TIMEOUT_SECONDS = 15
 _PATH = re.compile(r"/f/(\d{1,12})")
-_MARK_PATH = re.compile(r"/(applied|unavailable)/(\d{1,12})")
+_MARK_PATH = re.compile(r"/(applied|unavailable|dismissed)/(\d{1,12})")
 _DETAILS_PATH = re.compile(r"/details/(\d{1,12})")
-_DASHBOARD_PREFIXES = ("/applied/", "/unavailable/", "/details/")
+_DASHBOARD_PREFIXES = ("/applied/", "/unavailable/", "/dismissed/", "/details/")
 _GZIP_MIN_BYTES = 1024
 _CSP = (
     "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; "
@@ -226,7 +228,7 @@ class FeedbackApp:
             return self._error(404, "Not found.")
         if method != "POST":
             return self._error(405, "Method not allowed.")
-        # A checkbox: /applied/<job_id> or /unavailable/<job_id>, its field named the same.
+        # A checkbox: /applied/, /unavailable/ or /dismissed/<job_id>, its field named the same.
         name, job_id = match.group(1), int(match.group(2))
         form = parse_qs(body, keep_blank_values=True)
         if not verify(self.secret, job_id, _first(form, "s")):
@@ -236,6 +238,8 @@ class FeedbackApp:
             return _json(400, {"error": f"{name} must be 0 or 1."})
         if name == "applied":
             return self._set_applied(job_id, value == "1")
+        if name == "dismissed":
+            return self._set_dismissed(job_id, value == "1")
         return self._set_unavailable(job_id, value == "1")
 
     def _dashboard(self, cookies: str) -> Response:
@@ -299,6 +303,16 @@ class FeedbackApp:
         )
         date = f"{when.astimezone(self._tz()):%Y-%m-%d}" if when else None
         return _json(200, {"unavailable": unavailable, "date": date})
+
+    def _set_dismissed(self, job_id: int, dismissed: bool) -> Response:
+        with self.sf.begin() as session:
+            group = group_of(session, job_id)
+            if group is None or group.canonical.id != job_id:
+                return _json(404, {"error": "That job isn't in the database."})
+            when = set_dismissed(session, group, dismissed, self.clock())
+        log.info("not interested: job %s %s", job_id, "marked" if dismissed else "unmarked")
+        date = f"{when.astimezone(self._tz()):%Y-%m-%d}" if when else None
+        return _json(200, {"dismissed": dismissed, "date": date})
 
     def _tz(self) -> ZoneInfo:
         return ZoneInfo(self.config.settings.schedule.timezone)

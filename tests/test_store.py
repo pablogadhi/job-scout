@@ -157,3 +157,25 @@ def test_a_group_marked_no_longer_available_takes_no_new_copies(
     assert jobs["b", "x"].duplicate_of == jobs["a", "1"].id  # the marked group is unchanged
     assert jobs["a", "2"].duplicate_of is None and jobs["a", "2"].unavailable_at is None
     assert jobs["b", "y"].duplicate_of == jobs["a", "2"].id  # joins the available group
+
+
+def test_a_group_marked_not_interested_keeps_taking_copies(
+    session_factory: sessionmaker[Session],
+) -> None:
+    setup_sources(session_factory, "a", "b")
+    with session_factory.begin() as session:
+        store_postings(session, "a", [posting("1")], KEY, NOW)
+        canonical = session.scalars(select(Job)).one()
+        canonical.dismissed_at = NOW  # the canonical job only, as the dashboard marks it
+
+    later = NOW + timedelta(days=3)
+    with session_factory.begin() as session:
+        repost = store_postings(session, "a", [posting("2")], KEY, later)
+        copy = store_postings(session, "b", [posting("x")], KEY, later)
+    assert (repost.new, repost.duplicate) == (0, 1)  # the same job: it stays hidden
+    assert (copy.new, copy.duplicate) == (0, 1)
+
+    with session_factory() as session:
+        jobs = {(j.source_id, j.source_job_id): j for j in session.scalars(select(Job))}
+    first = jobs["a", "1"].id
+    assert jobs["a", "2"].duplicate_of == first and jobs["b", "x"].duplicate_of == first

@@ -32,10 +32,11 @@ FILTER_VALUES: dict[str, tuple[str, ...]] = {
     "feedback": (*(vote.value for vote in Vote), NO_VOTE),
     "applied": _YES_NO,
     "available": _YES_NO,
+    "interest": _YES_NO,
 }
-# A filter's value until you choose one ("" is any): jobs marked no longer available are
-# hidden unless you ask for them.
-FILTER_DEFAULTS: dict[str, str] = {"available": "yes"}
+# A filter's value until you choose one ("" is any): jobs marked no longer available or not
+# interested are hidden unless you ask for them.
+FILTER_DEFAULTS: dict[str, str] = {"available": "yes", "interest": "yes"}
 
 # Each section's order: by score (best first, the digest's order) or by posting date.
 SCORE, POSTED_DESC, POSTED_ASC = "score", "posted_desc", "posted_asc"
@@ -68,6 +69,7 @@ class Filters:
     feedback: str = ""
     applied: str = ""
     available: str = FILTER_DEFAULTS["available"]
+    interest: str = FILTER_DEFAULTS["interest"]
 
     @classmethod
     def from_state(cls, state: dict[str, str]) -> Filters:
@@ -97,6 +99,9 @@ class Filters:
             return False
         gone = row.item.unavailable_at is not None
         if self.available and gone == (self.available == "yes"):
+            return False
+        dismissed = row.item.dismissed_at is not None
+        if self.interest and dismissed == (self.interest == "yes"):
             return False
         return not self.applied or (row.application is not None) == (self.applied == "yes")
 

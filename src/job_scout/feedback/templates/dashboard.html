@@ -38,7 +38,7 @@
   tr.details > td { background: var(--bg); cursor: auto; }
   tr.details .row { margin: 4px 0; }
   tr.details .label { color: var(--muted); }
-  tr.job.unavailable > td { color: var(--muted); }
+  tr.job.unavailable > td, tr.job.dismissed > td { color: var(--muted); }
   tr.job.unavailable .expand { color: var(--muted); text-decoration: line-through; }
   th .sort { background: none; border: 0; padding: 0; margin: 0; width: auto; font: inherit;
              font-weight: 600; color: var(--muted); cursor: pointer; white-space: nowrap; }
@@ -83,6 +83,7 @@
   "feedback": ("Feedback", {"up": "👍 Positive", "down": "👎 Negative", "none": "None yet"}),
   "applied": ("Applied", {"yes": "Applied", "no": "Not applied"}),
   "available": ("Availability", {"yes": "Available", "no": "No longer available"}),
+  "interest": ("Interest", {"yes": "Interested", "no": "Not interested"}),
 } %}
 <div class="filters">
 {%- for name, values in filter_values.items() %}
@@ -110,11 +111,12 @@
   <th{% if by_posted %} aria-sort="{{ 'descending' if section.sort == 'posted_desc' else 'ascending' }}"{% endif %}><button type="button" class="sort" data-sort-by="posted" title="Sort by posting date (click again to reverse)">Posted<span class="arrow">{{ (" ↓" if section.sort == "posted_desc" else " ↑") if by_posted else "" }}</span></button></th>
   <th class="center">Link</th><th class="center">Feedback</th>
   <th class="center">Applied</th><th class="center" title="No longer available">Gone</th>
+  <th class="center" title="Not interested">Hide</th>
 </tr></thead>
 <tbody>
 {%- for row in section.rows %}
 {%- set item = row.item %}
-<tr class="job{% if item.unavailable_at %} unavailable{% endif %}" data-job="{{ item.job_id }}" data-s="{{ row.signature }}" data-search="{{ row.search_text }}" data-watchlist="{{ 1 if item.watchlist else 0 }}" data-rank="{{ row.rank }}" data-posted="{{ item.posted_at.isoformat() if item.posted_at else '' }}"{% if not row.visible %} hidden{% endif %}>
+<tr class="job{% if item.unavailable_at %} unavailable{% endif %}{% if item.dismissed_at %} dismissed{% endif %}" data-job="{{ item.job_id }}" data-s="{{ row.signature }}" data-search="{{ row.search_text }}" data-watchlist="{{ 1 if item.watchlist else 0 }}" data-rank="{{ row.rank }}" data-posted="{{ item.posted_at.isoformat() if item.posted_at else '' }}"{% if not row.visible %} hidden{% endif %}>
   <td class="num"><span class="score {% if item.overall >= 70 %}s-high{% elif item.overall >= 50 %}s-mid{% endif %}">{{ item.overall }}</span>
     {%- if item.disqualified %}<br><span class="flag" title="{{ item.disqualify_reason or 'disqualified' }}">dq</span>{% endif %}</td>
   <td><button type="button" class="expand" aria-expanded="false">{{ item.title }}</button>
@@ -133,6 +135,9 @@
   <td class="center"><input type="checkbox" aria-label="No longer available" data-unavailable
       title="{% if item.unavailable_at %}No longer available since {{ local_date(item.unavailable_at) }}{% else %}Mark as no longer available (every copy of this job){% endif %}"
       {%- if item.unavailable_at %} checked{% endif %}></td>
+  <td class="center"><input type="checkbox" aria-label="Not interested" data-dismissed
+      title="{% if item.dismissed_at %}Not interested since {{ local_date(item.dismissed_at) }}{% else %}Mark as not interested (hides this job and its copies){% endif %}"
+      {%- if item.dismissed_at %} checked{% endif %}></td>
 </tr>
 {%- endfor %}
 </tbody>

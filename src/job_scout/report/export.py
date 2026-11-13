@@ -27,8 +27,8 @@ from job_scout.scoring.points import Breakdown
 COLUMNS = [
     "job_id", "group_id", "duplicate", "source", "title", "company", "location", "remote",
     "salary_min", "salary_max", "salary_currency", "salary_period", "posted_at",
-    "first_seen_at", "unavailable_at", "url", "apply_url", "prefilter", "prefilter_reason",
-    "score_status",
+    "first_seen_at", "unavailable_at", "dismissed_at", "url", "apply_url", "prefilter",
+    "prefilter_reason", "score_status",
     "score", "disqualified", "disqualify_reason", "location_eligibility", "location_notes",
     "salary_notes", "summary",
     "score_breakdown", "score_legacy", "scoring_fingerprint", "scored_at", "backend", "model",
@@ -61,6 +61,13 @@ def export_csv(
     per scoring.yaml component; return the number of rows."""
     verdicts = {r.job_id: r for r in session.scalars(select(PrefilterResult))}
     scores = {s.job_id: s for s in session.scalars(select(Score))}
+    # Not interested is set on the canonical job only; every copy shares its group's date.
+    dismissed = {
+        job_id: when
+        for job_id, when in session.execute(
+            select(Job.id, Job.dismissed_at).where(Job.dismissed_at.is_not(None))
+        )
+    }
     path.parent.mkdir(parents=True, exist_ok=True)
     rows = 0
     with path.open("w", newline="", encoding="utf-8") as fh:
@@ -91,6 +98,7 @@ def export_csv(
                     job.posted_at,
                     job.first_seen_at,
                     job.unavailable_at,
+                    dismissed.get(group_id),
                     job.canonical_url,
                     job.apply_url,
                     "" if verdict is None else ("passed" if verdict.passed else "dropped"),

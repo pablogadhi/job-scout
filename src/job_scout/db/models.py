@@ -210,6 +210,9 @@ class Job(Base):
     # Marked no longer available on the dashboard (every job of its group at once): the group
     # takes no new copies and leaves the digest and the scoring queue.
     unavailable_at: Mapped[datetime | None]
+    # Marked not interested on the dashboard, set on the canonical job only: copies that join
+    # the group later are covered by it, and the group leaves the digest and the scoring queue.
+    dismissed_at: Mapped[datetime | None]
 
 
 class PrefilterResult(Base):

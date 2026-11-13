@@ -1,8 +1,9 @@
-"""Save and read votes, applications and "no longer available" marks.
+"""Save and read votes, applications, "no longer available" and "not interested" marks.
 
 Votes: one row per canonical job; a new vote replaces the old one. Applications: one row per
 company you applied to (a job without a company stands for itself). No longer available: a
-date on every job of the group (`Job.unavailable_at`).
+date on every job of the group (`Job.unavailable_at`). Not interested: a date on the group's
+canonical job only (`Job.dismissed_at`), so copies that join the group later are covered too.
 """
 
 from __future__ import annotations
@@ -126,3 +127,14 @@ def set_unavailable(
         job.unavailable_at = when
     session.flush()
     return when
+
+
+def set_dismissed(
+    session: Session, group: Group, dismissed: bool, now: datetime
+) -> datetime | None:
+    """Mark (or unmark) the group as not interested; marking again keeps the first date.
+    Returns the group's date, None when unmarked."""
+    canonical = group.canonical
+    canonical.dismissed_at = (canonical.dismissed_at or now) if dismissed else None
+    session.flush()
+    return canonical.dismissed_at
