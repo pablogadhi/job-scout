@@ -78,9 +78,16 @@ def load_settings_only(
         raise ConfigError(f"{path} / JOB_SCOUT_* env / flags: {_describe(exc)}") from exc
 
 
-def load_points(path: Path) -> PointsTable:
-    """A points table (scoring.yaml, or a candidate for `simulate --table`)."""
-    return _load_yaml_model(PointsTable, path)
+def load_points(path: Path, profile: Profile | None = None) -> PointsTable:
+    """A points table (scoring.yaml, or a candidate for `simulate --table`). With the
+    profile, bands relative to its years are made absolute, as the code scores with them."""
+    table = _load_yaml_model(PointsTable, path)
+    if profile is None:
+        return table
+    try:
+        return table.resolved(profile.years)
+    except ValueError as exc:
+        raise ConfigError(f"{path}: {exc}") from exc
 
 
 def load_config(
@@ -99,5 +106,5 @@ def load_config(
         sources=_load_yaml_model(SourcesConfig, config_dir / "sources.yaml"),
         filters=_load_yaml_model(FiltersConfig, config_dir / "filters.yaml"),
         profile=profile,
-        points=load_points(config_dir / "scoring.yaml"),
+        points=load_points(config_dir / "scoring.yaml", profile),
     )

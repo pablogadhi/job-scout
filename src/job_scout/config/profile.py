@@ -30,6 +30,8 @@ COMPUTED_KEYS = frozenset({"overall_score", "disqualified", "disqualify_reason"}
 
 _OUTPUT_BLOCK = re.compile(r"^## Output format\b.*?^```json\n(.*?)^```", re.DOTALL | re.MULTILINE)
 _OR_NULL = re.compile(r"\bor null\s*$")
+_SUMMARY = re.compile(r"^## Summary\b(.*?)(?=^## |\Z)", re.DOTALL | re.MULTILINE)
+_YEARS = re.compile(r"\b(\d{1,2})\+?\s*years?\b", re.IGNORECASE)
 
 FieldKind = Literal["bool", "int", "float", "str", "enum", "list", "objects"]
 
@@ -56,6 +58,9 @@ class Profile:
     sha256: str
     output_example: dict[str, Any]
     output_fields: tuple[OutputField, ...]
+    # The first "N+ years" in the Summary: the candidate's experience, which scoring.yaml's
+    # bands can count from (`relative_to: profile_years`). None when it states none.
+    years: int | None = None
 
 
 def output_field(name: str, example: Any) -> OutputField:
@@ -99,6 +104,13 @@ def _object_field(parent: str, name: str, example: Any) -> OutputField:
     return replace(field, name=name)
 
 
+def profile_years(text: str) -> int | None:
+    """The years of experience the profile's Summary states ("6+ years of experience")."""
+    summary = _SUMMARY.search(text)
+    found = _YEARS.search(summary.group(1)) if summary else None
+    return int(found.group(1)) if found else None
+
+
 def load_profile(path: Path) -> Profile:
     raw = path.read_bytes()
     text = raw.decode("utf-8")
@@ -127,4 +139,5 @@ def load_profile(path: Path) -> Profile:
         sha256=hashlib.sha256(raw).hexdigest(),
         output_example=example,
         output_fields=tuple(output_field(name, value) for name, value in example.items()),
+        years=profile_years(text),
     )

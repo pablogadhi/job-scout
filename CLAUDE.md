@@ -271,7 +271,10 @@ instance; an instance's files never go into git.
   so a weight change re-ranks everything without calling Claude. A row scored before
   points has no breakdown and keeps Claude's number ("old scoring"; `rescore --legacy`).
   A cap or disqualify rule, or a `number` component, on a field added to the profile later
-  skips rows without it (a component counts 0).
+  skips rows without it (a component counts 0). A `number` component with `relative_to:
+  profile_years` counts its bands (`over_by`) from the first "N+ years" in profile.md's
+  Summary (`Profile.years`), resolved by `load_config`; startup fails without one. The
+  candidate's experience lives only there, and changing it re-ranks stored scores.
   A digest takes a job scored before the previous digest only if it was first seen within
   `digest.rescored_max_age_days`.
 - **Scoring:** one score row per canonical job, scored once. Only `rescore` queues a scored

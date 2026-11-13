@@ -2525,22 +2525,25 @@ than you have no longer scores like any senior role.
 
 ### P16 Your decisions
 
-- **P16-U1 Up to 7 years fits** (you're at 6+). Asking 8 years is a stretch: −5 points,
-  the same gap as staff against senior.
-- **P16-U2 More than 8 years caps the score at 59,** below `digest.min_score` (60). Such a
-  job never reaches the digest or Top matches, and stays ranked under Below threshold on
-  the dashboard.
+- **P16-U1 Asking up to a year more than you have fits.** Two years more is a stretch: −5
+  points, the same gap as staff against senior. With your 6+, that's up to 7 and 8.
+- **P16-U2 Three or more years above yours caps the score at 59,** below
+  `digest.min_score` (60). Such a job never reaches the digest or Top matches, and stays
+  ranked under Below threshold on the dashboard.
 - **P16-U3 Only an overall-experience figure counts.** Years with one skill or tool ("5+
   years of Python") and preferred figures ("ideally 10 years") don't.
 - **P16-U4 Only new jobs get the years.** Jobs already scored keep their scores; nothing
   is rescored.
+- **P16-U5 The bands count from the profile's years, not fixed numbers.** Your experience
+  comes from the CV into profile.md's Summary ("6+ years"); scoring.yaml says only how far
+  above it a posting may go.
 
 ### P16 Decisions (Claude)
 
 - **P16-D1 Claude reports the number, the code scores it.** profile.md gains
   `years_required` (a whole number, 0 when the posting states none), extracted as a fact.
   The thresholds live in scoring.yaml as a new `number` component kind: each band gives
-  points up to and including its `upto`, and a band can also cap the score (`max` with its
+  points up to and including its bound, and a band can also cap the score (`max` with its
   `reason`). Claude never sees them, so changing a threshold re-ranks stored scores without
   calling Claude. An enum Claude judges ("within / stretch / over") would have put the
   thresholds in the prompt instead.
@@ -2559,6 +2562,16 @@ than you have no longer scores like any senior role.
   `years required -5 (8 years -5)`, and the digest's details get a red "Years required: −5
   8 years" row, like a negative signal. At 0 points the part is hidden. `years_required`
   joins `UNLISTED_FIELDS`, so it has a CSV column but no generic "Years required: 0" line.
+- **P16-D6 Relative bands are made absolute when the config loads** (P16-U5). With
+  `relative_to: profile_years`, the bands give `over_by`. `load_config` adds them to the
+  first "N+ years" in profile.md's `## Summary` (`Profile.years`; your 6, the ngo
+  instance's 24). From there on, `compute`, `check_points` and the fingerprint see the
+  absolute `upto` values. So a new number in the Summary changes the fingerprint, and
+  stored scores re-rank on the next command without a rescore. Startup fails (exit 2) when
+  a table is relative and the Summary states no years, so it never scores against a
+  missing figure. Claude still compares nothing: it only reports what the posting asks.
+  Today's bands come out at 7 and 8, as before. Checked on the database copy: the 19
+  scores computed with points were recomputed, and no total changed.
 
 ### P16 Left for you to review
 

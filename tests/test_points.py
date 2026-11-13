@@ -277,10 +277,11 @@ EXPERIENCE: dict[str, Any] = {
     "field": "years_required",
     "label": "years required",
     "unit": "years",
+    "relative_to": "profile_years",
     "bands": [
-        {"upto": 7, "points": 0},
-        {"upto": 8, "points": -5},
-        {"points": -5, "max": 59, "reason": "asks for more than 8 years"},
+        {"over_by": 1, "points": 0},
+        {"over_by": 2, "points": -5},
+        {"points": -5, "max": 59, "reason": "asks for 3+ years more"},
     ],
 }
 
@@ -293,7 +294,7 @@ def _with_experience(experience: dict[str, Any] = EXPERIENCE) -> dict[str, Any]:
     return raw
 
 
-YEARS_TABLE = PointsTable.model_validate(_with_experience())
+YEARS_TABLE = PointsTable.model_validate(_with_experience()).resolved(6)  # a 6+ years profile
 YEARS_PROFILE = replace(
     PROFILE,
     output_example={**OUTPUT_FORMAT, "years_required": 0},
@@ -320,8 +321,8 @@ def test_the_years_asked_cost_points_past_the_target_and_cap_past_eight() -> Non
     assert stretch.parts[2].items[0].points == -5
     too_many = years_score(years_required=10)
     assert too_many.subtotal == base - 5 and too_many.total == 59
-    assert too_many.caps == ((59, "asks for more than 8 years"),)
-    assert too_many.line().endswith(f"= {base - 5} → 59 (asks for more than 8 years)")
+    assert too_many.caps == ((59, "asks for 3+ years more"),)
+    assert too_many.line().endswith(f"= {base - 5} → 59 (asks for 3+ years more)")
     assert years_score(years_required=9, role_category="mobile").total == 45  # lower cap wins
 
 
@@ -338,23 +339,54 @@ def test_a_number_component_must_read_a_number_field() -> None:
     with pytest.raises(PointsMismatch, match="no field 'years_required'"):
         check_points(YEARS_TABLE, PROFILE)
     as_enum = PointsTable.model_validate(_with_experience({**EXPERIENCE, "field": "salary"}))
+    as_enum = as_enum.resolved(6)
     with pytest.raises(PointsMismatch, match="'salary' is not a number"):
         check_points(as_enum, YEARS_PROFILE)
 
 
+def test_relative_bands_follow_the_profiles_years() -> None:
+    relative = PointsTable.model_validate(_with_experience())
+    bands = YEARS_TABLE.components["experience"].bands  # type: ignore[union-attr]
+    assert [(b.upto, b.over_by) for b in bands] == [(7, None), (8, None), (None, None)]
+    # A year more on the CV moves every band, and re-ranks stored scores (the fingerprint).
+    later = relative.resolved(7)
+    assert compute(later, result(years_required=8)) == compute(YEARS_TABLE, result())
+    assert points.fingerprint(later) != points.fingerprint(YEARS_TABLE)
+    with pytest.raises(ValueError, match="states no years of experience"):
+        relative.resolved(None)
+    assert TABLE.resolved(None) == TABLE  # nothing relative: nothing needed
+    absolute = {
+        **EXPERIENCE,
+        "relative_to": None,
+        "bands": [{"upto": 7, "points": 0}, {"points": -5}],
+    }
+    table = PointsTable.model_validate(_with_experience(absolute))
+    assert table.resolved(None) == table
+
+
 @pytest.mark.parametrize(
-    "bands",
+    ("relative_to", "bands"),
     [
-        [{"upto": 8, "points": 0}, {"upto": 7, "points": -5}, {"points": -9}],  # out of order
-        [{"points": 0}, {"upto": 8, "points": -5}],  # an open band before the last
-        [{"upto": 7, "points": 0}, {"upto": 8, "points": -5}],  # nothing above 8
-        [{"upto": 7, "points": 0}, {"points": -5, "max": 59}],  # a cap without its reason
-        [],
+        (None, [{"upto": 8, "points": 0}, {"upto": 7, "points": -5}, {"points": -9}]),  # order
+        (None, [{"points": 0}, {"upto": 8, "points": -5}]),  # an open band before the last
+        (None, [{"upto": 7, "points": 0}, {"upto": 8, "points": -5}]),  # nothing above 8
+        (None, [{"upto": 7, "points": 0}, {"points": -5, "max": 59}]),  # a cap, no reason
+        (None, []),
+        (None, [{"over_by": 1, "points": 0}, {"points": -5}]),  # relative, but not said so
+        ("profile_years", [{"upto": 7, "points": 0}, {"points": -5}]),  # absolute in relative
+        (
+            "profile_years",
+            [{"over_by": 2, "points": 0}, {"over_by": 1, "points": -5}, {"points": 0}],
+        ),
+        ("years", [{"over_by": 1, "points": 0}, {"points": -5}]),  # only profile_years
     ],
 )
-def test_bands_must_cover_every_value_in_order(bands: list[dict[str, Any]]) -> None:
+def test_bands_must_cover_every_value_in_order(
+    relative_to: str | None, bands: list[dict[str, Any]]
+) -> None:
+    experience = {**EXPERIENCE, "relative_to": relative_to, "bands": bands}
     with pytest.raises(ValidationError):
-        PointsTable.model_validate(_with_experience({**EXPERIENCE, "bands": bands}))
+        PointsTable.model_validate(_with_experience(experience))
 
 
 def test_the_breakdown_survives_json_storage() -> None:

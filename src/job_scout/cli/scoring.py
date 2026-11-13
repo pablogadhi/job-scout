@@ -404,7 +404,7 @@ def simulate(
     table = config.points
     if table_file is not None:
         try:
-            table = load_points(table_file)
+            table = load_points(table_file, config.profile)
             check_points(table, config.profile)
         except (ConfigError, PointsMismatch) as exc:
             raise fail(f"{table_file}: {exc}", label="config error") from exc

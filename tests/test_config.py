@@ -5,7 +5,8 @@ import pytest
 import yaml
 
 from job_scout.config import ConfigError, load_config, load_settings_only
-from job_scout.config.points import PointsTable
+from job_scout.config.points import NumberComponent, PointsTable
+from job_scout.config.profile import profile_years
 from job_scout.config.settings import ApiLimits
 from job_scout.db.models import Backend, ScoringMode
 from job_scout.scoring.points import check_points
@@ -29,6 +30,37 @@ def test_test_config_is_valid() -> None:
     assert config.sources.watchlist[0].company == "Canonical"
     yaml_table = yaml.safe_load((TEST_CONFIG / "scoring.yaml").read_text(encoding="utf-8"))
     PointsTable.model_validate(yaml_table)
+
+
+@pytest.mark.parametrize(
+    ("summary", "years"),
+    [
+        ("Senior Software Engineer, 6+ years of experience. Led 2 teams for 3 years.", 6),
+        ("International program director with 24+ years designing programs.", 24),
+        ("Backend engineer; ten years building APIs.", None),  # digits only
+    ],
+)
+def test_the_profiles_years_come_from_its_summary(summary: str, years: int | None) -> None:
+    text = f"# Profile\n\n## Summary\n\n{summary}\n\n## Skills\n\n5+ years of Go.\n"
+    assert profile_years(text) == years
+    assert profile_years("# Profile\n\n## Skills\n\n5+ years of Go.\n") is None
+
+
+def test_scoring_bands_relative_to_the_profiles_years(config_dir: Path) -> None:
+    experience = (
+        "  experience:\n"
+        "    kind: number\n"
+        "    field: years_required\n"
+        "    relative_to: profile_years\n"
+        "    bands: [{over_by: 1, points: 0}, {points: -5}]\n"
+    )
+    edit(config_dir / "scoring.yaml", "components:\n", "components:\n" + experience)
+    component = load_config(config_dir).points.components["experience"]
+    assert isinstance(component, NumberComponent)  # the pinned profile: 6+ years
+    assert [b.upto for b in component.bands] == [7, None] and component.relative_to is None
+    edit(config_dir / "profile.md", "6+ years of experience", "a long career")
+    with pytest.raises(ConfigError, match="Summary states no years of experience"):
+        load_config(config_dir)
 
 
 def test_tier_1_enabled_by_default_tier_2_by_flag() -> None:
