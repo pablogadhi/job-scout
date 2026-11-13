@@ -40,6 +40,7 @@ OUTPUT_FORMAT = {
     "salary_notes": "string",
     "role_category": "program-director | program-manager | consultant | other",
     "seniority": "string as stated in the posting",
+    "years_required": 0,
     "travel_required": "none | occasional | frequent | unknown",
     "contract_length": "e.g. 6 months, or null",
     "donors": ["string"],
@@ -74,6 +75,12 @@ components:
     kind: enum
     field: salary
     points: {meets: 10, unlisted: 5, below: 0}
+  years:
+    kind: number
+    field: years_required
+    label: years required
+    unit: years
+    bands: [{upto: 10, points: 0}, {points: -5}]
 disqualify:
   - when: {location_eligibility: [fail]}
     reason: not open to Central America
@@ -90,6 +97,7 @@ def program_result(job_id: int, **overrides: Any) -> dict[str, Any]:
         "salary_notes": "",
         "role_category": "program-director",
         "seniority": "Director",
+        "years_required": 12,
         "travel_required": "frequent",
         "contract_length": "6 months",
         "donors": ["IDB", "EU"],
@@ -125,7 +133,9 @@ def test_the_profile_declares_its_own_fields(program_config: AppConfig) -> None:
     )
     assert fields["contract_length"] == OutputField("contract_length", "str", nullable=True)
     assert fields["donors"].kind == "list"
+    assert fields["years_required"] == OutputField("years_required", "int")
     assert extra_output_fields(program_config.profile) == [
+        "years_required",
         "travel_required",
         "contract_length",
         "donors",
@@ -161,8 +171,8 @@ def test_scored_reported_and_exported(
     with session_factory() as session:
         stored = {s.job_id: s for s in session.scalars(select(Score))}
     assert stored[good].status == ScoreStatus.SCORED
-    # (2 x 1 + 1 x 0) / 3 of 50, + 30 + 0 + 5
-    assert stored[good].overall_score == 33 + 30 + 0 + 5
+    # (2 x 1 + 1 x 0) / 3 of 50, + 30 + 0 + 5, - 5 for the 12 years asked
+    assert stored[good].overall_score == 33 + 30 + 0 + 5 - 5
     result = stored[good].result
     assert result is not None and result["donors"] == ["IDB", "EU"]
     assert stored[bad].status == ScoreStatus.PENDING and stored[bad].attempts == 1
@@ -172,7 +182,14 @@ def test_scored_reported_and_exported(
     assert '<span class="label">Travel required:</span> frequent' in page
     assert '<span class="label">Contract length:</span> 6 months' in page
     assert '<span class="label">Donors:</span> IDB, EU' in page
-    assert "experience 33/50 · role 30/30 · travel 0/10 · salary 5/10 = 68" in page
+    assert (
+        "experience 33/50 · role 30/30 · travel 0/10 · salary 5/10"
+        " · years required -5 (12 years -5) = 63" in page
+    )
+    # The years show through the points they cost, not as a field of their own.
+    years_row = '<span class="label">Years required:</span> <span class="flag">-5 12 years</span>'
+    assert years_row in page
+    assert '<span class="label">Years required:</span> 12' not in page
     assert "✓ Program design (required, strong) &middot; ✗ Portuguese (nice-to-have, none)" in page
     # The first profile's role row needs fields this one doesn't have: the short form.
     assert '<span class="label">Role:</span> program-director · Director · remote: yes' in page
@@ -183,6 +200,7 @@ def test_scored_reported_and_exported(
         export_csv(session, path, extra_output_fields(program_config.profile))
     rows = list(csv.DictReader(path.open(encoding="utf-8")))
     row = next(r for r in rows if r["job_id"] == str(good))
+    assert row["years_required"] == "12"
     assert (row["travel_required"], row["contract_length"], row["donors"]) == (
         "frequent",
         "6 months",

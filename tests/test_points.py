@@ -270,6 +270,93 @@ def test_a_rule_on_a_field_the_result_lacks_does_not_apply() -> None:
     assert breakdown.total == score_of().total
 
 
+# --- a number component: the years of experience asked ---------------------------------
+
+EXPERIENCE: dict[str, Any] = {
+    "kind": "number",
+    "field": "years_required",
+    "label": "years required",
+    "unit": "years",
+    "bands": [
+        {"upto": 7, "points": 0},
+        {"upto": 8, "points": -5},
+        {"points": -5, "max": 59, "reason": "asks for more than 8 years"},
+    ],
+}
+
+
+def _with_experience(experience: dict[str, Any] = EXPERIENCE) -> dict[str, Any]:
+    raw = copy.deepcopy(RAW_TABLE)
+    components = list(raw["components"].items())
+    components.insert(2, ("experience", copy.deepcopy(experience)))  # after seniority
+    raw["components"] = dict(components)
+    return raw
+
+
+YEARS_TABLE = PointsTable.model_validate(_with_experience())
+YEARS_PROFILE = replace(
+    PROFILE,
+    output_example={**OUTPUT_FORMAT, "years_required": 0},
+    output_fields=(*PROFILE.output_fields, output_field("years_required", 0)),
+)
+
+
+def years_score(**overrides: Any) -> Breakdown:
+    breakdown = compute(YEARS_TABLE, result(**overrides))
+    assert breakdown is not None
+    return breakdown
+
+
+def test_the_years_asked_cost_points_past_the_target_and_cap_past_eight() -> None:
+    check_points(YEARS_TABLE, YEARS_PROFILE)
+    base = score_of().total
+    for years in (0, 6, 7):  # 0: not stated
+        fine = years_score(years_required=years)
+        assert fine.total == base and fine.parts[2].points == 0 and not fine.parts[2].items
+        assert "years required" not in fine.line()
+    stretch = years_score(years_required=8)
+    assert stretch.total == base - 5 and not stretch.caps
+    assert "· years required -5 (8 years -5) ·" in stretch.line()
+    assert stretch.parts[2].items[0].points == -5
+    too_many = years_score(years_required=10)
+    assert too_many.subtotal == base - 5 and too_many.total == 59
+    assert too_many.caps == ((59, "asks for more than 8 years"),)
+    assert too_many.line().endswith(f"= {base - 5} → 59 (asks for more than 8 years)")
+    assert years_score(years_required=9, role_category="mobile").total == 45  # lower cap wins
+
+
+def test_a_result_scored_before_the_years_field_keeps_its_score() -> None:
+    breakdown = compute(YEARS_TABLE, result())  # no years_required
+    assert breakdown is not None and breakdown.total == score_of().total
+    assert breakdown.parts[2].points == 0 and not breakdown.notes
+    odd = years_score(years_required="ten")
+    assert odd.total == score_of().total
+    assert odd.notes == ("years_required: not a number 'ten'",)
+
+
+def test_a_number_component_must_read_a_number_field() -> None:
+    with pytest.raises(PointsMismatch, match="no field 'years_required'"):
+        check_points(YEARS_TABLE, PROFILE)
+    as_enum = PointsTable.model_validate(_with_experience({**EXPERIENCE, "field": "salary"}))
+    with pytest.raises(PointsMismatch, match="'salary' is not a number"):
+        check_points(as_enum, YEARS_PROFILE)
+
+
+@pytest.mark.parametrize(
+    "bands",
+    [
+        [{"upto": 8, "points": 0}, {"upto": 7, "points": -5}, {"points": -9}],  # out of order
+        [{"points": 0}, {"upto": 8, "points": -5}],  # an open band before the last
+        [{"upto": 7, "points": 0}, {"upto": 8, "points": -5}],  # nothing above 8
+        [{"upto": 7, "points": 0}, {"points": -5, "max": 59}],  # a cap without its reason
+        [],
+    ],
+)
+def test_bands_must_cover_every_value_in_order(bands: list[dict[str, Any]]) -> None:
+    with pytest.raises(ValidationError):
+        PointsTable.model_validate(_with_experience({**EXPERIENCE, "bands": bands}))
+
+
 def test_the_breakdown_survives_json_storage() -> None:
     breakdown = score_of(signals=[signal("four_day_week")], role_category="mobile")
     stored = json.loads(json.dumps(breakdown.to_json()))

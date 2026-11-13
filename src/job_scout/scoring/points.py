@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from job_scout.config.points import (
     EnumComponent,
+    NumberComponent,
     PointsTable,
     RequirementsComponent,
     Rule,
@@ -84,6 +85,12 @@ def check_points(table: PointsTable, profile: Profile) -> None:
         if isinstance(component, EnumComponent):
             if f := enum_field(where, component.field, fields):
                 exhaustive(where, f, set(component.points))
+        elif isinstance(component, NumberComponent):
+            f = fields.get(component.field)
+            if f is None:
+                problems.append(f"{where}: no field {component.field!r} in the output format")
+            elif f.kind not in ("int", "float"):
+                problems.append(f"{where}: {component.field!r} is not a number")
         elif isinstance(component, RequirementsComponent):
             if (subs := objects_field(where, component.field)) is None:
                 continue
@@ -202,10 +209,14 @@ def _label(name: str) -> str:
 
 
 def compute(table: PointsTable, result: Mapping[str, Any]) -> Breakdown | None:
-    """The score for one stored result, or None when it lacks a field a component reads. A
-    cap or disqualify rule on a field the result lacks (one added to the profile after it
-    was scored) doesn't apply."""
-    if any(c.field not in result for c in table.components.values()):
+    """The score for one stored result, or None when it lacks a field a component reads (a
+    result scored before points). A number component, a cap or a disqualify rule on a field
+    the result lacks (one added to the profile after it was scored) counts nothing."""
+    if any(
+        c.field not in result
+        for c in table.components.values()
+        if not isinstance(c, NumberComponent)
+    ):
         return None
 
     notes: list[str] = []
@@ -221,6 +232,11 @@ def compute(table: PointsTable, result: Mapping[str, Any]) -> Breakdown | None:
             parts.append(
                 Part(key, label, component.points.get(value, 0), max(component.points.values()))
             )
+        elif isinstance(component, NumberComponent):
+            part, cap = _number(key, label, component, result, notes)
+            parts.append(part)
+            if cap:
+                caps.append(cap)
         elif isinstance(component, RequirementsComponent):
             part, cap = _requirements(key, label, component, result[component.field], notes)
             parts.append(part)
@@ -321,6 +337,23 @@ def _signals(
             badges.append(text)
     points = max(c.min, min(c.max, sum(int(i.points) for i in items)))
     return Part(key, label, points, None, tuple(items)), badges
+
+
+def _number(
+    key: str, label: str, c: NumberComponent, result: Mapping[str, Any], notes: list[str]
+) -> tuple[Part, tuple[int, str] | None]:
+    """The band's points, shown with the value when they count; a missing field counts 0."""
+    if c.field not in result:
+        return Part(key, label, 0, None), None
+    value = result[c.field]
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        notes.append(f"{c.field}: not a number {value!r}")
+        return Part(key, label, 0, None), None
+    band = c.band(value)
+    text = f"{value:g} {c.unit}" if c.unit else f"{value:g}"
+    items = (Item(text, band.points),) if band.points else ()
+    cap = (band.max, band.reason) if band.max is not None and band.reason else None
+    return Part(key, label, band.points, None, items), cap
 
 
 # --- stored scores ---------------------------------------------------------------------

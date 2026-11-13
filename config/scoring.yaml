@@ -4,7 +4,8 @@
 #
 # Score = the components added up, then the caps, then the disqualify rules, kept in 0-100.
 # Each enum map must list every value its field allows, so a new value in profile.md
-# needs a decision here. `explain JOB_ID` shows how a job's score was reached.
+# needs a decision here. A number component gives the points (and an optional cap) of the
+# first band whose `upto` covers the value; a job scored before its field existed gets 0. `explain JOB_ID` shows how a job's score was reached.
 
 components:
   skills:
@@ -32,6 +33,16 @@ components:
     kind: enum
     field: seniority_level
     points: {intern: 0, junior: 0, mid: 6, senior: 20, lead: 20, staff: 15, principal: 8, unstated: 14}
+
+  experience:
+    kind: number
+    field: years_required # overall years the posting asks for; 0 when it states none
+    label: years required
+    unit: years
+    bands:
+      - {upto: 7, points: 0} # he has 6+: up to 7 fits
+      - {upto: 8, points: -5} # a stretch, like staff against senior
+      - {points: -5, max: 59, reason: asks for more than 8 years} # below digest.min_score
 
   role:
     kind: enum

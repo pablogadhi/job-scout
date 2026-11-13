@@ -2517,3 +2517,52 @@ mark a job as no longer available, filter on that, and sort each section by post
   - `explain 279` printed the mark.
   - Not checked in a browser: the header clicks, rows reordering with open details, the
     checkbox round trip, dark mode.
+
+## Phase 16: The years of experience a posting asks for (branch `phase-16-years-required`)
+
+Started on 2026-11-12 from `phase-15-unavailable-and-sort`. A posting asking for more years
+than you have no longer scores like any senior role.
+
+### P16 Your decisions
+
+- **P16-U1 Up to 7 years fits** (you're at 6+). Asking 8 years is a stretch: −5 points,
+  the same gap as staff against senior.
+- **P16-U2 More than 8 years caps the score at 59,** below `digest.min_score` (60). Such a
+  job never reaches the digest or Top matches, and stays ranked under Below threshold on
+  the dashboard.
+- **P16-U3 Only an overall-experience figure counts.** Years with one skill or tool ("5+
+  years of Python") and preferred figures ("ideally 10 years") don't.
+- **P16-U4 Only new jobs get the years.** Jobs already scored keep their scores; nothing
+  is rescored.
+
+### P16 Decisions (Claude)
+
+- **P16-D1 Claude reports the number, the code scores it.** profile.md gains
+  `years_required` (a whole number, 0 when the posting states none), extracted as a fact.
+  The thresholds live in scoring.yaml as a new `number` component kind: each band gives
+  points up to and including its `upto`, and a band can also cap the score (`max` with its
+  `reason`). Claude never sees them, so changing a threshold re-ranks stored scores without
+  calling Claude. An enum Claude judges ("within / stretch / over") would have put the
+  thresholds in the prompt instead.
+- **P16-D2 0 means "not stated".** The profile's output types allow a nullable string but
+  not a nullable number, and 0 falls in the first band anyway.
+- **P16-D3 A row scored before the field counts 0 for it,** rather than losing its
+  breakdown. A missing field in any other kind marks a result from before points ("old
+  scoring"), and treating this one the same would have done that to every stored score. A
+  cap or disqualify rule on a missing field already counted nothing.
+  - Checked on a copy of your laptop's database: the 19 scores computed with points were
+    recomputed, and no total changed. The other 180 still carry Claude's own number.
+- **P16-D4 `SCORING_VERSION` stays at 1.** Tables without a number component compute as
+  before. Yours changed, so its fingerprint did too, and the stored scores are recomputed
+  once.
+- **P16-D5 The years show through their points.** The breakdown line reads
+  `years required -5 (8 years -5)`, and the digest's details get a red "Years required: −5
+  8 years" row, like a negative signal. At 0 points the part is hidden. `years_required`
+  joins `UNLISTED_FIELDS`, so it has a CSV column but no generic "Years required: 0" line.
+
+### P16 Left for you to review
+
+- **P16-R1 The `job-scout-profile` skill's profile template doesn't ask for
+  `years_required`.** An instance doesn't need it: a table without a number component
+  scores as before. Add it there if new instances should get it. The skill's directory is
+  read-only in the sandbox, so the edit would need your approval.

@@ -120,7 +120,8 @@ instance; an instance's files never go into git.
   `queue.py` (what needs a score), `runner.py` (a scoring run, both backends, Batches API),
   `backends/cli.py` (`claude -p`), `backends/api.py` (Anthropic SDK), `calibrate.py`,
   `status.py`, `points.py` (the score computed from a stored result and the points table
-  in `config/scoring.yaml`, modelled in `config/points.py`: `check_points` against the
+  in `config/scoring.yaml`, modelled in `config/points.py` (component kinds `enum`,
+  `requirements`, `signals`, `number`): `check_points` against the
   profile, `compute` → `Breakdown`, `fingerprint`, `refresh` of stored scores),
   `simulate.py` (a table's ranking vs the stored scores, read-only).
 - `src/job_scout/ats/`: company job boards. `seed.py` (remoteintech tarball, filtered by
@@ -259,7 +260,8 @@ instance; an instance's files never go into git.
 - **Regex filters never read descriptions** (false drops like "hybrid cloud"); descriptions
   are Claude's job. `remote_raw` holds only the job's own arrangement, never the company's.
 - **Claude extracts, the code scores.** profile.md's output format asks for facts
-  (requirements with match levels, signals with quotes, seniority, role, location, pay);
+  (requirements with match levels, signals with quotes, seniority, years of experience
+  asked, role, location, pay);
   `scoring/points.py` turns them into `overall_score`, `disqualified` and a `breakdown`
   with `config/scoring.yaml`, which Claude never sees. A profile declaring `overall_score`,
   `disqualified` or `disqualify_reason` fails at load; `check_points` fails startup (exit
@@ -268,7 +270,8 @@ instance; an instance's files never go into git.
   differs (table values plus `SCORING_VERSION`, which you bump when the formula changes),
   so a weight change re-ranks everything without calling Claude. A row scored before
   points has no breakdown and keeps Claude's number ("old scoring"; `rescore --legacy`).
-  A cap or disqualify rule on a field added to the profile later skips rows without it.
+  A cap or disqualify rule, or a `number` component, on a field added to the profile later
+  skips rows without it (a component counts 0).
   A digest takes a job scored before the previous digest only if it was first seen within
   `digest.rescored_max_age_days`.
 - **Scoring:** one score row per canonical job, scored once. Only `rescore` queues a scored

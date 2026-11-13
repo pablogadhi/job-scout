@@ -7,12 +7,15 @@ Every component reads one output field:
 - `requirements`: a list of objects (e.g. skills), `max` times the weighted share matched
 - `signals`: a list of objects naming a signal (e.g. a 4-day week), points per signal,
   summed and clamped
+- `number`: a number field (e.g. the years of experience asked), points (and an optional
+  cap) by the band the value falls in
 `caps` and `disqualify` rules match enum fields. `scoring.points.check_points` checks the
 table against the profile at startup.
 """
 
 from __future__ import annotations
 
+from itertools import pairwise
 from typing import Annotated, Literal
 
 from pydantic import Field, PositiveInt, model_validator
@@ -93,8 +96,46 @@ class SignalsComponent(StrictModel):
         return Signal(points=spec) if isinstance(spec, int) else spec
 
 
+class Band(StrictModel):
+    """Values up to and including `upto` (the last band has none: everything above). `max`
+    caps the whole score, giving `reason`."""
+
+    upto: float | None = None
+    points: int
+    max: int | None = Field(default=None, ge=0, le=100)
+    reason: str | None = None
+
+    @model_validator(mode="after")
+    def _cap_has_reason(self) -> Band:
+        if (self.max is None) != (self.reason is None):
+            raise ValueError("a band's max and reason go together")
+        return self
+
+
+class NumberComponent(StrictModel):
+    kind: Literal["number"]
+    field: str
+    label: str | None = None
+    unit: str | None = None  # after the value in the breakdown ("8 years")
+    bands: list[Band] = Field(min_length=1)  # the first one whose `upto` covers the value
+
+    @model_validator(mode="after")
+    def _ordered(self) -> NumberComponent:
+        *bounded, last = self.bands
+        if any(b.upto is None for b in bounded) or last.upto is not None:
+            raise ValueError("every band but the last needs an upto; the last has none")
+        uptos = [b.upto for b in bounded if b.upto is not None]
+        if any(a >= b for a, b in pairwise(uptos)):
+            raise ValueError("band upto values must increase")
+        return self
+
+    def band(self, value: float) -> Band:
+        return next(b for b in self.bands if b.upto is None or value <= b.upto)
+
+
 Component = Annotated[
-    EnumComponent | RequirementsComponent | SignalsComponent, Field(discriminator="kind")
+    EnumComponent | RequirementsComponent | SignalsComponent | NumberComponent,
+    Field(discriminator="kind"),
 ]
 
 

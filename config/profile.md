@@ -214,6 +214,11 @@ The candidate would love to work in the game industry, despite no professional g
 
 He targets senior and lead roles; staff is a stretch.
 
+`years_required` is the years of professional experience the posting requires overall, as a
+whole number: "8+ years of experience" is 8, "5-8 years" is 5, "seven years" is 7. Years
+with one skill or tool ("5+ years of Python") don't count, and neither does a preferred
+figure ("ideally 10 years"). 0 when it states none.
+
 ## How to extract
 
 - `requirements`: the requirements the posting states, as named skills, tools, platforms,
@@ -243,6 +248,7 @@ Return only JSON, matching this schema:
   "role_category": "backend | full-stack | frontend | infrastructure | devops | platform | sre | tech-lead | data-engineering | iot | embedded | engineering-manager | mobile | other",
   "seniority": "string as stated in the posting",
   "seniority_level": "intern | junior | mid | senior | lead | staff | principal | unstated",
+  "years_required": 0,
   "requirements": [
     {
       "skill": "string",

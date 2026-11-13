@@ -58,9 +58,9 @@ NAMED_FIELDS = (
     }
 )
 
-# Fields the reports leave out but the CSV keeps: these only decide a disqualification, whose
-# reason the score's breakdown already shows.
-UNLISTED_FIELDS = {"language", "posting_type"}
+# Fields the reports leave out but the CSV keeps: the score's breakdown already shows what
+# they decide (a disqualification's reason, the points for the years asked when they count).
+UNLISTED_FIELDS = {"language", "posting_type", "years_required"}
 
 
 def extra_output_fields(profile: Profile) -> list[str]:
