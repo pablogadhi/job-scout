@@ -7,8 +7,9 @@ links on their own). POST /f/<job_id> saves and redirects back to the page.
 GET / is the dashboard: every scored job (dashboard.py). It needs no token: it's one
 person's LAN page. GET /details/<job_id> is a job's details, which it loads when you open a
 row. Its vote dialog posts to POST /f/<job_id> like the page does; its applied checkbox posts
-to POST /applied/<job_id>. GET /dashboard.js is its script, the only script this server
-sends; the dashboard's Content-Security-Policy allows it, the feedback page's allows none.
+to POST /applied/<job_id>, its "no longer available" checkbox to POST /unavailable/<job_id>.
+GET /dashboard.js is its script, the only script this server sends; the dashboard's
+Content-Security-Policy allows it, the feedback page's allows none.
 GET /d (the dashboard's old, tokened address) redirects to /.
 
 Python's standard HTTP server, a thread per connection: browsers open connections ahead of
@@ -43,8 +44,11 @@ from job_scout.db.types import utcnow
 from job_scout.feedback.dashboard import (
     FILTER_VALUES,
     Filters,
+    cookie_state,
     dashboard_sections,
+    default,
     filters_cookie,
+    section_sorts,
 )
 from job_scout.feedback.links import verify
 from job_scout.feedback.store import (
@@ -53,6 +57,7 @@ from job_scout.feedback.store import (
     get_vote,
     record_vote,
     set_applied,
+    set_unavailable,
 )
 from job_scout.report.data import item_mark, scored_item, watchlist_names
 from job_scout.report.render import http_url
@@ -64,9 +69,9 @@ log = logging.getLogger(__name__)
 MAX_BODY_BYTES = 16 * 1024
 REQUEST_TIMEOUT_SECONDS = 15
 _PATH = re.compile(r"/f/(\d{1,12})")
-_APPLIED_PATH = re.compile(r"/applied/(\d{1,12})")
+_MARK_PATH = re.compile(r"/(applied|unavailable)/(\d{1,12})")
 _DETAILS_PATH = re.compile(r"/details/(\d{1,12})")
-_DASHBOARD_PREFIXES = ("/applied/", "/details/")
+_DASHBOARD_PREFIXES = ("/applied/", "/unavailable/", "/details/")
 _GZIP_MIN_BYTES = 1024
 _CSP = (
     "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; "
@@ -216,32 +221,39 @@ class FeedbackApp:
             return Response(308, "", {"Location": "/"})
         if path == "/":
             return self._dashboard(cookies)
-        match = _APPLIED_PATH.fullmatch(path)
+        match = _MARK_PATH.fullmatch(path)
         if match is None:
             return self._error(404, "Not found.")
         if method != "POST":
             return self._error(405, "Method not allowed.")
-        job_id = int(match.group(1))
+        # A checkbox: /applied/<job_id> or /unavailable/<job_id>, its field named the same.
+        name, job_id = match.group(1), int(match.group(2))
         form = parse_qs(body, keep_blank_values=True)
         if not verify(self.secret, job_id, _first(form, "s")):
             return _json(403, {"error": "This job's signature isn't valid."})
-        applied = _first(form, "applied")
-        if applied not in ("0", "1"):
-            return _json(400, {"error": "applied must be 0 or 1."})
-        return self._set_applied(job_id, applied == "1")
+        value = _first(form, name)
+        if value not in ("0", "1"):
+            return _json(400, {"error": f"{name} must be 0 or 1."})
+        if name == "applied":
+            return self._set_applied(job_id, value == "1")
+        return self._set_unavailable(job_id, value == "1")
 
     def _dashboard(self, cookies: str) -> Response:
         tz = self._tz()
         cookie = filters_cookie(self.config.settings.feedback.base_url)
-        filters = Filters.from_cookies(cookies, cookie)
+        state = cookie_state(cookies, cookie)
+        filters = Filters.from_state(state)
         with self.sf() as session:
-            sections = dashboard_sections(session, self.config, self.secret, filters)
+            sections = dashboard_sections(
+                session, self.config, self.secret, filters, section_sorts(state)
+            )
             context: dict[str, Any] = {
                 "title": "job-scout dashboard",
                 "sections": sections,
                 "total": sum(len(s.rows) for s in sections),
                 "filters": filters,
                 "filter_values": FILTER_VALUES,
+                "filter_default": default,
                 "filters_cookie": cookie,
                 "settings": self.config.settings.digest,
                 "generated_at": self.clock().astimezone(tz).strftime("%Y-%m-%d %H:%M %Z"),
@@ -271,6 +283,22 @@ class FeedbackApp:
         log.info("applied: job %s %s", job_id, "checked" if applied else "unchecked")
         date = f"{now.astimezone(self._tz()):%Y-%m-%d}"
         return _json(200, {"applied": applied, "key": key.text, "date": date})
+
+    def _set_unavailable(self, job_id: int, unavailable: bool) -> Response:
+        with self.sf.begin() as session:
+            group = group_of(session, job_id)
+            if group is None or group.canonical.id != job_id:
+                return _json(404, {"error": "That job isn't in the database."})
+            when = set_unavailable(session, group, unavailable, self.clock())
+            size = len(group.jobs)
+        log.info(
+            "unavailable: job %s (%d postings) %s",
+            job_id,
+            size,
+            "marked" if unavailable else "unmarked",
+        )
+        date = f"{when.astimezone(self._tz()):%Y-%m-%d}" if when else None
+        return _json(200, {"unavailable": unavailable, "date": date})
 
     def _tz(self) -> ZoneInfo:
         return ZoneInfo(self.config.settings.schedule.timezone)

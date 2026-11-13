@@ -27,7 +27,8 @@ from job_scout.scoring.points import Breakdown
 COLUMNS = [
     "job_id", "group_id", "duplicate", "source", "title", "company", "location", "remote",
     "salary_min", "salary_max", "salary_currency", "salary_period", "posted_at",
-    "first_seen_at", "url", "apply_url", "prefilter", "prefilter_reason", "score_status",
+    "first_seen_at", "unavailable_at", "url", "apply_url", "prefilter", "prefilter_reason",
+    "score_status",
     "score", "disqualified", "disqualify_reason", "location_eligibility", "location_notes",
     "salary_notes", "summary",
     "score_breakdown", "score_legacy", "scoring_fingerprint", "scored_at", "backend", "model",
@@ -89,6 +90,7 @@ def export_csv(
                     job.salary_period,
                     job.posted_at,
                     job.first_seen_at,
+                    job.unavailable_at,
                     job.canonical_url,
                     job.apply_url,
                     "" if verdict is None else ("passed" if verdict.passed else "dropped"),

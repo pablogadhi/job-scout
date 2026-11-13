@@ -3,6 +3,7 @@
 import gzip
 import http.client
 import json
+import re
 import socket
 import threading
 import time
@@ -358,14 +359,20 @@ def dashboard(page: FeedbackApp) -> str:
     return response.body
 
 
-def section_ids(html: str) -> dict[str, list[int]]:
+_ROW = re.compile(r'<tr class="job[^"]*" data-job="(\d+)"[^>]*?( hidden)?>')
+
+
+def row_ids(html: str, *, shown_only: bool = False) -> list[int]:
+    """The job ids of the rows, in order; with `shown_only`, those your filters keep."""
+    return [int(m[1]) for m in _ROW.finditer(html) if not (shown_only and m[2])]
+
+
+def section_ids(html: str, *, shown_only: bool = False) -> dict[str, list[int]]:
     """Section title -> the job ids of its rows, in order."""
     out: dict[str, list[int]] = {}
     for part in html.split('<details class="section"')[1:]:
         title = part.split("<h2>", 1)[1].split(" (", 1)[0]
-        out[title] = [
-            int(chunk.split('"', 1)[0]) for chunk in part.split('<tr class="job" data-job="')[1:]
-        ]
+        out[title] = row_ids(part, shown_only=shown_only)
     return out
 
 
@@ -404,7 +411,7 @@ def test_dashboard_lists_every_scored_job_by_section(
     }
     assert html.count('title="On your watchlist">★') == 1
     assert html.count('data-watchlist="1"') == 1  # what the watchlist filter reads
-    for name in ("watchlist", "feedback", "applied"):
+    for name in ("watchlist", "feedback", "applied", "available"):
         assert f'<select data-filter="{name}"' in html
     assert ">dq</span>" in html
     # Your vote, with its reason as the tooltip (escaped), and the form the dialog posts.
@@ -438,9 +445,7 @@ def test_dashboard_arrives_filtered_by_its_cookie(
     assert name != filters_cookie("http://jobscout.lan:8766")  # one per instance
 
     def shown(cookie: str) -> list[int]:
-        html = page.handle("GET", "/", cookies=cookie).body
-        rows = html.split('<tr class="job" data-job="')[1:]
-        return [int(r.split('"', 1)[0]) for r in rows if not r.split(">", 1)[0].endswith(" hidden")]
+        return row_ids(page.handle("GET", "/", cookies=cookie).body, shown_only=True)
 
     assert shown("") == [liked, disliked, unvoted, watched]
     assert shown(f"other=1; {name}={quote('feedback=none')}") == [unvoted, watched]
@@ -548,6 +553,110 @@ def test_applied_marks_the_whole_company(
     assert post(first, "0") == {"applied": False, "key": "c:acme", "date": "2026-10-13"}
     html = dashboard(page)
     assert "Applied to Acme" not in html and html.count(" checked>") == 1
+
+
+def test_no_longer_available_marks_the_whole_group(
+    app_config: AppConfig, session_factory: sessionmaker[Session]
+) -> None:
+    gone, copy, other = seed_jobs(session_factory, 3)
+    with session_factory.begin() as session:  # the same job on another board
+        session.execute(update(Job).where(Job.id == copy).values(duplicate_of=gone))
+    for job_id in (gone, other):
+        add_score(session_factory, job_id, app_config.profile.sha256, 70)
+    page = feedback_app(app_config, session_factory)
+    name = filters_cookie(app_config.settings.feedback.base_url)
+
+    def post(job_id: int, value: str, signature: str | None = None) -> Any:
+        s = signature or sign(SECRET, job_id)
+        return page.handle("POST", f"/unavailable/{job_id}", f"s={s}&unavailable={value}")
+
+    def marks() -> dict[int, datetime | None]:
+        with session_factory() as session:
+            return {j.id: j.unavailable_at for j in session.scalars(select(Job))}
+
+    assert post(gone, "1", "nope").status == 403
+    assert post(gone, "yes").status == 400
+    assert post(copy, "1").status == 404  # a copy isn't a dashboard row
+    assert page.handle("GET", f"/unavailable/{gone}").status == 405
+    assert set(marks().values()) == {None}
+
+    response = post(gone, "1")
+    assert response.status == 200
+    assert json.loads(response.body) == {"unavailable": True, "date": "2026-10-13"}
+    assert marks() == {gone: NOW, copy: NOW, other: None}
+
+    # Hidden by default; the filter shows it, struck through and checked.
+    assert row_ids(dashboard(page), shown_only=True) == [other]
+    html = page.handle("GET", "/", cookies=f"{name}={quote('available=no')}").body
+    assert row_ids(html, shown_only=True) == [gone]
+    assert f'<tr class="job unavailable" data-job="{gone}"' in html
+    assert 'title="No longer available since 2026-10-13" checked>' in html
+    assert '<button type="button" class="secondary" id="clear-filters">' in html
+    every = page.handle("GET", "/", cookies=f"{name}={quote('available=')}").body
+    assert row_ids(every, shown_only=True) == [other, gone]  # same score: newest first
+
+    assert json.loads(post(gone, "0").body) == {"unavailable": False, "date": None}
+    assert set(marks().values()) == {None}
+    assert row_ids(dashboard(page), shown_only=True) == [other, gone]
+
+
+def test_dashboard_filters_default_to_available(
+    app_config: AppConfig, session_factory: sessionmaker[Session]
+) -> None:
+    gone, kept = seed_jobs(session_factory, 2)
+    for job_id in (gone, kept):
+        add_score(session_factory, job_id, app_config.profile.sha256, 70)
+    with session_factory.begin() as session:
+        session.execute(update(Job).where(Job.id == gone).values(unavailable_at=NOW))
+    page = feedback_app(app_config, session_factory)
+    name = filters_cookie(app_config.settings.feedback.base_url)
+
+    html = dashboard(page)  # no cookie yet
+    assert row_ids(html, shown_only=True) == [kept]
+    assert 'data-filter="available" data-default="yes"' in html
+    assert '<option value="yes" selected>Available</option>' in html
+    assert 'id="clear-filters" hidden>' in html  # at the defaults: nothing to clear
+    # A cookie saved before the filter existed gets its default too.
+    old = page.handle("GET", "/", cookies=f"{name}={quote('feedback=&applied=')}").body
+    assert row_ids(old, shown_only=True) == [kept]
+
+
+def test_dashboard_sorts_each_section_by_its_cookie(
+    app_config: AppConfig, session_factory: sessionmaker[Session]
+) -> None:
+    # seed_jobs posts each job an hour after the one before.
+    oldest, tied_a, tied_b, newest, undated, low = seed_jobs(session_factory, 6)
+    with session_factory.begin() as session:
+        tied = session.get_one(Job, tied_b).posted_at
+        session.execute(update(Job).where(Job.id == tied_a).values(posted_at=tied))
+        session.execute(update(Job).where(Job.id == undated).values(posted_at=None))
+    current = app_config.profile.sha256
+    for job_id, score in ((undated, 95), (oldest, 90), (tied_a, 85), (tied_b, 80), (newest, 75)):
+        add_score(session_factory, job_id, current, score)
+    add_score(session_factory, low, current, 20)
+    page = feedback_app(app_config, session_factory)
+    name = filters_cookie(app_config.settings.feedback.base_url)
+
+    def top(state: str) -> list[int]:
+        html = page.handle("GET", "/", cookies=f"{name}={quote(state)}").body
+        return section_ids(html)["Top matches"]
+
+    by_score = [undated, oldest, tied_a, tied_b, newest]
+    assert top("") == by_score
+    assert top("sort_top=posted_desc") == [newest, tied_a, tied_b, oldest, undated]
+    assert top("sort_top=posted_asc") == [oldest, tied_a, tied_b, newest, undated]
+    assert top("sort_top=sideways") == by_score
+    assert top("sort_below=posted_asc") == by_score  # each section has its own
+
+    html = page.handle("GET", "/", cookies=f"{name}={quote('sort_top=posted_asc')}").body
+    assert '<table data-section="top" data-sort="posted_asc">' in html
+    assert '<table data-section="below" data-sort="score">' in html
+    assert '<th aria-sort="ascending"><button type="button" class="sort" data-sort-by="posted"' in (
+        html
+    )
+    # The script sorts back to score order by each row's rank, and by date from data-posted.
+    assert f'data-job="{undated}"' in html and 'data-rank="0" data-posted=""' in html
+    assert 'data-rank="1" data-posted="2026-' in html
 
 
 # --- digest links --------------------------------------------------------------------------

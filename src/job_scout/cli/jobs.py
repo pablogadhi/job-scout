@@ -112,6 +112,11 @@ def explain(ctx: typer.Context, job_id: int) -> None:
                 console.print(f"  {name:<10} {escape(str(value))}")
         if job.duplicate_of:
             console.print(f"  [yellow]duplicate of #{canonical.id}; judged with its group[/yellow]")
+        if canonical.unavailable_at:
+            console.print(
+                f"  [yellow]no longer available since {canonical.unavailable_at:%Y-%m-%d %H:%M}"
+                " UTC (marked on the dashboard): out of the digest and scoring[/yellow]"
+            )
 
         if len(group.jobs) > 1:
             console.print(f"\n[bold]Duplicate group[/bold] ({len(group.jobs)} postings)")

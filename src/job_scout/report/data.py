@@ -188,6 +188,11 @@ class ReportItem:
         return self.group.canonical.posted_at
 
     @property
+    def unavailable_at(self) -> datetime | None:
+        """When you marked it no longer available (the mark covers the whole group)."""
+        return self.group.canonical.unavailable_at
+
+    @property
     def other_fields(self) -> list[tuple[str, str]]:
         """(label, text) for the result's fields the templates don't name, in its order."""
         extra = self.result.model_extra or {}
@@ -272,9 +277,14 @@ def watchlist_names(config: AppConfig) -> set[str]:
 
 
 def scored_items(
-    session: Session, watchlist: set[str], exclude: Iterable[int] = ()
+    session: Session,
+    watchlist: set[str],
+    exclude: Iterable[int] = (),
+    *,
+    include_unavailable: bool = True,
 ) -> list[ReportItem]:
-    """Every scored group, best first (ties: newest posting first)."""
+    """Every scored group, best first (ties: newest posting first). Without
+    `include_unavailable`, groups marked no longer available are left out."""
     skip = set(exclude)
     scores = [
         s
@@ -290,6 +300,7 @@ def scored_items(
         for score in scores
         # defensive: the scored job is gone or no longer canonical
         if (group := groups.get(score.job_id)) is not None
+        and (include_unavailable or group.canonical.unavailable_at is None)
     ]
     items.sort(key=lambda i: (-i.overall, -(i.posted_at.timestamp() if i.posted_at else 0)))
     return items

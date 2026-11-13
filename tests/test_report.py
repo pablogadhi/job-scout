@@ -261,6 +261,26 @@ def test_backlog_report_includes_below_and_is_not_repeated(
     assert len(digest.sections) == 0
 
 
+def test_jobs_marked_no_longer_available_stay_out_of_digest_and_backlog(
+    tmp_path: Path, session_factory: sessionmaker[Session]
+) -> None:
+    config = config_with(tmp_path, min_score=50)
+    gone, kept, gone_low = seed_jobs(session_factory, 3)
+    score_jobs(
+        session_factory,
+        config,
+        {gone: {"score": 90}, kept: {"score": 70}, gone_low: {"score": 20}},
+    )
+    with session_factory.begin() as session:
+        session.execute(update(Job).where(Job.id.in_([gone, gone_low])).values(unavailable_at=NOW))
+    digest = make_digest(config, session_factory, now=NOW, environ={})
+    assert [i.job_id for i in digest.sections.top] == [kept]
+    with session_factory.begin() as session:
+        session.execute(update(Job).values(unavailable_at=NOW))
+    backlog = make_backlog_report(config, session_factory, now=NOW, environ={})
+    assert len(backlog.sections) == 0 and backlog.sections.below == []
+
+
 def test_digest_email(tmp_path: Path, session_factory: sessionmaker[Session]) -> None:
     config = config_with(tmp_path, min_score=50, email=EMAIL)
     (job,) = seed_jobs(session_factory, 1)
@@ -402,7 +422,9 @@ def test_export_csv_and_snapshot(
     config = config_with(tmp_path)
     first, second = seed_jobs(session_factory, 2)
     with session_factory.begin() as session:
-        session.execute(update(Job).where(Job.id == second).values(title="=HYPERLINK(1)"))
+        session.execute(
+            update(Job).where(Job.id == second).values(title="=HYPERLINK(1)", unavailable_at=NOW)
+        )
     score_jobs(session_factory, config, {first: {"score": 77}})
     path = tmp_path / "out" / "jobs.csv"
     with session_factory() as session:
@@ -413,6 +435,7 @@ def test_export_csv_and_snapshot(
     assert rows[0]["location_notes"] == "Open to LATAM." and rows[0]["salary_notes"] == ""
     assert rows[0]["summary"] == "Synthetic posting that fits."
     assert rows[1]["title"] == "'=HYPERLINK(1)" and rows[1]["score"] == ""
+    assert rows[0]["unavailable_at"] == "" and rows[1]["unavailable_at"] == NOW.isoformat()
 
     snapshot = snapshot_sqlite(db_url, tmp_path / "out" / "snap.db")
     with sqlite3.connect(snapshot) as conn:

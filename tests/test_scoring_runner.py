@@ -83,6 +83,29 @@ def test_scores_everything_pending(
     assert (again.calls_made, again.stop_reason) == (0, StopReason.DONE)
 
 
+def test_jobs_marked_no_longer_available_are_not_scored(
+    app_config: AppConfig, session_factory: sessionmaker[Session]
+) -> None:
+    gone, kept, waiting = seed_jobs(session_factory, 3)
+    with session_factory.begin() as session:
+        session.add(Score(job_id=waiting, profile_hash="p", status=ScoreStatus.PENDING))
+        for job_id in (gone, waiting):
+            session.get_one(Job, job_id).unavailable_at = utcnow()
+    with session_factory() as session:
+        assert pending_count(session) == 0  # a pending score waits while the job is marked
+
+    report = runner(app_config, session_factory, FakeScorer()).run(options())
+    assert report.scored == 1
+    stored = scores(session_factory)
+    assert gone not in stored and stored[kept].status == ScoreStatus.SCORED
+    assert stored[waiting].status == ScoreStatus.PENDING
+
+    with session_factory.begin() as session:  # unmarked: it's scored again like any other
+        session.get_one(Job, waiting).unavailable_at = None
+    with session_factory() as session:
+        assert pending_count(session) == 1
+
+
 def test_max_calls_leaves_rest_pending(
     app_config: AppConfig, session_factory: sessionmaker[Session]
 ) -> None:

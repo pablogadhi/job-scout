@@ -2460,3 +2460,60 @@ your votes and where you applied.
   connection open. It's now a `ThreadingHTTPServer` (a thread per connection; SQLite's
   `busy_timeout` covers two writes at once): 0.15 s for the page and script with three idle
   connections open. A test holds an idle connection open while requesting the script.
+
+## Phase 15: Jobs no longer available, and sorting the dashboard (branch `phase-15-unavailable-and-sort`)
+
+Started on 2026-11-12 from `main` (phase 14 plus its follow-up commits). The dashboard can
+mark a job as no longer available, filter on that, and sort each section by posting date.
+
+### P15 Your decisions
+
+- **P15-U1 Mark a job "no longer available" from the dashboard.** The mark covers every
+  job of its duplicate group. A marked group takes no new copies: a new posting that would
+  have joined it starts a group of its own.
+- **P15-U2 A marked job also leaves the digest, the backlog report and the scoring queue.**
+  It stays in the database, the CSV export and the dashboard (under the filter).
+- **P15-U3 The mark can be undone:** a checkbox per row, like Applied. Unchecking clears
+  the whole group.
+- **P15-U4 An availability filter** (Available / No longer available / Any) that starts at
+  **Available** for a browser with no saved choice, so marked jobs are hidden until you ask
+  for them.
+- **P15-U5 Each section sorts on its own:** by score (the default), or by posting date,
+  newest or oldest first. You switch by clicking the Score or Posted column header. The
+  browser remembers each section's choice in the filters' cookie.
+
+### P15 Decisions (Claude)
+
+- **P15-D1 A date column on `jobs` (`unavailable_at`), not a table.** It's set on every job
+  of the group at once, so the dedupe lookup only has to skip a marked canonical job. It
+  also gives `explain` and the CSV export the date. Marking again keeps the first date.
+- **P15-D2 Unmarking leaves the groups as they are.** A posting stored while the job was
+  marked stays in its own group. After you unmark, the old group is again the first match
+  for its dedupe key, so later copies join it.
+- **P15-D3 A score already pending when you mark the job stays pending.** It isn't sent to
+  Claude or counted by `status`, and it's back in the queue if you unmark the job. Marking
+  only filters `scoring/queue.py`'s eligible jobs, so it deletes nothing.
+- **P15-D4 Cookies saved before this phase get the Available default.** A cookie that
+  lacks the `available` key is treated as "not chosen yet", while `available=` (the script
+  saving "Any") means any. "Clear filters" goes back to the defaults, so Availability
+  returns to Available. The button shows only when a filter differs from its default.
+- **P15-D5 Sorting by date puts jobs without a posting date last,** in both directions.
+  Jobs with the same date keep their score order. Every row carries its rank in score
+  order (`data-rank`), so the script can restore score order exactly. The server applies
+  the cookie's sort when it renders, as it does the filters; a click re-sorts the rows in
+  place, moving any opened details with their row. The cookie keys are `sort_top`,
+  `sort_unclear` and `sort_below`, and an unknown value means by score.
+- **P15-D6 Applied and no longer available share one route pattern**
+  (`/(applied|unavailable)/<job_id>`), each checked the same way: the job's signature
+  (403), a value of 0 or 1 (400), a canonical job (404), POST only (405).
+- **P15-D7 The migration tests that seed jobs at an older revision now insert only that
+  revision's columns** (`_insert_old_jobs`, as they already did for scores). The shared
+  `seed_jobs` builds an ORM `Job`, which now names `unavailable_at`, a column those
+  revisions don't have.
+- Checked on a copy of your laptop's database (199 scored jobs):
+  - Marking #279 marked all 16 postings of its group.
+  - The default page went from 199 rows to 198, and `available=no` showed only #279.
+  - `sort_top=posted_desc` and `posted_asc` ordered Top matches by date.
+  - `explain 279` printed the mark.
+  - Not checked in a browser: the header clicks, rows reordering with open details, the
+    checkbox round trip, dark mode.

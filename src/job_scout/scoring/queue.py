@@ -38,11 +38,16 @@ MAX_ATTEMPTS = 2  # a job is retried once after a failed call, then marked score
 
 
 def _eligible() -> Select[int]:
-    """Canonical jobs whose group passed the pre-filter."""
+    """Canonical jobs whose group passed the pre-filter and isn't marked no longer
+    available (a score already pending for one waits, in case the mark is undone)."""
     return (
         select(Job.id)
         .join(PrefilterResult, PrefilterResult.job_id == Job.id)
-        .where(Job.duplicate_of.is_(None), PrefilterResult.passed.is_(True))
+        .where(
+            Job.duplicate_of.is_(None),
+            Job.unavailable_at.is_(None),
+            PrefilterResult.passed.is_(True),
+        )
     )
 
 

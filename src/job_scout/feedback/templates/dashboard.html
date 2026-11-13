@@ -38,6 +38,11 @@
   tr.details > td { background: var(--bg); cursor: auto; }
   tr.details .row { margin: 4px 0; }
   tr.details .label { color: var(--muted); }
+  tr.job.unavailable > td { color: var(--muted); }
+  tr.job.unavailable .expand { color: var(--muted); text-decoration: line-through; }
+  th .sort { background: none; border: 0; padding: 0; margin: 0; width: auto; font: inherit;
+             font-weight: 600; color: var(--muted); cursor: pointer; white-space: nowrap; }
+  th[aria-sort] .sort { color: var(--fg); }
   .flag { color: var(--err); }
   .expand { background: none; border: 0; padding: 0; margin: 0; width: auto; color: var(--fg);
             font: inherit; font-weight: 600; text-align: left; cursor: pointer; }
@@ -77,15 +82,16 @@
   "watchlist": ("Watchlist", {"yes": "On the watchlist", "no": "Not on it"}),
   "feedback": ("Feedback", {"up": "👍 Positive", "down": "👎 Negative", "none": "None yet"}),
   "applied": ("Applied", {"yes": "Applied", "no": "Not applied"}),
+  "available": ("Availability", {"yes": "Available", "no": "No longer available"}),
 } %}
 <div class="filters">
 {%- for name, values in filter_values.items() %}
 {%- set current = filters.value(name) %}
-  <label>{{ labels[name][0] }}<select data-filter="{{ name }}" autocomplete="off"{% if current %} class="active"{% endif %}>
+  <label>{{ labels[name][0] }}<select data-filter="{{ name }}" data-default="{{ filter_default(name) }}" autocomplete="off"{% if current %} class="active"{% endif %}>
     <option value="">Any</option>
     {%- for value in values %}<option value="{{ value }}"{% if value == current %} selected{% endif %}>{{ labels[name][1][value] }}</option>{% endfor %}</select></label>
 {%- endfor %}
-  <button type="button" class="secondary" id="clear-filters"{% if not filters.any() %} hidden{% endif %}>Clear filters</button>
+  <button type="button" class="secondary" id="clear-filters"{% if not filters.changed() %} hidden{% endif %}>Clear filters</button>
 </div>
 
 {%- for section in sections %}
@@ -94,16 +100,21 @@
   {%- if section.note %} <span class="muted">{{ section.note }}</span>{% endif %}</summary>
 {%- if section.rows %}
 <div class="table-wrap">
-<table>
+{#- Score and Posted sort the section; the script re-sorts in place, the server applies the
+    cookie's choice when it renders. -#}
+{%- set by_posted = section.sort.startswith("posted") %}
+<table data-section="{{ section.key }}" data-sort="{{ section.sort }}">
 <thead><tr>
-  <th class="num">Score</th><th>Title</th><th>Company</th><th class="center">Watchlist</th>
-  <th>Posted</th><th class="center">Link</th><th class="center">Feedback</th>
-  <th class="center">Applied</th>
+  <th class="num"{% if not by_posted %} aria-sort="descending"{% endif %}><button type="button" class="sort" data-sort-by="score" title="Sort by score">Score<span class="arrow">{{ " ↓" if not by_posted else "" }}</span></button></th>
+  <th>Title</th><th>Company</th><th class="center">Watchlist</th>
+  <th{% if by_posted %} aria-sort="{{ 'descending' if section.sort == 'posted_desc' else 'ascending' }}"{% endif %}><button type="button" class="sort" data-sort-by="posted" title="Sort by posting date (click again to reverse)">Posted<span class="arrow">{{ (" ↓" if section.sort == "posted_desc" else " ↑") if by_posted else "" }}</span></button></th>
+  <th class="center">Link</th><th class="center">Feedback</th>
+  <th class="center">Applied</th><th class="center" title="No longer available">Gone</th>
 </tr></thead>
 <tbody>
 {%- for row in section.rows %}
 {%- set item = row.item %}
-<tr class="job" data-job="{{ item.job_id }}" data-s="{{ row.signature }}" data-search="{{ row.search_text }}" data-watchlist="{{ 1 if item.watchlist else 0 }}"{% if not row.visible %} hidden{% endif %}>
+<tr class="job{% if item.unavailable_at %} unavailable{% endif %}" data-job="{{ item.job_id }}" data-s="{{ row.signature }}" data-search="{{ row.search_text }}" data-watchlist="{{ 1 if item.watchlist else 0 }}" data-rank="{{ row.rank }}" data-posted="{{ item.posted_at.isoformat() if item.posted_at else '' }}"{% if not row.visible %} hidden{% endif %}>
   <td class="num"><span class="score {% if item.overall >= 70 %}s-high{% elif item.overall >= 50 %}s-mid{% endif %}">{{ item.overall }}</span>
     {%- if item.disqualified %}<br><span class="flag" title="{{ item.disqualify_reason or 'disqualified' }}">dq</span>{% endif %}</td>
   <td><button type="button" class="expand" aria-expanded="false">{{ item.title }}</button>
@@ -119,6 +130,9 @@
   <td class="center"><input type="checkbox" aria-label="Applied" data-key="{{ row.application_key.text }}" data-company="{{ item.group.canonical.company or '' }}"
       title="{% if row.application %}Applied to {{ item.company }} on {{ local_date(row.application.applied_at) }}{% elif row.application_key.company_normalized %}Marks every {{ item.company }} job{% else %}Marks this job{% endif %}"
       {%- if row.application %} checked{% endif %}></td>
+  <td class="center"><input type="checkbox" aria-label="No longer available" data-unavailable
+      title="{% if item.unavailable_at %}No longer available since {{ local_date(item.unavailable_at) }}{% else %}Mark as no longer available (every copy of this job){% endif %}"
+      {%- if item.unavailable_at %} checked{% endif %}></td>
 </tr>
 {%- endfor %}
 </tbody>

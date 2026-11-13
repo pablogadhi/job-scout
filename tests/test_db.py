@@ -13,7 +13,6 @@ from sqlalchemy.orm import Session, sessionmaker
 from job_scout.db import make_engine, make_session_factory
 from job_scout.db.models import Base, Job, Score, ScoreStatus, Source
 from tests.conftest import ROOT
-from tests.scoring_helpers import seed_jobs
 
 
 def test_migration_creates_all_tables(engine: Engine) -> None:
@@ -101,6 +100,32 @@ def _insert_old_scores(
         )
 
 
+def _insert_old_jobs(sf: sessionmaker[Session], count: int) -> list[int]:
+    """Jobs in an older schema: only the columns it had (the model has more now)."""
+    with sf.begin() as session:
+        session.add(Source(id="board"))
+        session.flush()
+        session.execute(
+            insert(Base.metadata.tables["jobs"]),
+            [
+                {
+                    "source_id": "board",
+                    "source_job_id": f"board-{n}",
+                    "canonical_url": f"https://board.example/{n}",
+                    "title": f"Engineer {n}",
+                    "title_normalized": f"engineer {n}",
+                    "tags": [],
+                    "first_seen_at": datetime(2026, 9, 30, tzinfo=UTC),
+                    "last_seen_at": datetime(2026, 9, 30, tzinfo=UTC),
+                    "raw": {},
+                    "dedupe_key": f"board-{n}",
+                }
+                for n in range(1, count + 1)
+            ],
+        )
+        return list(session.scalars(text("SELECT id FROM jobs ORDER BY id")))
+
+
 def test_one_score_per_job_migration_keeps_the_best_row(tmp_path: Path) -> None:
     """Rows from older profiles collapse to one per job: the latest real score, else the
     newest pending row."""
@@ -111,7 +136,7 @@ def test_one_score_per_job_migration_keeps_the_best_row(tmp_path: Path) -> None:
     command.upgrade(cfg, "ddc39a2e53b6")  # one score per (job, profile_hash)
     engine = make_engine(url)
     sf = make_session_factory(engine)
-    a, b, c = seed_jobs(sf, 3)
+    a, b, c = _insert_old_jobs(sf, 3)
     t0 = datetime(2026, 10, 1, tzinfo=UTC)
     rows = [
         (a, "h1", ScoreStatus.SCORED, t0),
@@ -143,7 +168,7 @@ def test_points_migration_keeps_when_a_job_was_first_scored(tmp_path: Path) -> N
     command.upgrade(cfg, "cae2ac4fd837")  # before the points score
     engine = make_engine(url)
     sf = make_session_factory(engine)
-    a, b = seed_jobs(sf, 2)
+    a, b = _insert_old_jobs(sf, 2)
     t0 = datetime(2026, 10, 1, tzinfo=UTC)
     _insert_old_scores(sf, [(a, "h", ScoreStatus.SCORED, t0), (b, "h", ScoreStatus.PENDING, None)])
     engine.dispose()

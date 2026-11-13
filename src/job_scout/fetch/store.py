@@ -99,9 +99,16 @@ def store_postings(
             last_seen_at=now,
         )
         job.dedupe_key = _key(job, dedupe_fields)
+        # A group marked no longer available takes no new copies: a repost of that job is a
+        # new opening, so it starts its own group and is judged on its own. The mark covers
+        # every job of a group, so its canonical job tells.
         first = canonical.get(job.dedupe_key) or session.scalar(
             select(Job.id)
-            .where(Job.dedupe_key == job.dedupe_key, Job.duplicate_of.is_(None))
+            .where(
+                Job.dedupe_key == job.dedupe_key,
+                Job.duplicate_of.is_(None),
+                Job.unavailable_at.is_(None),
+            )
             .order_by(Job.id)
             .limit(1)
         )

@@ -207,6 +207,9 @@ class Job(Base):
     raw: Mapped[dict[str, Any]]
     dedupe_key: Mapped[str] = mapped_column(String(64), index=True)
     duplicate_of: Mapped[int | None] = mapped_column(ForeignKey("jobs.id"), index=True)
+    # Marked no longer available on the dashboard (every job of its group at once): the group
+    # takes no new copies and leaves the digest and the scoring queue.
+    unavailable_at: Mapped[datetime | None]
 
 
 class PrefilterResult(Base):
